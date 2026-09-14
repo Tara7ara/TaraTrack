@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Listas</h1>
+
+<form method="post" action="/listas" class="inline-form">
+    <input type="text" name="name" placeholder="Nombre de la lista nueva..." required>
+    <button type="submit">Crear</button>
+</form>
+
+<a class="list-card" href="/waifus">
+    <div class="list-card-head">
+        <span class="list-card-name">Waifus <span class="badge badge-fav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg>Personajes</span></span>
+        <span class="year">tu ranking de personajes</span>
+    </div>
+    {% if waifus_preview %}
+    <div class="list-card-posters">
+        {% for p in waifus_preview %}
+        <img src="{{ p or '/static/img/sin-portada.svg' }}" alt="" loading="lazy">
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">Marca personajes con la estrella y aparecen aquí.</p>
+    {% endif %}
+</a>
+
+{% for l in lists %}
+<a class="list-card" href="/lista/{{ l.id }}">
+    <div class="list-card-head">
+        <span class="list-card-name">{{ l.name }}{% if l.is_default %} <span class="badge badge-fav"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"></path></svg>Favoritos</span>{% endif %}</span>
+        <span class="year">{{ l.total }} título{{ "s" if l.total != 1 else "" }}</span>
+    </div>
+    {% if l.posters %}
+    <div class="list-card-posters">
+        {% for p in l.posters %}
+        <img src="{{ p or '/static/img/sin-portada.svg' }}" alt="" loading="lazy">
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">Vacía todavía.</p>
+    {% endif %}
+</a>
+{% endfor %}
+{% endblock %}

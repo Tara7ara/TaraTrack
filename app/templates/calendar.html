@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Calendario</h1>
+<p class="page-hint">Episodios del próximo mes (y los últimos 7 días, plegados al final).</p>
+<div class="page-actions">
+    <a class="btn secondary" href="/calendario/anual">Calendario de temporada</a>
+    <form method="post" action="/calendario/sincronizar" style="display:contents">
+        <button type="submit" class="secondary">Sincronizar ahora</button>
+    </form>
+</div>
+
+{% if sync_status.finished_at %}
+<p class="sync-status{{ ' error' if not sync_status.ok else '' }}">
+    {% if sync_status.ok %}
+    Último sync: {{ sync_status.finished_at|fmt_ago }} · {{ sync_status.duration_seconds|fmt_sync_duration }} · {{ sync_status.titles }} títulos{% if sync_status.errors %}, {{ sync_status.errors }} fallos{% endif %}
+    {% else %}
+    El último sync falló ({{ sync_status.finished_at|fmt_ago }}): {{ sync_status.error_message }}
+    {% endif %}
+</p>
+{% endif %}
+
+{% if not days and not past_days %}
+<div class="empty-state">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></span>
+    <h3>Nada en la ventana de fechas</h3>
+    <p>Si acabas de añadir series nuevas, pulsa "Sincronizar ahora" arriba.</p>
+</div>
+{% endif %}
+
+{% macro day_section(day, items) %}
+<div class="cal-day {{ 'cal-today' if day == today else '' }}">
+    <h2 class="cal-day-title">{{ day|fmt_day }}</h2>
+    <div class="cal-grid">
+        {% for item in items %}
+        {% set visto = item.watched_at or item.auto_watch %}
+        <a class="cal-card {{ 'cal-watched' if visto else '' }}" href="/titulo/{{ item.tmdb_id }}/show">
+            <div class="cal-card-poster">
+                <img src="{{ item.poster_path|poster_size('w185') if item.poster_path else '/static/img/sin-portada.svg' }}"{% if item.poster_path %} srcset="{{ item.poster_path|poster_size('w185') }} 1x, {{ item.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ item.title }}" loading="lazy">
+                {% if not visto and day <= today %}<span class="cal-new">Nuevo</span>{% endif %}
+                {% if visto %}<span class="cal-seen">Visto</span>{% endif %}
+            </div>
+            <div class="cal-card-title">{{ item.title }}</div>
+            <div class="cal-card-ep">T{{ item.season_number }}E{{ item.episode_number }}{% if item.ep_name %} · {{ item.ep_name }}{% endif %}</div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endmacro %}
+
+{% for day, items in days.items() %}
+{{ day_section(day, items) }}
+{% endfor %}
+
+{% if past_days %}
+<details class="cal-past">
+    <summary>Días anteriores</summary>
+    {% for day, items in past_days.items() %}
+    {{ day_section(day, items) }}
+    {% endfor %}
+</details>
+{% endif %}
+{% endblock %}

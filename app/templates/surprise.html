@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Sorpréndeme</h1>
+{% if not entry %}
+<div class="empty-state">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg></span>
+    <h3>No tienes pendientes con este filtro</h3>
+    <p>Prueba con otro tipo o añade algo nuevo a pendientes.</p>
+</div>
+{% else %}
+<div class="review-card">
+    <div class="nsfw-frame">
+        <img class="review-poster {{ 'nsfw-img' if entry.is_adult }}" src="{{ entry.poster_path|poster_size('w342') if entry.poster_path else '/static/img/sin-portada.svg' }}"{% if entry.poster_path %} srcset="{{ entry.poster_path|poster_size('w342') }} 1x, {{ entry.poster_path|poster_size('w500') }} 2x"{% endif %} alt="{{ entry.title }}">
+        {% if entry.is_adult %}
+        <input type="checkbox" id="nsfw-surprise" class="nsfw-check">
+        <label for="nsfw-surprise" class="nsfw-label">+18 · Toca para ver</label>
+        {% endif %}
+    </div>
+    <div class="review-info">
+        <h2>{{ entry.title }}</h2>
+        <div class="year">{{ entry.year or "—" }} · {{ "Serie" if entry.type == "show" else "Película" }}{% if entry.vote_average %} · Internet: {{ entry.vote_average|fmt_rating(1) }}{% endif %}</div>
+        {% if entry.overview %}<p class="overview">{{ entry.overview }}</p>{% endif %}
+    </div>
+    <div class="review-actions">
+        <a class="btn" href="/titulo/{{ entry.tmdb_id }}/{{ entry.type }}">Ver ficha</a>
+        <a class="btn secondary" href="/sorprendeme?tipo={{ tipo }}&excluir={{ entry.tmdb_id }}">Otro</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

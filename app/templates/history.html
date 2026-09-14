@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Historial</h1>
+{% if not days %}
+<div class="empty-state">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></span>
+    <h3>Todavía no hay nada registrado</h3>
+    <p>En cuanto marques algo como visto, aparecerá aquí día a día.</p>
+</div>
+{% endif %}
+{% for day, items in days.items() %}
+<div class="cal-day">
+    <h2 class="cal-day-title">{{ day|fmt_day }}</h2>
+    {% for item in items %}
+    <div class="list-row hist-row">
+        <img src="{{ item.poster_path|poster_size('w185') if item.poster_path else '/static/img/sin-portada.svg' }}"{% if item.poster_path %} srcset="{{ item.poster_path|poster_size('w185') }} 1x, {{ item.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ item.title }}" loading="lazy">
+        <div class="info">
+            <a href="/titulo/{{ item.tmdb_id }}/{{ item.type }}">{{ item.title }}</a>
+            <div class="year">{{ item.detail }}</div>
+        </div>
+        <span class="year">{{ item.at[11:16] if item.at and item.at|length > 11 else "" }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

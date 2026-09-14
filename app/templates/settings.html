@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Ajustes</h1>
+
+{# Jerarquia entre secciones (auditoria visual 2026-08-20): "Tus datos" y
+   "Sesion" son acciones simples y poco frecuentes, bajan a tarjetas compactas
+   en fila en vez de ocupar el mismo peso que el resto. #}
+<div class="settings-compact-row">
+    <div class="settings-section compact">
+        <div class="settings-compact-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <div>
+                <div class="settings-compact-title">Tus datos</div>
+                <div class="settings-compact-hint">Notas, listas y waifus en JSON</div>
+            </div>
+        </div>
+        <a class="btn secondary" href="/ajustes/exportar">Exportar</a>
+    </div>
+    <div class="settings-section compact">
+        <div class="settings-compact-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            <div>
+                <div class="settings-compact-title">Sesión</div>
+                <div class="settings-compact-hint">Este dispositivo</div>
+            </div>
+        </div>
+        <form method="post" action="/logout">
+            <button class="secondary">Cerrar sesión</button>
+        </form>
+    </div>
+</div>
+
+<div class="settings-section">
+    <h2>Perfil de gustos</h2>
+    <p class="page-hint">Títulos puntuados ya cubiertos por el perfil (para la predicción "% que te gustará" del calendario de temporada), día a día.</p>
+    {% if not profile_history %}
+    <p class="empty">Todavía no hay ninguna foto — vuelve mañana.</p>
+    {% else %}
+    <div class="stat-bars profile-bars">
+        {% for h in profile_history %}
+        <div class="stat-bar-row">
+            <span class="stat-bar-label wide">{{ h.date }}</span>
+            <div class="stat-bar-track">
+                <div class="stat-bar-fill" style="width: {{ (h.covered / h.total_rated * 100) if h.total_rated else 0 }}%"></div>
+            </div>
+            <span class="stat-bar-count">{{ h.covered }}/{{ h.total_rated }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="settings-section hero">
+    <div class="section-head">
+        <h2>Índice de afinidad — pesos</h2>
+        <span class="hero-tag">Avanzado</span>
+    </div>
+    <p class="page-hint">Cómo se combinan las señales de apetito y calidad en /estadísticas y en la predicción "% que te gustará". Guardar recalcula el perfil en segundo plano, tarda alrededor de un minuto en aplicarse.</p>
+
+    {# Estado de recalculo + "Ver calibracion" + el desplegable, los 3 en fila en
+       vez de apilados como una lista (Tara: "los 3 botones en paralelo y no en
+       lista"). #}
+    <div class="hero-controls">
+        <div hx-get="/afinidad/estado" hx-trigger="load" hx-swap="outerHTML"></div>
+        <a class="btn secondary" href="/afinidad/calibracion">Ver calibración de la predicción</a>
+        <input type="checkbox" id="weights-toggle" class="weights-toggle-check">
+        <label for="weights-toggle" class="weights-summary">
+            <span>Ver / editar pesos</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </label>
+    </div>
+    <div class="weights-body">
+    <form method="post" action="/ajustes/afinidad" class="affinity-weights-form">
+        <fieldset class="weight-section">
+            <legend>Apetito</legend>
+            <div class="weight-grid">
+            {% for key, label in [("volumen","Volumen"), ("lift","Lift"), ("ritmo","Ritmo"), ("dia1","Día 1"), ("rewatch","Rewatch"), ("curacion","Curación")] %}
+            <div class="weight-field">
+                <label>{{ label }}</label>
+                <input type="number" step="0.01" name="appetite_weights__{{ key }}" value="{{ affinity_config.appetite_weights[key] }}">
+                <span class="weight-hint">por defecto: {{ affinity_defaults.appetite_weights[key] }}</span>
+            </div>
+            {% endfor %}
+            </div>
+        </fieldset>
+        <fieldset class="weight-section">
+            <legend>Calidad</legend>
+            <div class="weight-grid">
+            {% for key, label in [("techo","Techo"), ("suelo","Suelo"), ("disfrute","Disfrute"), ("media","Media suavizada"), ("elo","Corrección Elo")] %}
+            <div class="weight-field">
+                <label>{{ label }}</label>
+                <input type="number" step="0.01" name="quality_weights__{{ key }}" value="{{ affinity_config.quality_weights[key] }}">
+                <span class="weight-hint">por defecto: {{ affinity_defaults.quality_weights[key] }}</span>
+            </div>
+            {% endfor %}
+            </div>
+        </fieldset>
+        <fieldset class="weight-section">
+            <legend>Combinación</legend>
+            <div class="weight-grid">
+            <div class="weight-field">
+                <label>Exponente apetito</label>
+                <input type="number" step="0.01" name="appetite_exp" value="{{ affinity_config.appetite_exp }}">
+                <span class="weight-hint">por defecto: {{ affinity_defaults.appetite_exp }}</span>
+            </div>
+            <div class="weight-field">
+                <label>Exponente calidad</label>
+                <input type="number" step="0.01" name="quality_exp" value="{{ affinity_config.quality_exp }}">
+                <span class="weight-hint">por defecto: {{ affinity_defaults.quality_exp }}</span>
+            </div>
+            <div class="weight-field">
+                <label>Umbral de desfase</label>
+                <input type="number" step="1" name="gap_threshold" value="{{ affinity_config.gap_threshold }}">
+                <span class="weight-hint">por defecto: {{ affinity_defaults.gap_threshold }}</span>
+            </div>
+            <div class="weight-field">
+                <label>Castigo por desfase</label>
+                <input type="number" step="0.01" name="gap_factor" value="{{ affinity_config.gap_factor }}">
+                <span class="weight-hint">por defecto: {{ affinity_defaults.gap_factor }}</span>
+            </div>
+            </div>
+        </fieldset>
+        <fieldset class="weight-section">
+            <legend>Predicción "% que te gustará"</legend>
+            <div class="weight-grid">
+            {% for key, label in [("precuela","Precuela puntuada"), ("cross_rec","Cross-recs AniList"), ("estudio","Estudio"), ("tags","Tags"), ("genero","Género")] %}
+            <div class="weight-field">
+                <label>{{ label }}</label>
+                <input type="number" step="0.1" name="predict_weights__{{ key }}" value="{{ affinity_config.predict_weights[key] }}">
+                <span class="weight-hint">por defecto: {{ affinity_defaults.predict_weights[key] }}</span>
+            </div>
+            {% endfor %}
+            </div>
+        </fieldset>
+        <div class="weights-actions">
+            <button class="secondary" type="submit">Guardar y recalcular</button>
+        </div>
+    </form>
+    <form method="post" action="/ajustes/afinidad/restablecer">
+        <button class="btn-text" type="submit">Restablecer por defecto</button>
+    </form>
+    </div>
+</div>
+
+<div class="settings-section">
+    <h2>Títulos con BAN</h2>
+    <p class="page-hint">Estos ya no salen en Recomendados. Quítalos de aquí si te equivocaste.</p>
+    {% if not rechazados %}
+    <p class="empty">Ninguno todavía.</p>
+    {% endif %}
+    {% for r in rechazados %}
+    <div class="list-row">
+        <img src="{{ r.poster_path|poster_size('w185') if r.poster_path else '/static/img/sin-portada.svg' }}"{% if r.poster_path %} srcset="{{ r.poster_path|poster_size('w185') }} 1x, {{ r.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ r.title }}" loading="lazy">
+        <div class="info">
+            <span>{{ r.title }}</span>
+            <div class="year">{{ "Serie" if r.type == "show" else "Película" }}</div>
+        </div>
+        <form method="post" action="/ajustes/rechazados/{{ r.id }}/quitar">
+            <button class="secondary">Quitar del ban</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

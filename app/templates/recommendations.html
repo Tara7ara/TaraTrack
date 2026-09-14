@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Recomendados</h1>
+<div class="sort-bar">
+    <a href="/recomendados" class="{{ 'active' if not tipo }}">Mix</a>
+    <a href="/recomendados?tipo=series" class="{{ 'active' if tipo == 'series' }}">Series</a>
+    <a href="/recomendados?tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}">Pelis</a>
+</div>
+<div class="page-actions">
+    <a class="btn secondary" href="/recomendados{{ '?tipo=' + tipo if tipo }}">Otra tanda</a>
+</div>
+
+{% if not recs %}
+<div class="empty-state">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg></span>
+    <h3>Todavía no hay de dónde tirar</h3>
+    <p>Puntúa cosas (8.5 o más) o mete títulos en Favoritos y vuelve por aquí.</p>
+</div>
+{% endif %}
+
+<div class="grid discover" id="rec-grid">
+{% for r in recs %}
+<div class="card" id="rec-{{ r.tmdb_id }}">
+    <div class="nsfw-frame">
+        <a href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">
+            {% if r.poster_url %}
+            <img class="{{ 'nsfw-img' if r.adult }}" src="{{ r.poster_url }}" alt="{{ r.title }}" loading="lazy">
+            {% else %}
+            <img src="/static/img/sin-portada.svg" alt="Sin portada">
+            {% endif %}
+        </a>
+        {% if r.adult %}
+        <input type="checkbox" id="nsfw-r-{{ r.tmdb_id }}" class="nsfw-check">
+        <label for="nsfw-r-{{ r.tmdb_id }}" class="nsfw-label">+18 · Toca para ver</label>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <a class="card-title" href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">{{ r.title }}</a>
+        <div class="card-year">{{ r.year or "—" }} · {{ "Serie" if r.type == "show" else "Película" }}{% if r.vote_average %} · Internet: {{ r.vote_average|fmt_rating(1) }}{% endif %}</div>
+        {% if r.seeds %}<div class="rec-seeds">Porque te gustó {{ r.seeds|join(", ") }}</div>{% endif %}
+        {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = "new" %}
+        {% include "partials/entry_actions.html" %}
+        <form hx-post="/recomendados/rechazar" hx-target="#rec-{{ r.tmdb_id }}" hx-swap="outerHTML" style="margin:0">
+            <input type="hidden" name="tmdb_id" value="{{ r.tmdb_id }}">
+            <input type="hidden" name="type" value="{{ r.type }}">
+            <input type="hidden" name="title" value="{{ r.title }}">
+            <input type="hidden" name="poster_path" value="{{ r.poster_url or '' }}">
+            <input type="hidden" name="seed_title" value="{{ r.seeds[0] if r.seeds else '' }}">
+            <button class="secondary rec-dislike" title="No lo recomiendes más">BAN</button>
+        </form>
+    </div>
+</div>
+{% endfor %}
+</div>
+{% endblock %}

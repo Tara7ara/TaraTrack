@@ -1,0 +1,5 @@
+{% if ok %}
+<a class="btn secondary char-add" href="/titulo/{{ tmdb_id }}/{{ type }}">✓ Añadido</a>
+{% else %}
+<a class="btn secondary char-add" href="/buscar?q={{ title|urlencode }}">No encontrado, buscar</a>
+{% endif %}

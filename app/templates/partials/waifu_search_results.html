@@ -1,0 +1,39 @@
+{% if not results and not externals and query %}
+{% if api_down %}
+<p class="empty">MyAnimeList no responde ahora mismo, prueba en un rato.</p>
+{% else %}
+<p class="empty">Nada con «{{ query }}».</p>
+{% endif %}
+{% endif %}
+{% for c in results %}
+<div class="char-card">
+    <img src="{{ c.profile_path or '/static/img/sin-portada.svg' }}" alt="{{ c.character_name or c.name }}" loading="lazy">
+    <div class="char-name">{{ c.character_name or c.name }}</div>
+    <span class="char-show">{{ c.show_title }}</span>
+    <button class="fav-star {{ 'is-fav' if c.is_favorite else '' }}"
+            hx-post="/personaje/{{ c.id }}/favorito/{{ c.entry_id }}"
+            hx-target="closest .char-card"
+            hx-swap="outerHTML"
+            title="Personaje favorito">
+        {{ "★" if c.is_favorite else "☆" }}
+    </button>
+</div>
+{% endfor %}
+{% for r in externals %}
+<div class="char-card">
+    <img src="{{ r.image_url or '/static/img/sin-portada.svg' }}" alt="{{ r.name }}" loading="lazy">
+    <div class="char-name">{{ r.name }}</div>
+    <span class="char-show">{{ r.media|join(", ") }}</span>
+    {% if r.match %}
+    <form method="post" action="/waifus/anadir">
+        <input type="hidden" name="title_id" value="{{ r.match.title_id }}">
+        <input type="hidden" name="char_id" value="{{ r.id }}">
+        <input type="hidden" name="name" value="{{ r.name }}">
+        <input type="hidden" name="image_url" value="{{ r.image_url or '' }}">
+        <button class="secondary char-add">Añadir a waifus</button>
+    </form>
+    {% else %}
+    <span class="char-show">Su serie no está en tu biblioteca</span>
+    {% endif %}
+</div>
+{% endfor %}

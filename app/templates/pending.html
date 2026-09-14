@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block content %}
+{# Sync suave movil->escritorio (Tara, notas.txt: "le doy algo al telefono, abro el
+   ordenador, no se modifica al instante") - sin websockets ni polling en bucle, solo
+   vuelve a pedir esta pagina cuando la pestaña recupera el foco de verdad (evento
+   nativo `visibilitychange` del documento, filtrado a "visible"), htmx puro sin JS
+   nuevo. Envuelve TODO el contenido (no solo #pendientes-section) porque "Continuar
+   viendo"/"nuevas" tambien pueden quedar desactualizados, no solo la lista. #}
+<div id="pendientes-page"
+     hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo={{ tipo }}"
+     hx-select="#pendientes-page" hx-target="#pendientes-page" hx-swap="outerHTML"
+     hx-trigger="visibilitychange[document.visibilityState=='visible'] from:document">
+
+{% if continuar %}
+<h1>Continuar viendo</h1>
+<div class="carousel">
+    {% for c in continuar %}
+    {% include "partials/home_card.html" %}
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if nuevas %}
+<h1{% if continuar %} class="section-gap"{% endif %}>Animes pendientes de la temporada</h1>
+<div class="carousel">
+    {% for c in nuevas %}
+    {% include "partials/home_card.html" %}
+    {% endfor %}
+</div>
+{% endif %}
+
+<h1{% if continuar or nuevas %} class="section-gap"{% endif %}>Pendientes</h1>
+<p class="page-hint">{{ entries|length }} título{{ "s" if entries|length != 1 else "" }} pendiente{{ "s" if entries|length != 1 else "" }}{% if nuevas %} · {{ nuevas|length }} de esta temporada{% endif %}</p>
+<form class="filter-bar" action="/pendientes" method="get">
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    <input type="hidden" name="direccion" value="{{ direccion }}">
+    <input type="text" name="q" value="{{ q }}" placeholder="Buscar en pendientes..." autocomplete="off"
+           hx-get="/pendientes" hx-include="closest form"
+           hx-trigger="input changed delay:400ms, search"
+           hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
+    <span class="sort-control">
+    <select name="orden" hx-get="/pendientes" hx-include="closest form"
+            hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
+        <option value="anadido" {{ "selected" if orden == "anadido" }}>Añadido</option>
+        <option value="lanzamiento" {{ "selected" if orden == "lanzamiento" }}>Estreno</option>
+        <option value="nota_internet" {{ "selected" if orden == "nota_internet" }}>Nota internet</option>
+        <option value="titulo" {{ "selected" if orden == "titulo" }}>Título</option>
+        <option value="prediccion" {{ "selected" if orden == "prediccion" }}>Predicción</option>
+    </select>
+    <a class="btn secondary sort-dir" title="Cambiar a {{ 'ascendente' if direccion == 'desc' else 'descendente' }}"
+       href="/pendientes?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
+       hx-get="/pendientes?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
+       hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
+        {{ "↓" if direccion == "desc" else "↑" }}
+    </a>
+    </span>
+    {% if generos %}
+    <select name="genero" hx-get="/pendientes" hx-include="closest form"
+            hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
+        <option value="">Todos los géneros</option>
+        {% for g in generos %}
+        <option value="{{ g }}" {{ "selected" if g == genero }}>{{ g }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
+    <label class="filter-checkbox">
+        <input type="checkbox" name="afinidad_alta" value="1" {{ "checked" if afinidad_alta }}
+               hx-get="/pendientes" hx-include="closest form"
+               hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
+        Solo 95%+
+    </label>
+    <a class="btn secondary" href="/sorprendeme?tipo={{ tipo }}">Sorpréndeme</a>
+</form>
+<div id="pendientes-section">
+<div class="sort-bar">
+    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if not tipo }}"
+       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Todo</a>
+    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=series" class="{{ 'active' if tipo == 'series' }}"
+       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=series" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Series</a>
+    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}"
+       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=pelis" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Pelis</a>
+    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=anime" class="{{ 'active' if tipo == 'anime' }}"
+       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=anime" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Anime</a>
+</div>
+<div id="pendientes-list">
+{% if not entries and not continuar %}
+{# Estado vacio "primera vez" con personalidad (auditoria visual 2026-08-20,
+   mismo componente .empty-state ya usado en /buscar) - distinto del filtrado de
+   abajo: icono de bandeja (nada añadido aun) en vez de lupa (nada con este
+   filtro). #}
+<div class="empty-state">
+    <span class="empty-icon">
+        <svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+    </span>
+    <h3>Nada pendiente todavía</h3>
+    <p>Busca una serie o película y añádela para empezar a hacer seguimiento.</p>
+    <a href="/buscar" class="manual-link-inline">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        Buscar algo
+    </a>
+</div>
+{% elif not entries %}
+<div class="empty-state">
+    <span class="empty-icon">
+        <svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8.3" y1="8.3" x2="13.7" y2="13.7" stroke-width="1.3"></line><line x1="13.7" y1="8.3" x2="8.3" y2="13.7" stroke-width="1.3"></line></svg>
+    </span>
+    <h3>{{ "Nada con «" + q + "»" if q else "Nada con este filtro" }}</h3>
+    <p>Prueba a cambiar el filtro o busca otro título.</p>
+</div>
+{% endif %}
+{% for e in entries %}
+<div class="list-row swipeable">
+    <div class="swipe-bg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span>Vista</span>
+    </div>
+    <div class="swipe-content">
+        {% if e.poster_path %}
+        <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
+        {% else %}
+        <img src="/static/img/sin-portada.svg" alt="Sin portada" loading="lazy">
+        {% endif %}
+        <div class="info">
+            <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">{{ e.title }}</a>
+            <div class="meta-row">
+                <span class="meta-chip">{{ e.year or "—" }} · {{ "Serie" if e.type == "show" else "Película" }}</span>
+                {% if e.vote_average %}<span class="meta-chip rating">Internet: {{ e.vote_average|fmt_rating(1) }}</span>{% endif %}
+                {% if e.predict is not none %}<span class="meta-chip rating">{{ e.predict }}%</span>{% endif %}
+            </div>
+        </div>
+        {% set tmdb_id = e.tmdb_id %}{% set type = e.type %}{% set state = "pending" %}
+        {% include "partials/entry_actions.html" %}
+    </div>
+</div>
+{% endfor %}
+</div>
+</div>
+
+</div>
+{% endblock %}

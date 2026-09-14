@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="decision-header">
+<h1>{{ duelo_titulo }}</h1>
+{% if coverage %}
+<p class="page-hint">
+    {% if coverage.done %}
+    ✓ Todos los elementos tienen ya al menos {{ coverage.min_duels }} duelos jugados.
+    {% else %}
+    Faltan ~{{ coverage.remaining }} duelos para que los {{ coverage.total }} tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }} ya cubiertos).
+    {% endif %}
+</p>
+{% endif %}
+</div>
+{% if pair|length < 2 %}
+<div class="empty-state">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg></span>
+    <h3>Hacen falta más elementos</h3>
+    <p>Necesitas al menos 2 en {{ duelo_ambito }} para poder jugar duelos.</p>
+</div>
+<div class="duel-nav">
+    <a href="{{ duelo_volver }}">Ver ranking actual</a>
+</div>
+{% else %}
+<p class="page-hint decision-intro">Elige cuál prefieres</p>
+<form id="duel-form" method="post" action="{{ duelo_url }}">
+    <input type="hidden" name="a_id" value="{{ pair[0].id }}">
+    <input type="hidden" name="b_id" value="{{ pair[1].id }}">
+</form>
+<div class="duel-grid">
+    {% for item in pair %}
+    <button type="submit" form="duel-form" name="resultado" value="{{ '1' if loop.index0 == 0 else '0' }}" class="duel-pick">
+        <img src="{{ item.image or '/static/img/sin-portada.svg' }}" alt="{{ item.title }}" loading="lazy">
+        <span class="duel-title">{{ item.title }}</span>
+        {% if item.subtitle %}<span class="duel-subtitle">{{ item.subtitle }}</span>{% endif %}
+    </button>
+    {% if not loop.last %}<span class="duel-vs">VS</span>{% endif %}
+    {% endfor %}
+</div>
+<div class="page-actions duel-tie">
+    <button type="submit" form="duel-form" name="resultado" value="0.5" class="btn secondary">Empate</button>
+</div>
+<div class="duel-nav">
+    <a href="{{ duelo_url }}">Otro par</a>
+    <span class="sep">·</span>
+    <a href="{{ duelo_volver }}">Ver ranking actual</a>
+</div>
+{% endif %}
+{% endblock %}

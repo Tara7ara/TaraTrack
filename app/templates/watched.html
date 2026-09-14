@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Vistas</h1>
+{% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todo.</p>{% endif %}
+
+<form class="filter-bar" action="/vistas" method="get">
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    <input type="hidden" name="direccion" value="{{ direccion }}">
+    <input type="text" name="q" value="{{ q }}" placeholder="Buscar en vistas..." autocomplete="off"
+           hx-get="/vistas" hx-include="closest form"
+           hx-trigger="input changed delay:400ms, search"
+           hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
+    <span class="sort-control">
+    <select name="orden" hx-get="/vistas" hx-include="closest form"
+            hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
+        <option value="recientes" {{ "selected" if orden == "recientes" }}>Recientes</option>
+        <option value="mi_nota" {{ "selected" if orden == "mi_nota" }}>Mi nota</option>
+        <option value="nota_internet" {{ "selected" if orden == "nota_internet" }}>Nota internet</option>
+        <option value="duracion" {{ "selected" if orden == "duracion" }}>Duración</option>
+        <option value="anadido" {{ "selected" if orden == "anadido" }}>Añadido</option>
+        <option value="lanzamiento" {{ "selected" if orden == "lanzamiento" }}>Estreno</option>
+        <option value="titulo" {{ "selected" if orden == "titulo" }}>Título</option>
+        <option value="elo" {{ "selected" if orden == "elo" }}>Elo</option>
+    </select>
+    <a class="btn secondary sort-dir" title="Cambiar a {{ 'ascendente' if direccion == 'desc' else 'descendente' }}"
+       href="/vistas?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
+       hx-get="/vistas?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
+       hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
+        {{ "↓" if direccion == "desc" else "↑" }}
+    </a>
+    </span>
+    {% if generos %}
+    <select name="genero" hx-get="/vistas" hx-include="closest form"
+            hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
+        <option value="">Todos los géneros</option>
+        {% for g in generos %}
+        <option value="{{ g }}" {{ "selected" if g == genero }}>{{ g }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
+</form>
+
+<div id="vistas-section">
+<div class="sort-bar">
+    <a href="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}" class="{{ 'active' if not tipo }}"
+       hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Todo</a>
+    <a href="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=series" class="{{ 'active' if tipo == 'series' }}"
+       hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=series" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Series</a>
+    <a href="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}"
+       hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=pelis" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Pelis</a>
+    <a href="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=anime" class="{{ 'active' if tipo == 'anime' }}"
+       hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=anime" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Anime</a>
+</div>
+{% if entries|length > 2 %}
+<div class="page-actions tight">
+    <a class="btn secondary" href="/duelo">Jugar duelos (anime)</a>
+    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+    <details class="del-confirm">
+        <summary class="btn secondary danger">Reiniciar Elo</summary>
+        <form method="post" action="/duelo/elo/reiniciar">
+            <button class="danger-solid">Confirmar, todo a 1500 otra vez</button>
+        </form>
+    </details>
+</div>
+{% if coverage and not coverage.done %}
+<p class="page-hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>
+{% endif %}
+{% endif %}
+
+<div class="grid" id="vistas-grid">
+{% if not entries and q %}
+<div class="empty-state">
+    <span class="empty-icon">
+        <svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8.3" y1="8.3" x2="13.7" y2="13.7" stroke-width="1.3"></line><line x1="13.7" y1="8.3" x2="8.3" y2="13.7" stroke-width="1.3"></line></svg>
+    </span>
+    <h3>Nada con «{{ q }}»</h3>
+    <p>Prueba a cambiar el filtro o busca otro título.</p>
+</div>
+{% elif not entries %}
+<div class="empty-state">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
+    <h3>Todavía no has marcado nada como visto</h3>
+    <p>Cuando marques algo como visto, aparecerá aquí.</p>
+</div>
+{% endif %}
+{% for e in entries %}
+<div class="card">
+    {# La portada no llevaba a ningun sitio, solo el texto del titulo (Tara: "si
+       clickas a la img debería de llevar a la ficha técnica") - mismo patron que
+       ya usan search_results.html/recommendations.html. #}
+    <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
+        {% if e.poster_path %}
+        <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
+        {% else %}
+        <img src="/static/img/sin-portada.svg" alt="Sin portada">
+        {% endif %}
+    </a>
+    <div class="card-body">
+        <div style="display:flex; justify-content:space-between; align-items:start; gap:0.4rem;">
+            <a class="card-title" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">{{ e.title }}</a>
+            {% set entry_id = e.id %}{% set is_favorite = e.is_favorite %}
+            {% include "partials/favorite_button.html" %}
+        </div>
+        <div class="card-year">{{ e.year or "—" }} · {{ "Serie" if e.type == "show" else "Peli" }}</div>
+        {% if e.rating is not none %}
+        <div class="rating">{{ e.rating|fmt_rating }}/10</div>
+        {% else %}
+        <a class="btn" href="/marcar-vista/{{ e.tmdb_id }}/{{ e.type }}">Puntuar</a>
+        {% endif %}
+        {% if e.is_anime %}<div class="elo-badge">Elo {{ e.elo|round|int }} · {{ e.rd|elo_confidence }}</div>{% endif %}
+        {# Comentarios largos alargaban la fila mucho mas que el resto de la lista
+           (Tara: "hacer límite visual") - recortado aquí, el completo se sigue
+           viendo entero en la ficha técnica. #}
+        {% if e.comment %}<div class="comment">{{ e.comment|truncate(90) }}</div>{% endif %}
+        <div class="card-year">
+            {% if e.vote_average %}Internet: {{ e.vote_average|fmt_rating(1) }}{% endif %}
+            {% if e.runtime_minutes %}
+                {% if e.type == "show" and e.episode_count %}
+                 · {{ e.episode_count }} ep · {{ (e.episode_count * e.runtime_minutes)|fmt_duration }}
+                {% else %}
+                 · {{ e.runtime_minutes|fmt_duration }}
+                {% endif %}
+            {% endif %}
+        </div>
+        {% if e.watched_at %}<div class="card-year">Vista el {{ e.watched_at[:10] }}</div>{% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+</div>
+{% endblock %}

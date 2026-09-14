@@ -1,0 +1,19 @@
+<div class="actions">
+{% if state == "watched" %}
+    <button class="secondary" disabled>✓ Vista</button>
+    <a class="btn" href="/marcar-vista/{{ tmdb_id }}/{{ type }}?volver={{ volver or 'puntuar' }}">Puntuar</a>
+{% elif state == "pending" %}
+    <button class="secondary" title="Quitar de pendientes"
+            hx-get="/pendiente/{{ tmdb_id }}/{{ type }}/confirmar" hx-target="closest .actions" hx-swap="outerHTML">✓ En pendientes</button>
+    <button class="btn" hx-post="/vista/{{ tmdb_id }}/{{ type }}" hx-target="closest .actions" hx-swap="outerHTML">Marcar vista</button>
+{% elif state == "pending_confirm" %}
+    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+    <button class="secondary" title="Sí, quitarlo de pendientes"
+            hx-post="/pendiente/{{ tmdb_id }}/{{ type }}" hx-target="closest .actions" hx-swap="outerHTML">¿Quitar? Sí</button>
+    <button class="btn secondary" title="No, dejarlo"
+            hx-get="/pendiente/{{ tmdb_id }}/{{ type }}/estado" hx-target="closest .actions" hx-swap="outerHTML">No</button>
+{% else %}
+    <button class="secondary" hx-post="/pendiente/{{ tmdb_id }}/{{ type }}" hx-target="closest .actions" hx-swap="outerHTML">+ Pendientes</button>
+    <button class="btn" hx-post="/vista/{{ tmdb_id }}/{{ type }}" hx-target="closest .actions" hx-swap="outerHTML">Marcar vista</button>
+{% endif %}
+</div>

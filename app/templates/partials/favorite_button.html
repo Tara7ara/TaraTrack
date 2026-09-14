@@ -1,0 +1,7 @@
+<button class="fav-star {{ 'is-fav' if is_favorite else '' }}"
+        hx-post="/entrada/{{ entry_id }}/favorito"
+        hx-target="this"
+        hx-swap="outerHTML"
+        title="Favorito">
+    {{ "★" if is_favorite else "☆" }}
+</button>

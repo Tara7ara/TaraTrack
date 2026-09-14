@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% macro afinidad_scatter(items) %}
+{% if items %}
+{% set max_i = (items|map(attribute="inercia")|map("abs")|max) or 1 %}
+<div class="diverging-list">
+    {% for a in items %}
+    <div class="diverging-row">
+        <div class="affinity-head">
+            <span class="stat-bar-label wide">{{ a.name }}</span>
+            <span class="diverging-value {{ 'positive' if a.inercia > 0 else 'negative' }}">{{ "%+d"|format(a.inercia) }}</span>
+        </div>
+        <div class="diverging-track">
+            <div class="diverging-zero"></div>
+            <div class="diverging-fill {{ 'positive' if a.inercia > 0 else 'negative' }}" style="width: {{ (a.inercia|abs / max_i * 50)|round(1) }}%"></div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+<h1>Estadísticas</h1>
+<div class="content-medium">
+
+{# Dos tabs reales en vez de un "Ver desglose completo" que escondia
+   practicamente otra pagina entera (cuarto analisis, 2026-08-21: "vuelven barras,
+   afinidad, explicaciones... no parecen pertenecer al mismo bloque"). CSS puro
+   (radio + label + ~), mismo patron sin JS que el resto de la app. #}
+<input type="radio" name="stats-tab" id="stats-tab-resumen" class="stats-tab-radio" checked>
+<input type="radio" name="stats-tab" id="stats-tab-perfil" class="stats-tab-radio">
+<div class="sort-bar stats-tabs">
+    <label for="stats-tab-resumen">Resumen</label>
+    <label for="stats-tab-perfil">Perfil de gustos</label>
+</div>
+
+<div class="stats-panel-resumen">
+<div class="page-actions">
+    <a class="btn secondary" href="/resumen">Ver resumen anual</a>
+    <a class="btn secondary" href="/discrepancias">Dónde discrepas con la crítica</a>
+</div>
+
+<div class="stat-hero-row">
+    <div class="stat-tile hero"><span class="stat-num">{{ stats.totals.episodes_watched }}</span><span class="stat-label">episodios vistos</span></div>
+    <div class="stat-tile hero"><span class="stat-num">{{ (stats.total_minutes / 60 / 24)|round(1) }}</span><span class="stat-label">días viendo</span></div>
+</div>
+<div class="stat-tiles">
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.shows_watched }}</span><span class="stat-label">series vistas</span></div>
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.movies_watched }}</span><span class="stat-label">pelis vistas</span></div>
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.pending }}</span><span class="stat-label">pendientes</span></div>
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.avg_rating or "—" }}</span><span class="stat-label">nota media ({{ stats.totals.rated }} con nota)</span></div>
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.waifus }}</span><span class="stat-label">waifus</span></div>
+    <a class="stat-tile" href="/estadisticas/episodios-favoritos"><span class="stat-num">{{ stats.totals.fav_episodes }}</span><span class="stat-label">eps favoritos</span></a>
+</div>
+
+{# Punto 6 del segundo analisis (2026-08-21): "episodios vistos y dias viendo son
+   metricas, no una historia - deberia darte una observacion personal que te
+   apetezca mirar". Generado con datos que YA existen en el contexto, sin tocar
+   el backend. #}
+{% if taste.covered and taste.top_inercia %}
+{% set top = taste.top_inercia[0] %}
+<div class="stat-insight">
+    {% if top.inercia > 0 %}
+    <p>Persigues <strong>{{ top.name }}</strong> ({{ top.tipo_es }}) más de lo que en el fondo te convence — es tu costumbre más marcada ahora mismo.</p>
+    {% else %}
+    <p><strong>{{ top.name }}</strong> ({{ top.tipo_es }}) te encanta mucho más de lo que sueles buscarlo — quizá te apetezca ver más.</p>
+    {% endif %}
+</div>
+{% elif stats.top_genres %}
+<div class="stat-insight">
+    <p>Tu género favorito es <strong>{{ stats.top_genres[0][0] }}</strong>, con {{ stats.top_genres[0][1] }} episodios vistos.</p>
+</div>
+{% endif %}
+</div>
+
+<div class="stats-panel-perfil">
+    {% if taste.covered %}
+    <h2>Dónde tiendes a la costumbre o infravaloras</h2>
+    <p class="page-hint">Apetito (cuánto lo buscas) frente a calidad (cuánto te llega cuando acierta) — {{ taste.covered }} títulos con perfil. En rojo, lo que persigues más de lo que en el fondo te gusta; en verde, lo que te encanta pero casi no buscas.</p>
+    <div class="diverging-list">
+        {% for a in taste.top_inercia %}
+        <div class="diverging-row">
+            <div class="affinity-head">
+                <span class="stat-bar-label wide">{{ a.tipo_es }}: {{ a.name }}</span>
+                <span class="diverging-value {{ 'positive' if a.inercia > 0 else 'negative' }}">{{ "%+d"|format(a.inercia) }}</span>
+            </div>
+            <div class="diverging-track">
+                <div class="diverging-zero"></div>
+                <div class="diverging-fill {{ 'positive' if a.inercia > 0 else 'negative' }}" style="width: {{ (a.inercia|abs / taste.max_inercia * 50)|round(1) }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="stats-columns section-gap">
+    <div class="stat-section">
+    <h2>Mis notas</h2>
+    {% set max_h = stats.histogram.values()|max if stats.histogram else 1 %}
+    <div class="stat-bars">
+        {% for bucket in range(1, 11) %}
+        {% set count = stats.histogram.get(bucket, 0) %}
+        <div class="stat-bar-row">
+            <span class="stat-bar-label">{{ bucket }}</span>
+            <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (count / max_h * 100)|round }}%"></div></div>
+            <span class="stat-bar-count">{{ count or "" }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    </div>
+
+    <div class="stat-section">
+    <h2>Géneros más vistos</h2>
+    {% set max_g = stats.top_genres[0][1] if stats.top_genres else 1 %}
+    <div class="stat-bars">
+        {% for genre, count in stats.top_genres %}
+        <div class="stat-bar-row">
+            <span class="stat-bar-label wide">{{ genre }}</span>
+            <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (count / max_g * 100)|round }}%"></div></div>
+            <span class="stat-bar-count">{{ count }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    </div>
+
+    <div class="stat-section">
+    <h2>Episodios por mes (último año)</h2>
+    {% set max_m = stats.monthly|map(attribute="c")|max if stats.monthly else 1 %}
+    <div class="stat-bars">
+        {% for row in stats.monthly %}
+        <div class="stat-bar-row">
+            <span class="stat-bar-label wide">{{ row.month }}</span>
+            <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (row.c / max_m * 100)|round }}%"></div></div>
+            <span class="stat-bar-count">{{ row.c }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    </div>
+    </div>
+
+    {% if taste.covered %}
+    <h2 class="section-gap stat-section-head"><svg class="stat-section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"></circle></svg>Índice de afinidad — género (AniList)</h2>
+    <p class="page-hint">Apetito (cuánto lo buscas) y calidad (cuánto te llega cuando acierta) combinados — {{ taste.covered }} títulos con perfil. Solo géneros/tags/estudios con al menos 3 títulos.</p>
+    {{ afinidad_scatter(taste.genres) }}
+
+    <h2 class="stat-section-head"><svg class="stat-section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="4" x2="8" y2="20"></line><line x1="16" y1="4" x2="14" y2="20"></line></svg>Índice de afinidad — tag (AniList)</h2>
+    {{ afinidad_scatter(taste.tags) }}
+
+    <h2 class="stat-section-head"><svg class="stat-section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1"></rect><line x1="8" y1="7" x2="8" y2="7.01"></line><line x1="12" y1="7" x2="12" y2="7.01"></line><line x1="8" y1="11" x2="8" y2="11.01"></line><line x1="12" y1="11" x2="12" y2="11.01"></line><line x1="8" y1="15" x2="16" y2="15"></line><line x1="8" y1="18" x2="16" y2="18"></line></svg>Índice de afinidad — estudio</h2>
+    {{ afinidad_scatter(taste.studios) }}
+    {% endif %}
+</div>
+</div>
+{% endblock %}

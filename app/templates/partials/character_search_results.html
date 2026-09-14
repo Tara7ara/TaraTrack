@@ -1,0 +1,20 @@
+{% if not results and query %}
+{% if api_down %}
+<p class="empty">MyAnimeList no responde ahora mismo, prueba en un rato.</p>
+{% else %}
+<p class="empty">Nada con «{{ query }}».</p>
+{% endif %}
+{% endif %}
+{% for r in results %}
+<div class="char-card">
+    <img src="{{ r.image_url or '/static/img/sin-portada.svg' }}" alt="{{ r.name }}" loading="lazy">
+    <div class="char-name">{{ r.name }}</div>
+    {% if r.media %}<span class="char-show">{{ r.media|join(", ") }}</span>{% endif %}
+    <form method="post" action="/titulo/{{ tmdb_id }}/{{ type }}/personajes/anadir">
+        <input type="hidden" name="char_id" value="{{ r.id }}">
+        <input type="hidden" name="name" value="{{ r.name }}">
+        <input type="hidden" name="image_url" value="{{ r.image_url or '' }}">
+        <button class="secondary char-add">Añadir</button>
+    </form>
+</div>
+{% endfor %}

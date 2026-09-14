@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# Solo lo que casi siempre es un bug real (imports/variables sin usar, nombres
+# indefinidos, sintaxis, imports desordenados) - nada de reglas de estilo/opinion
+# (docstrings, "no captures Exception a pelo", shebangs...) que chocarian con
+# patrones ya deliberados del proyecto (ver CLAUDE.md: "except Exception" ancho
+# a proposito alrededor de llamadas a TMDB/AniList, para no tumbar rutas por un
+# fallo externo puntual). Empezar solo en modo revision (ruff check), sin --fix
+# automatico todavia - ampliar el select mas adelante si aporta.
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # linea larga - hay comentarios explicativos deliberadamente largos en este proyecto
+]

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Resumen anual</h1>
+
+{% if not years %}
+<p class="empty">Todavía no hay suficiente historial con fechas para un resumen.</p>
+{% else %}
+<div class="sort-bar">
+    {% for y in years %}
+    <a href="/resumen?anio={{ y }}" class="{{ 'active' if y == year }}">{{ y }}</a>
+    {% endfor %}
+</div>
+
+<div class="stat-tiles">
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.episodes_watched }}</span><span class="stat-label">episodios vistos</span></div>
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.movies_watched }}</span><span class="stat-label">pelis vistas</span></div>
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.shows_active }}</span><span class="stat-label">series seguidas</span></div>
+    <div class="stat-tile"><span class="stat-num">{{ (stats.total_minutes / 60 / 24)|round(1) }}</span><span class="stat-label">días viendo</span></div>
+</div>
+
+{% if stats.busiest_month %}
+<p class="page-hint">Tu mes más activo del {{ year }} fue <strong>{{ stats.busiest_month.month|fmt_month }}</strong>, con {{ stats.busiest_month.c }} episodios.</p>
+{% endif %}
+
+{# Layout en 2 bloques en paralelo (cuarto analisis, 2026-08-21: "barras de max
+   560px sin nada que llene el resto del ancho... en QHD se convierte en una
+   columna estrecha flotando a la izquierda"). Barras a la izquierda, titulos
+   destacados a la derecha - auto-fit colapsa a 1 columna sola si no hay
+   top_rated, sin dejar un hueco vacio. #}
+<div class="yearly-layout">
+<div class="yearly-bars">
+{% if stats.top_genres %}
+<h2>Lo tuyo este año</h2>
+{% set max_g = stats.top_genres[0][1] %}
+<div class="stat-bars">
+    {% for genre, count in stats.top_genres %}
+    <div class="stat-bar-row">
+        <span class="stat-bar-label wide">{{ genre }}</span>
+        <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (count / max_g * 100)|round }}%"></div></div>
+        <span class="stat-bar-count">{{ count }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if stats.monthly %}
+<h2>Episodios por mes</h2>
+{% set max_m = stats.monthly|map(attribute="c")|max %}
+<div class="stat-bars">
+    {% for row in stats.monthly %}
+    <div class="stat-bar-row">
+        <span class="stat-bar-label wide">{{ row.month|fmt_month }}</span>
+        <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (row.c / max_m * 100)|round }}%"></div></div>
+        <span class="stat-bar-count">{{ row.c }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+</div>
+
+{% if stats.top_rated %}
+<div class="yearly-highlights">
+<h2>Tus mejores notas del {{ year }}</h2>
+<div class="grid">
+    {% for r in stats.top_rated %}
+    <div class="card">
+        <img src="{{ r.poster_path|poster_size('w185') if r.poster_path else '/static/img/sin-portada.svg' }}"{% if r.poster_path %} srcset="{{ r.poster_path|poster_size('w185') }} 1x, {{ r.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ r.title }}" loading="lazy">
+        <div class="card-body">
+            <div class="card-title">{{ r.title }}</div>
+            <div class="rating">{{ r.rating|fmt_rating }}/10</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+</div>
+{% endif %}
+</div>
+{% endif %}
+{% endblock %}

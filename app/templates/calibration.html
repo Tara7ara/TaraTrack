@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Calibración de la predicción</h1>
+<p class="page-hint">Fase 6 del índice de afinidad: cuánto se acerca "% que te gustará" a la nota real, solo sobre títulos predichos Y ya puntuados.</p>
+
+{% if not cal.n %}
+<div class="empty-state">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg></span>
+    <h3>Todavía no hay pares que comparar</h3>
+    <p>En cuanto puntúes títulos que ya tenían una predicción "% que te gustará", aparecerán aquí.</p>
+</div>
+{% else %}
+<div class="stat-tiles">
+    <div class="stat-tile">
+        <span class="stat-num">{{ cal.n }}</span>
+        <span class="stat-label">títulos comparados</span>
+    </div>
+    <div class="stat-tile">
+        <span class="stat-num">{{ cal.mae|fmt_rating(1) }}</span>
+        <span class="stat-label">error medio absoluto (0-100)</span>
+    </div>
+</div>
+
+{# Mismo layout en 2 bloques que /resumen (cuarto analisis, 2026-08-21: barras de
+   560px sin nada que llene el resto en QHD). #}
+<div class="yearly-layout section-gap">
+<div class="yearly-bars">
+<h2 style="margin-top:0">Error por franja de predicción</h2>
+<div class="stat-bars">
+    {% for b in cal.bands %}
+    <div class="stat-bar-row">
+        <span class="stat-bar-label wide">{{ b.lo }}–{{ b.hi }}%</span>
+        {% if b.n %}
+        <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (b.mae / 50 * 100)|round }}%"></div></div>
+        <span class="stat-bar-count">MAE {{ b.mae|fmt_rating(1) }} · {{ "se queda corto" if b.bias > 0 else "se pasa" }} {{ (b.bias|abs)|fmt_rating(1) }} · n={{ b.n }}</span>
+        {% else %}
+        <div class="stat-bar-track"></div>
+        <span class="stat-bar-count">sin datos</span>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+</div>
+
+<div class="yearly-highlights">
+<h2 style="margin-top:0">Mayores sorpresas</h2>
+<p class="page-hint">Donde más se ha equivocado la predicción, en cualquier dirección.</p>
+<div class="grid">
+    {% for s in cal.surprises %}
+    <div class="card">
+        <a href="/titulo/{{ s.tmdb_id }}/{{ s.type }}">
+            <img src="{{ s.poster_path|poster_size('w185') if s.poster_path else '/static/img/sin-portada.svg' }}"{% if s.poster_path %} srcset="{{ s.poster_path|poster_size('w185') }} 1x, {{ s.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ s.title }}" loading="lazy">
+        </a>
+        <div class="card-body">
+            <a class="card-title" href="/titulo/{{ s.tmdb_id }}/{{ s.type }}">{{ s.title }}</a>
+            <div class="card-year">Predicho: {{ s.predicted }}% · Nota: {{ s.rating|fmt_rating }}</div>
+            <div class="rating">{{ "%+.0f"|format(s.diff) }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+</div>
+</div>
+{% endif %}
+{% endblock %}

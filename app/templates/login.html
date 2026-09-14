@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaraTrack — Entrar</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+    <meta name="theme-color" content="#0f0f0f">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/app.css?v={{ static_v }}">
+</head>
+<body>
+    <main class="container" style="max-width:420px; padding-top:3rem">
+        <h1 style="text-align:center; margin-bottom:1.5rem">TaraTrack</h1>
+        <form method="post" action="/login" class="form-page">
+            <input type="hidden" name="next" value="{{ next }}">
+            {% if error %}<p class="empty" style="color:var(--danger)">{{ error }}</p>{% endif %}
+            <div class="field">
+                <label for="login-password">Contraseña</label>
+                <input type="password" id="login-password" name="password" autofocus required>
+            </div>
+            <button type="submit">Entrar</button>
+        </form>
+    </main>
+</body>
+</html>

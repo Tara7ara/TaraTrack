@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="decision-header">
+<h1>Puntuar</h1>
+{% if entry %}
+<p class="page-hint">{{ total }} serie{{ "s" if total != 1 else "" }}/pelis importadas todavía sin nota.</p>
+{% endif %}
+</div>
+{% if not entry %}
+<div class="empty-state done">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
+    <h3>Al día</h3>
+    <p>No hay nada pendiente de puntuar ahora mismo.</p>
+</div>
+{% else %}
+<div class="review-card">
+    <a href="/titulo/{{ entry.tmdb_id }}/{{ entry.type }}" target="_blank" title="Ver ficha">
+        <img class="review-poster" src="{{ entry.poster_path|poster_size('w342') if entry.poster_path else '/static/img/sin-portada.svg' }}"{% if entry.poster_path %} srcset="{{ entry.poster_path|poster_size('w342') }} 1x, {{ entry.poster_path|poster_size('w500') }} 2x"{% endif %} alt="{{ entry.title }}">
+    </a>
+    <div class="review-info">
+        <h2>{{ entry.title }}</h2>
+        <div class="year">{{ entry.year or "—" }} · {{ "Serie" if entry.type == "show" else "Película" }}</div>
+    </div>
+    <div class="review-actions">
+        <a class="btn" href="/marcar-vista/{{ entry.tmdb_id }}/{{ entry.type }}?volver=puntuar">Puntuar esta</a>
+        <a class="btn secondary" href="/puntuar?excluir={{ excluir_siguiente }}">Paso, no me acuerdo</a>
+    </div>
+    <form method="post" action="/puntuar/{{ entry.id }}/no-recuerdo" class="review-actions" style="margin-top:0.5rem">
+        <button class="secondary">No me acuerdo de nada, 5 y ya</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

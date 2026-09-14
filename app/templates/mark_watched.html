@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="decision-header">
+<h1>Marcar como vista</h1>
+</div>
+<div class="form-page">
+    <div class="list-row" style="margin-top:0">
+        <a href="/titulo/{{ entry.tmdb_id }}/{{ entry.type }}" target="_blank" title="Ver ficha">
+            {% if entry.poster_path %}
+            <img src="{{ entry.poster_path|poster_size('w185') }}" srcset="{{ entry.poster_path|poster_size('w185') }} 1x, {{ entry.poster_path|poster_size('w342') }} 2x" alt="{{ entry.title }}">
+            {% else %}
+            <img src="/static/img/sin-portada.svg" alt="Sin portada">
+            {% endif %}
+        </a>
+        <div class="info">
+            <div>{{ entry.title }}</div>
+            <div class="year">{{ entry.year or "—" }}</div>
+        </div>
+    </div>
+    <form method="post" action="/marcar-vista/{{ entry.id }}">
+        <input type="hidden" name="volver" value="{{ volver or '' }}">
+
+        <h2 class="exam-title">El examen</h2>
+        <p class="cat-hint">Mueve cada barra para valorar. La que no toques no cuenta ni en la nota ni en el peso. Disfrute pesa más (x1.5), Música pesa menos (x0.5).</p>
+        {% for cat, label in [("historia", "Historia/guion"), ("animacion", "Animación/arte"), ("personajes", "Personajes"), ("musica", "Música"), ("disfrute", "Disfrute personal")] %}
+        {% set current = categories[cat] if categories and categories[cat] not in (none, "") else none %}
+        <div class="exam-q {{ 'rated' if current is not none }}">
+            <div class="exam-q-head">
+                <label for="slider_{{ cat }}">{{ label }}</label>
+                <span class="exam-q-value">{{ current if current is not none else "—" }}</span>
+                <button type="button" class="exam-q-clear" title="Sin valorar">&times;</button>
+            </div>
+            <input type="range" id="slider_{{ cat }}" min="0" max="10" step="0.5"
+                   data-weight="{{ weights[cat] }}" value="{{ current if current is not none else 5.5 }}">
+            <input type="hidden" name="cat_{{ cat }}" value="{{ current if current is not none else '' }}">
+        </div>
+        {% if errors and errors["cat_" + cat] %}<div class="error">{{ errors["cat_" + cat] }}</div>{% endif %}
+        {% endfor %}
+        <div class="exam-result">Nota final: <span id="nota-preview">—</span></div>
+        {% if errors and errors.rating %}<div class="error">{{ errors.rating }}</div>{% endif %}
+
+        <details class="categories" {{ "open" if rating else "" }}>
+            <summary>O poner una nota directa (sin examen)</summary>
+            <div class="field">
+                <label for="rating">Nota (0-10)</label>
+                <input type="number" id="rating" name="rating" min="0" max="10" step="0.1" inputmode="decimal"
+                       value="{{ rating if rating is not none else '' }}">
+                <p class="cat-hint">Si tocas alguna barra del examen, manda el examen y esta nota se ignora.</p>
+            </div>
+        </details>
+
+        <div class="field">
+            <label class="filter-checkbox" for="is_habit" style="font-size:0.95rem">
+                <input type="checkbox" id="is_habit" name="is_habit" value="1" {{ "checked" if is_habit }}>
+                Lo veo por costumbre, no tanto por gusto (hábito)
+            </label>
+        </div>
+
+        <div class="field">
+            <label for="comment">Comentario</label>
+            <textarea id="comment" name="comment" required placeholder="Qué te ha parecido...">{{ comment or '' }}</textarea>
+            {% if errors and errors.comment %}<div class="error">{{ errors.comment }}</div>{% endif %}
+        </div>
+        {% if volver != "puntuar" and volver != "ficha" %}
+        <div class="field">
+            <label for="watched_date">¿Cuándo la viste? (opcional, por defecto hoy)</label>
+            <input type="date" id="watched_date" name="watched_date" value="">
+            {% if entry.release_date %}
+            <button type="button" class="secondary" id="usar-estreno"
+                    data-release="{{ entry.release_date }}" style="margin-top:0.4rem">
+                Usar fecha de estreno ({{ entry.release_date }})
+            </button>
+            {% endif %}
+            <p class="cat-hint">Para registrar visionados antiguos con su fecha real (p. ej. cuando salió) en vez de la de hoy.</p>
+        </div>
+        {% endif %}
+        <button type="submit">Guardar</button>
+    </form>
+</div>
+<script>
+// El examen: la barra solo cuenta cuando la tocas (la X la devuelve a "sin valorar").
+// Misma formula ponderada que el backend, con los pesos que llegan en data-weight.
+(() => {
+    const questions = document.querySelectorAll(".exam-q");
+    const preview = document.getElementById("nota-preview");
+
+    function updateTotal() {
+        let total = 0, weight = 0;
+        questions.forEach((q) => {
+            const hidden = q.querySelector("input[type=hidden]");
+            const slider = q.querySelector("input[type=range]");
+            const value = parseFloat(hidden.value);
+            if (isNaN(value)) return;
+            total += value * parseFloat(slider.dataset.weight);
+            weight += parseFloat(slider.dataset.weight);
+        });
+        preview.textContent = weight ? (total / weight).toFixed(2).replace(/\.?0+$/, "") + "/10" : "—";
+    }
+
+    questions.forEach((q) => {
+        const slider = q.querySelector("input[type=range]");
+        const hidden = q.querySelector("input[type=hidden]");
+        const valueLabel = q.querySelector(".exam-q-value");
+        slider.addEventListener("input", () => {
+            hidden.value = slider.value;
+            valueLabel.textContent = slider.value;
+            q.classList.add("rated");
+            updateTotal();
+        });
+        q.querySelector(".exam-q-clear").addEventListener("click", () => {
+            hidden.value = "";
+            valueLabel.textContent = "—";
+            q.classList.remove("rated");
+            updateTotal();
+        });
+    });
+    updateTotal();
+
+    // Relleno rapido de "cuando la viste" con la fecha de estreno del titulo - para
+    // corregir visionados antiguos sin tener que ir a buscar la fecha a mano.
+    const usarEstreno = document.getElementById("usar-estreno");
+    if (usarEstreno) {
+        usarEstreno.addEventListener("click", () => {
+            document.getElementById("watched_date").value = usarEstreno.dataset.release;
+        });
+    }
+})();
+</script>
+{% endblock %}

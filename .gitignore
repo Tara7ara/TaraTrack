@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+data/
+*.db
+.env
+app/static/posters/*
+!app/static/posters/.gitkeep
+app/static/uploads/*
+!app/static/uploads/.gitkeep
+app/static/profiles/*
+!app/static/profiles/.gitkeep

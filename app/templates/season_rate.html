@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Puntuar temporada {{ season_number }}</h1>
+<div class="form-page">
+    <div class="list-row" style="margin-top:0">
+        {% if title_row.poster_path %}
+        <img src="{{ title_row.poster_path|poster_size('w185') }}" srcset="{{ title_row.poster_path|poster_size('w185') }} 1x, {{ title_row.poster_path|poster_size('w342') }} 2x" alt="{{ title_row.title }}">
+        {% else %}
+        <img src="/static/img/sin-portada.svg" alt="Sin portada">
+        {% endif %}
+        <div class="info">
+            <div>{{ title_row.title }}</div>
+            <div class="year">Temporada {{ season_number }}</div>
+        </div>
+    </div>
+    <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/temporada/{{ season_number }}/puntuar">
+        <h2 class="exam-title">El examen</h2>
+        <p class="cat-hint">Solo de esta temporada, aparte de la nota general de la serie.</p>
+        {% for cat, label in [("historia", "Historia/guion"), ("animacion", "Animación/arte"), ("personajes", "Personajes"), ("musica", "Música"), ("disfrute", "Disfrute personal")] %}
+        {% set current = categories[cat] if categories and categories[cat] not in (none, "") else none %}
+        <div class="exam-q {{ 'rated' if current is not none }}">
+            <div class="exam-q-head">
+                <label for="slider_{{ cat }}">{{ label }}</label>
+                <span class="exam-q-value">{{ current if current is not none else "—" }}</span>
+                <button type="button" class="exam-q-clear" title="Sin valorar">&times;</button>
+            </div>
+            <input type="range" id="slider_{{ cat }}" min="0" max="10" step="0.5"
+                   data-weight="{{ weights[cat] }}" value="{{ current if current is not none else 5.5 }}">
+            <input type="hidden" name="cat_{{ cat }}" value="{{ current if current is not none else '' }}">
+        </div>
+        {% endfor %}
+        <div class="exam-result">Nota final: <span id="nota-preview">—</span></div>
+
+        <details class="categories" {{ "open" if rating else "" }}>
+            <summary>O poner una nota directa (sin examen)</summary>
+            <div class="field">
+                <label for="rating">Nota (0-10)</label>
+                <input type="number" id="rating" name="rating" min="0" max="10" step="0.1" inputmode="decimal"
+                       value="{{ rating if rating is not none else '' }}">
+            </div>
+        </details>
+
+        <div class="field">
+            <label for="comment">Comentario (opcional)</label>
+            <textarea id="comment" name="comment" placeholder="Qué te ha parecido esta temporada...">{{ comment or '' }}</textarea>
+        </div>
+        <button type="submit">Guardar</button>
+    </form>
+</div>
+<script>
+(() => {
+    const questions = document.querySelectorAll(".exam-q");
+    const preview = document.getElementById("nota-preview");
+
+    function updateTotal() {
+        let total = 0, weight = 0;
+        questions.forEach((q) => {
+            const hidden = q.querySelector("input[type=hidden]");
+            const slider = q.querySelector("input[type=range]");
+            const value = parseFloat(hidden.value);
+            if (isNaN(value)) return;
+            total += value * parseFloat(slider.dataset.weight);
+            weight += parseFloat(slider.dataset.weight);
+        });
+        preview.textContent = weight ? (total / weight).toFixed(2).replace(/\.?0+$/, "") + "/10" : "—";
+    }
+
+    questions.forEach((q) => {
+        const slider = q.querySelector("input[type=range]");
+        const hidden = q.querySelector("input[type=hidden]");
+        const valueLabel = q.querySelector(".exam-q-value");
+        slider.addEventListener("input", () => {
+            hidden.value = slider.value;
+            valueLabel.textContent = slider.value;
+            q.classList.add("rated");
+            updateTotal();
+        });
+        q.querySelector(".exam-q-clear").addEventListener("click", () => {
+            hidden.value = "";
+            valueLabel.textContent = "—";
+            q.classList.remove("rated");
+            updateTotal();
+        });
+    });
+    updateTotal();
+})();
+</script>
+{% endblock %}

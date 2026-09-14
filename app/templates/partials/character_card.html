@@ -1,0 +1,17 @@
+<div class="char-card">
+    {% if c.profile_path %}
+    <img src="{{ c.profile_path }}" alt="{{ c.name }}" loading="lazy">
+    {% else %}
+    <img src="/static/img/sin-portada.svg" alt="Sin foto" loading="lazy">
+    {% endif %}
+    <div class="char-name">{{ c.character_name or c.name }}</div>
+    {% if entry_id %}
+    <button class="fav-star {{ 'is-fav' if is_favorite else '' }}"
+            hx-post="/personaje/{{ c.id }}/favorito/{{ entry_id }}"
+            hx-target="closest .char-card"
+            hx-swap="outerHTML"
+            title="Personaje favorito">
+        {{ "★" if is_favorite else "☆" }}
+    </button>
+    {% endif %}
+</div>

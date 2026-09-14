@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Mosaico</h1>
+<div class="mosaic-grid">
+    {% for p in posters %}
+    <a href="/titulo/{{ p.tmdb_id }}/{{ p.type }}" title="Ver ficha" style="position:relative">
+        {% if p.custom_poster %}<span class="custom-poster-badge" title="Portada propia">★</span>{% endif %}
+        <img src="{{ p.poster_path|poster_size('w185') }}" srcset="{{ p.poster_path|poster_size('w185') }} 1x, {{ p.poster_path|poster_size('w342') }} 2x" alt="" loading="lazy">
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

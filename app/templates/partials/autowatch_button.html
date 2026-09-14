@@ -1,0 +1,6 @@
+<button class="btn secondary {{ 'is-habit' if auto_watch else '' }}"
+        hx-post="/entrada/{{ entry_id }}/autover"
+        hx-target="this"
+        hx-swap="outerHTML">
+    {{ "✓ Autover" if auto_watch else "Autover" }}
+</button>

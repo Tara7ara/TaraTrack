@@ -1,0 +1,6 @@
+<button class="btn secondary {{ 'is-habit' if is_habit else '' }}"
+        hx-post="/entrada/{{ entry_id }}/habito"
+        hx-target="this"
+        hx-swap="outerHTML">
+    {{ "✓ Es hábito" if is_habit else "Marcar como hábito" }}
+</button>

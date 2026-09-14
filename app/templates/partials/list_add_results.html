@@ -1,0 +1,17 @@
+{% if not results and query %}<p class="empty">Sin resultados para "{{ query }}".</p>{% endif %}
+{% for r in results %}
+<div class="list-row">
+    <img src="{{ r.poster_url or '/static/img/sin-portada.svg' }}" alt="{{ r.title }}" loading="lazy">
+    <div class="info">
+        <a href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">{{ r.title }}</a>
+        <div class="year">{{ r.year or "—" }} · {{ "Serie" if r.type == "show" else "Película" }}{% if r.vote_average %} · Internet: {{ r.vote_average|fmt_rating(1) }}{% endif %}</div>
+    </div>
+    {% if r.tmdb_id in en_lista %}
+    <button class="secondary" disabled>En la lista</button>
+    {% else %}
+    <form method="post" action="/lista/{{ list_id }}/anadir/{{ r.tmdb_id }}/{{ r.type }}">
+        <button>Añadir</button>
+    </form>
+    {% endif %}
+</div>
+{% endfor %}

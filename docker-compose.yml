@@ -1,0 +1,25 @@
+services:
+  taratrack:
+    build: .
+    container_name: taratrack
+    restart: unless-stopped
+    # Puerto solo en 127.0.0.1: NPM hace de reverse proxy, no publicar a toda la LAN.
+    # 8420 elegido por no chocar con los puertos ya usados en el servidor (ver Nginx Proxy Manager.md).
+    ports:
+      - "127.0.0.1:8420:8000"
+    environment:
+      - TARATRACK_DB_PATH=/data/taratrack.db
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - TARATRACK_PASSWORD=${TARATRACK_PASSWORD}
+      - TARATRACK_SECRET_KEY=${TARATRACK_SECRET_KEY}
+    volumes:
+      - taratrack-data:/data
+      - taratrack-posters:/srv/app/static/posters
+      - taratrack-uploads:/srv/app/static/uploads
+      - taratrack-profiles:/srv/app/static/profiles
+
+volumes:
+  taratrack-data:
+  taratrack-posters:
+  taratrack-uploads:
+  taratrack-profiles:

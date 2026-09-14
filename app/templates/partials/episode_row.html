@@ -1,0 +1,63 @@
+<div class="ep-row {{ 'ep-watched' if ep.watch_count else '' }}" id="ep-{{ ep.id }}">
+    <button class="ep-toggle {{ 'seen' if ep.watched_now else ('stale' if ep.watch_count else '') }}"
+            hx-post="/episodio/{{ ep.id }}/toggle" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
+            title="{{ 'Visto - pulsa para desmarcar' if ep.watched_now else ('Visto antes - pulsa para marcarlo en esta vuelta' if ep.watch_count else 'Marcar visto') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        {% if ep.watch_count and ep.watch_count >= 2 %}<span class="ep-watch-count">×{{ ep.watch_count }}</span>{% endif %}
+    </button>
+    <span class="ep-num">E{{ ep.episode_number }}</span>
+    {# Datos historicos (fecha de emision, fecha de visto, comentario) agrupados
+       junto al titulo en vez de en su propia "columna" a media fila - menos
+       prominencia, se leen como contexto del titulo, no como dato destacado
+       (cuarto analisis, 2026-08-21: "reduciria la prominencia de datos historicos
+       que no son necesarios en cada mirada"). #}
+    <span class="ep-name">{{ ep.name or "" }}
+        {% if ep.air_date %}<span class="ep-date">{{ ep.air_date }}</span>{% endif %}
+        {# La fecha de visto se enseña aunque no cuente para ESTA ronda
+           (watched_now=False) - "nada se pierde" tambien significa poder ver
+           cuando lo viste la vez anterior. #}
+        {% if ep.watched_at %}<span class="ep-seen-label">Visto {{ ep.watched_at[:10] }}</span>{% endif %}
+        {% if ep.comment %}<span class="ep-comment">{{ ep.comment }}</span>{% endif %}
+    </span>
+    {# Acciones del episodio agrupadas en una zona derecha coherente - antes
+       fav-star y "comentar" iban sueltos, cada uno pegado a su vecino sin
+       relacion visual entre si. #}
+    <div class="ep-actions">
+        {# Volver a ver ESTE episodio suelto, sin tocar la serie entera (2026-08-21) -
+           solo tiene sentido si ya esta visto EN ESTA RONDA: si no, el checkbox de
+           arriba ya sirve para marcarlo la primera vez. #}
+        {% if ep.watched_now %}
+        <button class="ep-rewatch" hx-post="/episodio/{{ ep.id }}/volver-a-ver"
+                hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
+                title="Volver a ver este episodio">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        </button>
+        {% endif %}
+        {% if ep.watch_count and ep.watch_count >= 2 %}
+        {# El evento nativo "toggle" de <details> no hace bubbling a un hijo, asi que
+           hx-get/hx-trigger van en el propio <details> (hx-target="find" apunta al
+           div interior) - carga perezosa, solo al abrirse la primera vez, para no
+           disparar una query por episodio con muchas repeticiones al cargar la ficha. #}
+        <details class="ep-more ep-history" onclick="event.stopPropagation()"
+                  hx-get="/episodio/{{ ep.id }}/historial" hx-trigger="toggle once"
+                  hx-target="find .ep-history-body" hx-swap="innerHTML">
+            <summary title="Ver todas las fechas">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+            </summary>
+            <div class="ep-history-body">Cargando...</div>
+        </details>
+        {% endif %}
+        <button class="fav-star {{ 'is-fav' if ep.is_favorite else '' }}"
+                hx-post="/episodio/{{ ep.id }}/favorito" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
+                title="Episodio favorito">{{ "★" if ep.is_favorite else "☆" }}</button>
+        <details class="ep-more" onclick="event.stopPropagation()">
+            <summary title="Comentar episodio">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            </summary>
+            <form class="ep-comment-form" hx-post="/episodio/{{ ep.id }}/comentario" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">
+                <input type="text" name="comment" placeholder="Comentario del episodio..." value="{{ ep.comment or '' }}">
+                <button type="submit">Guardar</button>
+            </form>
+        </details>
+    </div>
+</div>

@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="list-row title-header">
+    <div class="nsfw-frame">
+        {% if title_row.poster_path %}
+        <img class="{{ 'nsfw-img' if title_row.is_adult }}" src="{{ title_row.poster_path|poster_size('w185') }}" srcset="{{ title_row.poster_path|poster_size('w185') }} 1x, {{ title_row.poster_path|poster_size('w342') }} 2x" alt="{{ title_row.title }}">
+        {% else %}
+        <img src="/static/img/sin-portada.svg" alt="Sin portada">
+        {% endif %}
+        {% if title_row.is_adult %}
+        <input type="checkbox" id="nsfw-title" class="nsfw-check">
+        <label for="nsfw-title" class="nsfw-label">+18 · Toca para ver</label>
+        {% endif %}
+    </div>
+    <div class="info">
+        <h1 style="margin:0">{{ title_row.title }}</h1>
+        {# Bug real (Tara, 2026-08-21): "Chainsaw Man" salia repetido 3 veces - titulo
+           principal (h1) + romaji + ingles, cuando los tres coinciden letra a letra
+           porque el titulo oficial ya esta en latino/ingles de origen (no todo anime
+           tiene romaji/ingles distintos del titulo mostrado). Se descartan aqui los
+           candidatos iguales al h1 y los duplicados entre si (unique preserva orden). #}
+        {% set alt_candidates = [title_row.anilist_title_romaji, title_row.anilist_title_english]
+            | select | reject("equalto", title_row.title) | unique | list %}
+        {% if alt_candidates %}
+        <div class="alt-title">{{ alt_candidates|join(" // ") }}</div>
+        {% endif %}
+        <div class="meta-row">
+            <span class="meta-chip">{{ title_row.year or "—" }}{% if title_row.show_status %} · {{ title_row.show_status }}{% endif %}</span>
+            {% if entry and entry.rating is not none %}
+            {# Tara, 2026-08-21: "si tienen mi nota poner mi nota en la ficha
+               tecnica... similar como el de internet" - mismo chip que "Internet: X",
+               junto a el, para comparar de un vistazo sin bajar hasta la fila de
+               acciones (donde ya existia como .rating suelto, ver mas abajo). #}
+            <span class="meta-chip rating">Tú: {{ entry.rating|fmt_rating(1) }}</span>
+            {% endif %}
+            {% if title_row.vote_average %}
+            <span class="meta-chip rating">Internet: {{ title_row.vote_average|fmt_rating(1) }}</span>
+            {% endif %}
+            {% if title_row.runtime_minutes %}
+            <span class="meta-chip">
+                {% if title_row.type == "show" and title_row.episode_count %}
+                {{ title_row.episode_count }} ep × {{ title_row.runtime_minutes }} min
+                {% else %}
+                {{ title_row.runtime_minutes|fmt_duration }}
+                {% endif %}
+            </span>
+            {% endif %}
+            {% if title_row.next_episode_label %}
+            <span class="meta-chip next-ep">Próximo: {{ title_row.next_episode_label }} ({{ title_row.next_episode_air_date }})</span>
+            {% endif %}
+        </div>
+    </div>
+    {# La "megapildora" de 5 mini-botones (estado, accion, favorito, habito,
+       autover) mezclaba decisiones de nivel muy distinto en un unico grupo
+       visual (Tara + analisis externo, 2026-08-21: "no son cinco miniacciones
+       equivalentes"). Habito/autover son configuracion de seguimiento, no algo
+       que se toca cada vez que se mira la ficha - "Seguimiento" los revela EN
+       LINEA (el propio boton se sustituye por los extras + una X para cerrar),
+       sin abrir una caja nueva ni desplazar nada (segunda vuelta, Tara: "no
+       debera de desaparecer y mostrar los botones extra", no un desplegable que
+       empuja contenido hacia abajo). #}
+    <div class="entry-actions-row">
+        {% if entry and entry.status == 'watched' and entry.rating is not none %}
+        <div class="rating">{{ entry.rating|fmt_rating }}/10</div>
+        {% else %}
+        {% set tmdb_id = title_row.tmdb_id %}{% set type = title_row.type %}
+        {% set state = "watched" if (entry and entry.status == "watched") else ("pending" if entry else "new") %}
+        {% set volver = "ficha" %}
+        {% include "partials/entry_actions.html" %}
+        {% endif %}
+        {% if entry %}
+        {% set entry_id = entry.id %}
+        {% include "partials/favorite_button.html" %}
+        <input type="checkbox" id="tracking-toggle" class="tracking-toggle-check">
+        <label for="tracking-toggle" class="tracking-summary">Seguimiento</label>
+        <div class="tracking-extras">
+            {% set is_habit = entry.is_habit %}
+            {% include "partials/habit_button.html" %}
+            {% if title_row.type == "show" %}
+            {% set auto_watch = entry.auto_watch %}
+            {% include "partials/autowatch_button.html" %}
+            {% endif %}
+            <label for="tracking-toggle" class="tracking-close" title="Cerrar seguimiento">&times;</label>
+        </div>
+        {% endif %}
+    </div>
+    {% if outcome_label %}
+    <div class="outcome-label">{{ outcome_label }} (predicción: {{ entry.predicted_score }}% · tu nota: {{ entry.rating|fmt_rating }})</div>
+    {% endif %}
+</div>
+
+{% if entry and entry.status == 'watched' %}
+<a class="exam-q rated reevaluar" href="/marcar-vista/{{ title_row.tmdb_id }}/{{ title_row.type }}?volver=ficha">
+    <div class="exam-q-head">
+        <label>Reevaluar esta nota</label>
+        <span class="exam-q-value">{{ entry.rating|fmt_rating if entry.rating is not none else "—" }}</span>
+    </div>
+</a>
+{% endif %}
+
+{# Grupos de acciones secundarias por intencion (auditoria visual 2026-08-20): antes
+   5 <details> con la misma pinta de boton gris (Histórico de notas, Corregir fecha,
+   Cambiar portada, Quitar nota, Deshacer "Marcar vista") sin distinguir "esto es
+   solo informacion" de "esto cambia datos" de "esto es peligroso" - se leian como
+   un muro homogeneo. Cambiar portada vive FUERA del "entry.status == watched" (a
+   proposito, aplica a cualquier titulo, tambien pendiente) - por eso cada item
+   sigue comprobando su propia condicion en vez de heredar una sola de fuera. #}
+<div class="action-groups">
+    {% if entry and entry.status == 'watched' and rating_history %}
+    <div class="group-card">
+        <div class="group-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+            <span>Información</span>
+        </div>
+        <div class="group-items">
+            <details class="group-accordion">
+                <summary>Histórico de notas ({{ rating_history|length }})</summary>
+                <div class="ep-list" style="margin-top:0.4rem">
+                    {% for h in rating_history %}
+                    <div class="ep-row">
+                        <span class="ep-num">{{ h.rating|fmt_rating }}</span>
+                        <span class="ep-name">hasta el {{ h.replaced_at[:10] }}{% if h.comment %} · {{ h.comment }}{% endif %}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="group-card">
+        <div class="group-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path></svg>
+            <span>Editar</span>
+        </div>
+        <div class="group-items">
+            {% if entry and entry.status == 'watched' %}
+            {# Antes la fecha iba dentro de la etiqueta ("Corregir fecha (vista el ...)"),
+               mucho mas larga que sus vecinas en la fila - rompia el "en paralelo" que
+               pidio Tara ("se ve raro de cojones"). La fecha ya se ve en el input al
+               abrir, no hace falta repetirla en el boton. #}
+            <details class="group-accordion">
+                <summary>Corregir fecha</summary>
+                <form method="post" action="/entrada/{{ entry.id }}/fecha-visionado" style="display:flex; gap:0.5rem; align-items:center">
+                    <input type="date" name="fecha" value="{{ entry.watched_at[:10] if entry.watched_at else '' }}" required>
+                    {% if title_row.release_date %}
+                    <button type="button" class="secondary" onclick="this.previousElementSibling.value='{{ title_row.release_date }}'">Usar estreno</button>
+                    {% endif %}
+                    <button type="submit">Guardar</button>
+                </form>
+            </details>
+            {% endif %}
+            <details class="group-accordion">
+                <summary>Cambiar portada</summary>
+                <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/portada"
+                      enctype="multipart/form-data" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+                    <input type="file" name="imagen" accept="image/*" required>
+                    <button type="submit">Subir</button>
+                </form>
+            </details>
+            {% if title_row.anilist_id %}
+            {# Corrige el dia que enseña el calendario de temporada para este titulo
+               (Tara: "lunes Grand Blue pero en el calendario sale los martes") - el
+               calculo automatico va en UTC, puede desplazarse un dia para animes de
+               madrugada. "Sin corregir" vacia el campo y vuelve al calculo automatico. #}
+            <details class="group-accordion">
+                <summary>Corregir día de emisión{% if weekday_override is not none %} (corregido){% endif %}</summary>
+                <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/dia-emision" style="display:flex; gap:0.5rem; align-items:center">
+                    <select name="weekday">
+                        <option value=""{% if weekday_override is none %} selected{% endif %}>Sin corregir (automático)</option>
+                        {% for nombre in ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] %}
+                        <option value="{{ loop.index0 }}"{% if weekday_override == loop.index0 %} selected{% endif %}>{{ nombre }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">Guardar</button>
+                </form>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if entry and entry.status == 'watched' %}
+    <div class="group-card danger-card">
+        <div class="group-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>
+            <span>Zona destructiva</span>
+        </div>
+        <div class="group-items">
+            {% if entry.rating is not none %}
+            {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+            <details class="group-accordion">
+                <summary>Quitar nota</summary>
+                <form method="post" action="/entrada/{{ entry.id }}/quitar-nota">
+                    <button class="danger-solid">Confirmar</button>
+                </form>
+            </details>
+            {% else %}
+            <details class="group-accordion">
+                <summary>Deshacer "Marcar vista" (no lo he visto)</summary>
+                <form method="post" action="/entrada/{{ entry.id }}/deshacer-vista">
+                    <button class="danger-solid">Confirmar, volver a pendiente</button>
+                </form>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if title_row.overview %}
+{# El clamp+"Leer mas" (auditoria visual 2026-08-20) tenia sentido en tarjetas
+   pequeñas donde de verdad ahorra espacio de rejilla - en la ficha tecnica, la
+   unica pagina dedicada por completo al titulo, recortar la sinopsis no ahorra
+   nada (Tara, 2026-08-21: "no tiene sentido y menos que solo ocupe 1/3 de la
+   pantalla") - se enseña siempre entera aqui. max-width:70ch de .overview se
+   mantiene (regla de legibilidad de texto continuo, ver CLAUDE.md diseño visual). #}
+<div class="synopsis-block">
+    <p class="overview">{{ title_row.overview }}</p>
+</div>
+{% endif %}
+
+{% if title_row.tmdb_id > 0 %}
+<div hx-get="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/trailer" hx-trigger="load" hx-swap="outerHTML">
+    <p class="empty">Buscando tráiler...</p>
+</div>
+{% endif %}
+
+{% if entry and entry.comment %}
+<p class="comment">{{ entry.comment }}</p>
+{% endif %}
+
+{% if entry and entry.status == 'watched' %}
+<h2>Visionados</h2>
+<p class="empty">{{ plays }} visionado{{ "s" if plays != 1 else "" }} en total.</p>
+{% for s in sessions %}
+<div class="list-row">
+    <div class="info">
+        <div>Volver a ver · empezado el {{ s.watched_at[:10] }}</div>
+        {% if s.notes %}<div class="year">{{ s.notes }}</div>{% endif %}
+    </div>
+</div>
+{% endfor %}
+{% if title_row.type == "show" %}
+{# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+<details class="manual-add" style="margin-top:0.6rem">
+    <summary>Volver a ver</summary>
+    <p class="empty" style="margin:0.2rem 0 0.5rem">La serie vuelve a "Continuar viendo" desde el primer episodio. Nada de lo que ya viste se borra — sigue marcado con su fecha real, solo empieza a contar de nuevo a partir de ahora. Tu nota se queda.</p>
+    <form method="post" action="/entrada/{{ entry.id }}/volver-a-ver">
+        <button type="submit">Confirmar</button>
+    </form>
+</details>
+{% else %}
+<form method="post" action="/entrada/{{ entry.id }}/volver-a-ver" style="margin-top:0.6rem">
+    <button type="submit">Volver a ver</button>
+</form>
+{% endif %}
+{% endif %}
+
+{% if ep_comments %}
+<h2>Comentarios de episodios</h2>
+<div class="ep-list">
+    {% for ep in ep_comments %}
+    <div class="ep-row">
+        <span class="ep-num">T{{ ep.season_number }}E{{ ep.episode_number }}</span>
+        <span class="ep-name">{{ ep.comment }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if characters or entry %}
+<div class="section-head">
+    <h2>Personajes</h2>
+    <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/personajes">
+        <button class="secondary">Recargar</button>
+    </form>
+</div>
+<div class="char-grid">
+    {% for c in characters %}
+    {% set entry_id = entry.id if entry else none %}
+    {% set is_favorite = c.is_favorite %}
+    {% include "partials/character_card.html" %}
+    {% endfor %}
+</div>
+<details class="manual-add" style="margin-top:1rem">
+    <summary>Buscar personaje</summary>
+    <input type="text" name="q" placeholder="Nombre..."
+           hx-get="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/personajes/buscar"
+           hx-trigger="input changed delay:400ms, search"
+           hx-target="#char-search-results"
+           hx-indicator="#char-buscando">
+    <span id="char-buscando" class="htmx-indicator empty"><span class="spinner"></span>Buscando en AniList...</span>
+    <div id="char-search-results" class="char-grid"></div>
+</details>
+{% endif %}
+
+{% if seasons %}
+<h2>Episodios</h2>
+{% for season_number, episodes in seasons.items() %}
+{% set vistos = episodes|selectattr("watched_now")|list|length %}
+{% set season_rating = season_ratings.get(season_number) if season_ratings else none %}
+<div class="season-progress">
+    <h3 style="margin:0">Temporada {{ season_number }}</h3>
+    <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (vistos / episodes|length * 100)|round }}%"></div></div>
+    <span class="season-progress-count">{{ vistos }}/{{ episodes|length }}</span>
+    {% if vistos < episodes|length %}
+    <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/temporada/{{ season_number }}/marcar">
+        <button class="secondary">✓ Temp. completa</button>
+    </form>
+    {% endif %}
+    {% if vistos > 0 %}
+    <a class="btn secondary" href="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/temporada/{{ season_number }}/puntuar">
+        {{ "Nota: " + (season_rating.rating|fmt_rating) if season_rating else "Puntuar temp." }}
+    </a>
+    {% endif %}
+</div>
+<div class="ep-list">
+    {% for ep in episodes %}
+    {% include "partials/episode_row.html" %}
+    {% endfor %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if title_row.tmdb_id > 0 %}
+<h2>Similares</h2>
+<div hx-get="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/similares" hx-trigger="load" hx-swap="outerHTML">
+    <p class="empty">Buscando similares...</p>
+</div>
+{% endif %}
+
+{% endblock %}

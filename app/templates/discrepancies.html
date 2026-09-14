@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dónde discrepas con la crítica</h1>
+<p class="page-hint">Comparando tu nota con la de Internet, en lo que has puntuado.</p>
+
+<h2>Te flipa más de lo que dice Internet</h2>
+{% if not te_gusta_mas %}
+<p class="empty">Nada que comparar todavía.</p>
+{% endif %}
+<div class="grid">
+    {% for r in te_gusta_mas %}
+    <div class="card">
+        <a href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">
+            <img src="{{ r.poster_path|poster_size('w185') if r.poster_path else '/static/img/sin-portada.svg' }}"{% if r.poster_path %} srcset="{{ r.poster_path|poster_size('w185') }} 1x, {{ r.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ r.title }}" loading="lazy">
+        </a>
+        <div class="card-body">
+            <a class="card-title" href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">{{ r.title }}</a>
+            <div class="card-year">Tú: {{ r.rating|fmt_rating }} · Internet: {{ r.vote_average|fmt_rating(1) }}</div>
+            <div class="rating">+{{ r.diff|fmt_rating }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<h2 class="section-gap">Te gusta menos que a la crítica</h2>
+{% if not te_gusta_menos %}
+<p class="empty">Nada que comparar todavía.</p>
+{% endif %}
+<div class="grid">
+    {% for r in te_gusta_menos %}
+    <div class="card">
+        <a href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">
+            <img src="{{ r.poster_path|poster_size('w185') if r.poster_path else '/static/img/sin-portada.svg' }}"{% if r.poster_path %} srcset="{{ r.poster_path|poster_size('w185') }} 1x, {{ r.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ r.title }}" loading="lazy">
+        </a>
+        <div class="card-body">
+            <a class="card-title" href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">{{ r.title }}</a>
+            <div class="card-year">Tú: {{ r.rating|fmt_rating }} · Internet: {{ r.vote_average|fmt_rating(1) }}</div>
+            <div class="rating">{{ r.diff|fmt_rating }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

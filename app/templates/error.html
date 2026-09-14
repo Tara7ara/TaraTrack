@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="error-page">
+    <div class="error-code">{{ code }}</div>
+    <h1>{{ "Esto no existe" if code == 404 else "Algo se ha roto" }}</h1>
+    <p class="page-hint">{{ message }}</p>
+    <a class="btn" href="/pendientes">Volver a Pendientes</a>
+</div>
+{% endblock %}

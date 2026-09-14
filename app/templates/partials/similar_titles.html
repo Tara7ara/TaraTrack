@@ -1,0 +1,28 @@
+{% if similares %}
+<div class="carousel">
+    {% for r in similares %}
+    <div class="home-card">
+        <div class="nsfw-frame">
+            <a class="home-card-poster" href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">
+                <img class="{{ 'nsfw-img' if r.adult }}" src="{{ r.poster_url or '/static/img/sin-portada.svg' }}" alt="{{ r.title }}" loading="lazy">
+                {% if r.known %}<span class="cal-seen">En tu lista</span>{% endif %}
+            </a>
+            {% if r.adult %}
+            <input type="checkbox" id="nsfw-sim-{{ r.tmdb_id }}" class="nsfw-check">
+            <label for="nsfw-sim-{{ r.tmdb_id }}" class="nsfw-label">+18 · Toca para ver</label>
+            {% endif %}
+        </div>
+        <div class="home-card-info" id="similar-{{ r.tmdb_id }}">
+            <span class="home-card-title" title="{{ r.title }}">{{ r.title }}</span>
+            <div class="home-card-ep"><span>{{ r.year or "—" }}{% if r.vote_average %} · {{ r.vote_average|fmt_rating(1) }}{% endif %}</span></div>
+            {% if not r.known %}
+            {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = "new" %}
+            {% include "partials/entry_actions.html" %}
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="empty">Sin similares para este título.</p>
+{% endif %}

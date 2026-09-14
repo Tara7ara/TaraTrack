@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TaraTrack{% if title %} — {{ title }}{% endif %}</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+    <meta name="theme-color" content="#0f0f0f">
+    {# Tipografia de titulares (segundo analisis, punto 5) - elegida por Tara entre
+       3 opciones mostradas en un comparador aparte. Solo h1/h2/marca la usan, el
+       resto de la app sigue en system-ui. #}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/app.css?v={{ static_v }}">
+    <script src="/static/js/htmx.min.js"></script>
+    <script src="/static/js/swipe.js?v={{ static_v }}" defer></script>
+</head>
+<body>
+    <nav class="topnav">
+        <a href="/" class="brand">TaraTrack</a>
+        <div class="nav-cluster">
+            <a href="/pendientes" class="{{ 'active' if request.url.path.startswith('/pendientes') else '' }}">Pendientes</a>
+            <a href="/buscar" class="{{ 'active' if request.url.path.startswith('/buscar') else '' }}">Buscar</a>
+            <a href="/vistas" class="{{ 'active' if request.url.path.startswith('/vistas') else '' }}">Vistas</a>
+        </div>
+        <div class="nav-divider"></div>
+        <div class="nav-cluster">
+            <a href="/recomendados" class="{{ 'active' if request.url.path.startswith('/recomendados') else '' }}">Recomendados</a>
+            <a href="/calendario" class="{{ 'active' if request.url.path.startswith('/calendario') else '' }}">Calendario</a>
+            <a href="/puntuar" class="{{ 'active' if request.url.path.startswith('/puntuar') else '' }}">Puntuar{% set _cola = puntuar_queue_count() %}<span id="nav-cola-desktop" class="nav-cola" title="Tienes títulos pendientes de puntuar"{% if not _cola %} hidden{% endif %}>✦</span></a>
+            <a href="/duelo" class="{{ 'active' if request.url.path.startswith('/duelo') else '' }}">Duelo</a>
+            <a href="/listas" class="{{ 'active' if request.url.path.startswith('/listas') or request.url.path.startswith('/lista/') else '' }}">Listas</a>
+        </div>
+        <div class="nav-divider"></div>
+        {# Punto 3 del segundo analisis (2026-08-21): "demasiadas opciones visibles,
+           todas texto pequeño... pareceria una barra de herramientas". Historial/
+           Stats/Mosaico ya estaban catalogados como el cluster de "analisis" (ver
+           comentario de mas abajo, ronda 2026-08-20) - se sacan de la fila siempre
+           visible a un menu propio de escritorio, mismo patron que bottomnav-more
+           en movil, dejando visibles solo uso diario + exploracion (8 rutas). #}
+        <details class="topnav-more">
+            <summary class="{{ 'active' if request.url.path.startswith('/historial') or request.url.path.startswith('/estadisticas') or request.url.path.startswith('/mosaico') else '' }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                <span>Más</span>
+            </summary>
+            <div class="topnav-more-menu">
+                <a href="/historial">Historial</a>
+                <a href="/estadisticas">Estadísticas</a>
+                <a href="/mosaico">Mosaico</a>
+            </div>
+        </details>
+        <a href="/ajustes" class="nav-gear {{ 'active' if request.url.path.startswith('/ajustes') else '' }}" title="Ajustes">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </a>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <nav class="bottomnav">
+        <a href="/buscar" class="{{ 'active' if request.url.path.startswith('/buscar') else '' }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span>Buscar</span>
+        </a>
+        <a href="/pendientes" class="{{ 'active' if request.url.path.startswith('/pendientes') else '' }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Pendientes</span>
+        </a>
+        <a href="/vistas" class="{{ 'active' if request.url.path.startswith('/vistas') else '' }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            <span>Vistas</span>
+        </a>
+        {# Puntuar sale de la fila principal del bottomnav (Tara, iPhone 17
+           Pro: "en la barra de abajo quita el puntuar y ponlo en mas") - pasa
+           a ser un enlace mas dentro de "Mas", junto con el resto de rutas
+           puntuales/de exploracion. El icono de "Mas" ahora tambien se marca
+           activo en /puntuar. #}
+        <details class="bottomnav-more">
+            <summary class="{{ 'active' if request.url.path.startswith('/calendario') or request.url.path.startswith('/listas') or request.url.path.startswith('/lista/') or request.url.path.startswith('/recomendados') or request.url.path.startswith('/duelo') or request.url.path.startswith('/puntuar') else '' }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                <span>Más</span>
+            </summary>
+            <div class="bottomnav-more-menu">
+                <a href="/puntuar">Puntuar{% set _cola = puntuar_queue_count() %}<span id="nav-cola-mobile" class="nav-cola" title="Tienes títulos pendientes de puntuar"{% if not _cola %} hidden{% endif %}>✦</span></a>
+                <a href="/recomendados">Recomendados</a>
+                <a href="/calendario">Calendario</a>
+                <a href="/listas">Listas</a>
+                <a href="/duelo">Duelo: Anime</a>
+                <a href="/historial">Historial</a>
+                <a href="/estadisticas">Estadísticas</a>
+                <a href="/mosaico">Mosaico</a>
+                <a href="/ajustes">Ajustes</a>
+            </div>
+        </details>
+    </nav>
+</body>
+</html>

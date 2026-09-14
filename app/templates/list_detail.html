@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-head">
+    <h1 style="margin:0">{{ list_row.name }}</h1>
+    {% if not list_row.is_default %}
+    <div class="list-admin">
+        <form method="post" action="/lista/{{ list_row.id }}/renombrar" class="inline-form" style="margin:0">
+            <input type="text" name="name" value="{{ list_row.name }}" required>
+            <button class="secondary">Renombrar</button>
+        </form>
+        {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+        <details class="del-confirm">
+            <summary class="btn secondary danger">Borrar lista</summary>
+            <form method="post" action="/lista/{{ list_row.id }}/borrar">
+                <button class="danger-solid">Confirmar</button>
+            </form>
+        </details>
+    </div>
+    {% endif %}
+</div>
+{% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para toda la lista.</p>{% endif %}
+{# Añadir títulos + Jugar duelos agrupados en una fila a partes iguales (Tara,
+   2026-08-21: "en línea en vez de paralelo" - mismo patron .search-actions-row
+   que .hero-controls de /ajustes, "que sea profesional"). #}
+<div class="search-actions-row">
+    <details class="manual-add">
+        <summary>Añadir títulos</summary>
+        <input type="text" name="q" placeholder="Buscar..." autocomplete="off"
+               hx-get="/lista/{{ list_row.id }}/buscar"
+               hx-trigger="input changed delay:400ms, search"
+               hx-target="#list-add-results"
+               hx-indicator="#list-buscando">
+        <span id="list-buscando" class="htmx-indicator empty"><span class="spinner"></span>Buscando...</span>
+        <div id="list-add-results"></div>
+    </details>
+    {% if entries|length > 2 %}
+    <a class="btn secondary" href="/lista/{{ list_row.id }}/duelo">Jugar duelos</a>
+    {% endif %}
+</div>
+{% if entries|length > 2 %}
+{% if coverage and not coverage.done %}
+<p class="page-hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>
+{% endif %}
+<div class="sort-bar">
+    <form method="post" action="/lista/{{ list_row.id }}/orden">
+        <input type="hidden" name="modo" value="manual">
+        <button class="{{ 'active' if list_row.order_mode == 'manual' }}">Manual</button>
+    </form>
+    <form method="post" action="/lista/{{ list_row.id }}/orden">
+        <input type="hidden" name="modo" value="duelo">
+        <button class="{{ 'active' if list_row.order_mode == 'duelo' }}">Duelos</button>
+    </form>
+    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+    <details class="del-confirm">
+        <summary class="btn secondary danger">Reiniciar Elo</summary>
+        <form method="post" action="/lista/{{ list_row.id }}/elo/reiniciar">
+            <button class="danger-solid">Confirmar, todo a 1500 otra vez</button>
+        </form>
+    </details>
+</div>
+{% endif %}
+{% if not entries %}
+<div class="empty-state">
+    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
+    <h3>Vacía todavía</h3>
+    <p>Añade títulos con la estrella desde la ficha o desde Vistas.</p>
+    <a href="/vistas" class="manual-link-inline">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        Ir a Vistas
+    </a>
+</div>
+{% endif %}
+<div class="grid">
+{% for e in entries %}
+<div class="card">
+    <div class="card-poster">
+        {# Bug real (Tara, 2026-08-21): "pulso img y no me lleva a la ficha" - el
+           poster nunca tuvo un <a> propio, solo el titulo de texto de abajo
+           (.card-title) navegaba. Pasaba en cualquier lista, no solo Favoritos. #}
+        <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
+        {% if e.poster_path %}
+        <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
+        {% else %}
+        <img src="/static/img/sin-portada.svg" alt="Sin portada">
+        {% endif %}
+        </a>
+        <span class="rank-badge">#{{ loop.index }}</span>
+    </div>
+    <div class="card-body">
+        <a class="card-title" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">{{ e.title }}</a>
+        <div class="card-year">{{ e.year or "—" }}</div>
+        {% if e.rating is not none %}<div class="rating">{{ e.rating|fmt_rating }}/10</div>{% endif %}
+        <div class="elo-badge">
+            Elo {{ e.elo|round|int }} · {{ e.rd|elo_confidence }}
+            {% set d = elo_deltas.get(e.item_id) %}
+            {% if d and (d[0] != 0 or d[1] != 0) %}
+            <span class="elo-delta {{ 'up' if d[0] > 0 else 'down' if d[0] < 0 else '' }}">
+                {{ "+" if d[0] > 0 }}{{ d[0] }}{% if d[1] != 0 %} ({{ "↑" if d[1] > 0 else "↓" }}{{ d[1]|abs }}){% endif %}
+            </span>
+            {% endif %}
+        </div>
+        {% if e.comment %}<div class="comment">{{ e.comment }}</div>{% endif %}
+        {% if list_row.order_mode == 'manual' %}
+        <div class="actions reorder">
+            {% if not loop.first %}
+            <form method="post" action="/lista/{{ list_row.id }}/mover/{{ e.item_id }}/subir">
+                <button title="Subir">&uarr;</button>
+            </form>
+            {% endif %}
+            {% if not loop.last %}
+            <form method="post" action="/lista/{{ list_row.id }}/mover/{{ e.item_id }}/bajar">
+                <button title="Bajar">&darr;</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+{% endblock %}

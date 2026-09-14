@@ -1,0 +1,56 @@
+{% if c %}
+<div class="home-card">
+    <a class="home-card-poster" href="/titulo/{{ c.tmdb_id }}/show">
+        <img src="{{ c.poster_path|poster_size('w185') if c.poster_path else '/static/img/sin-portada.svg' }}"{% if c.poster_path %} srcset="{{ c.poster_path|poster_size('w185') }} 1x, {{ c.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ c.title }}" loading="lazy">
+        {% if c.runtime_minutes %}<span class="home-card-runtime">{{ c.runtime_minutes }} min</span>{% endif %}
+        {% if c.missing_eps > 1 %}<span class="home-card-left">+{{ c.missing_eps - 1 }}</span>{% endif %}
+    </a>
+    <div class="home-card-info">
+        <a class="home-card-title" href="/titulo/{{ c.tmdb_id }}/show" title="{{ c.title }}">{{ c.title }}</a>
+        {% if c.next_ep %}
+        {# "Foco en progreso" (segundo analisis, punto 4, variante "continuar viendo") -
+           episodios vistos vs. emitidos-por-ver, ya disponibles en el row (watched_eps/
+           missing_eps de _HOME_SHOWS_SQL), sin tocar el backend. Deliberadamente sobre
+           EMITIDOS, no sobre el total de la serie: si sumase episodios aun no emitidos
+           la barra nunca llegaria al 100% aunque estes al dia. #}
+        {% set total_visible = (c.watched_eps or 0) + (c.missing_eps or 0) %}
+        {% if total_visible %}
+        <div class="home-card-progress"><div class="home-card-progress-fill" style="width: {{ ((c.watched_eps or 0) / total_visible * 100)|round }}%"></div></div>
+        {% endif %}
+        <div class="home-card-ep">
+            {% if confirm_all %}
+            {# Confirmacion del doble tick renderizada por el servidor: window.confirm
+               (hx-confirm) no salta en el navegador de Tara. #}
+            <span>¿Los {{ c.missing_eps }}?</span>
+            <span class="home-card-checks">
+                <button class="home-card-check" title="Sí, marcar los {{ c.missing_eps }} vistos"
+                        hx-post="/entrada/{{ c.id }}/todos" hx-target="closest .home-card" hx-swap="outerHTML">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 7 7 17 3 13"></polyline><polyline points="21 9 13 18"></polyline></svg>
+                </button>
+                <button class="home-card-check no" title="Cancelar"
+                        hx-get="/entrada/{{ c.id }}/tarjeta" hx-target="closest .home-card" hx-swap="outerHTML">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </span>
+            {% else %}
+            <span>T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }}</span>
+            <span class="home-card-checks">
+                {% if c.missing_eps > 1 %}
+                <button class="home-card-check" title="Marcar TODOS los emitidos ({{ c.missing_eps }}) vistos"
+                        hx-get="/entrada/{{ c.id }}/todos/confirmar" hx-target="closest .home-card" hx-swap="outerHTML">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 7 7 17 3 13"></polyline><polyline points="21 9 13 18"></polyline></svg>
+                </button>
+                {% endif %}
+                <button class="home-card-check" title="Marcar T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }} visto"
+                        hx-post="/entrada/{{ c.id }}/siguiente" hx-target="closest .home-card" hx-swap="outerHTML">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </button>
+            </span>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="home-card-ep"><span class="badge badge-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Al día</span></div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

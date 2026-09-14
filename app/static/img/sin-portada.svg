@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300">
+  <rect width="200" height="300" fill="#2a2e3a"/>
+  <text x="100" y="155" text-anchor="middle" fill="#9a9dab" font-family="system-ui, sans-serif" font-size="16">Sin portada</text>
+</svg>

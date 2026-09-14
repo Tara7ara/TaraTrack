@@ -1,0 +1,2118 @@
+/* Paleta Tararch - Warm Dark (fuente de verdad: TaraNAS/Taratara/Apuntes/.../Paleta.md) */
+:root {
+    --bg: #0f0f0f;
+    --bg-dark: #0a0a0a;
+    --surface: #161616;
+    --surface-hover: #1d1d1d;
+    --surface-elevated: #1e1e1e;
+    --border: #2d2d2d;
+    --text: #c9c9c9;
+    --text-bright: #ffffff;
+    /* Medido de verdad antes de tocarlo: #6e6e6e sobre --bg daba 3.76:1, POR DEBAJO
+       de AA incluso para texto grande (la auditoria decia "~4:1, al limite" - en
+       la practica no llegaba ni a eso). #858585 da 5.19:1, con margen sobre el
+       minimo AA de 4.5:1 para texto normal, usado en muchisimo texto secundario
+       (años, hints, badges) - se nota mas con brillo bajo o luz de dia. */
+    --text-dim: #858585;
+    --accent: #ff9e64;
+    --accent-bright: #ffb88c;
+    --accent-text: #0f0f0f;
+    --danger: #e05f78;
+    --success: #9ece6a;
+    --star: #e0af68;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    /* Punto 5 del segundo analisis (2026-08-21): "una fuente de lectura/identidad
+       para titulares y una sans neutra para controles". Elegida por Tara tras ver
+       3 opciones en un comparador aparte (Fraunces/Instrument Serif/Bricolage
+       Grotesque) - solo h1/h2/marca del nav la usan, el resto sigue en --ui-font. */
+    --display-font: "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html { scrollbar-color: var(--border) var(--bg); }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.55;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    /* Red de seguridad: nada de la pagina deberia poder forzar scroll
+       horizontal (Tara, iPhone 17 Pro: "no se ve todo, tengo que mover a la
+       derecha... quiero que todo sea subir o bajar"). Solo el eje X - el
+       scroll vertical normal de la pagina no se toca, y los carruseles
+       (.carousel) siguen con su propio overflow-x:auto interno intacto. */
+    overflow-x: hidden;
+}
+
+/* Cabeceras de pagina con mas peso (analisis visual 2026-08-21: "casi todas las
+   paginas empiezan con un h1 pequeño... no hay una cabecera que diga donde estoy").
+   h1 pasa de 1.35rem/normal a una escala de titular real; .page-hint (ya existente
+   en casi todas las paginas como subtitulo bajo el h1) sube de tamaño/aire para
+   completar el par titulo+contexto en vez de quedar como una nota al pie del h1. */
+h1 {
+    font-family: var(--display-font);
+    font-size: 1.9rem;
+    font-weight: 800;
+    color: var(--text-bright);
+    letter-spacing: -0.02em;
+    margin: 0.3rem 0 0.3rem;
+}
+/* Generalizada de h1.section-gap a cualquier elemento (Fase 3, 2026-08-21: Tara
+   vio el <details> de /estadisticas pegado sin espacio a los tiles de arriba) -
+   la clase ya se usaba tambien en h2/details esperando este margen y no hacia
+   nada porque el selector solo matcheaba h1. */
+.section-gap { margin-top: 2rem; }
+/* Fase 4 (analisis 2026-08-21: "falta contraste de escala, peso y aire" - antes h1
+   1.35rem/h2 1.05rem/body ~0.94rem estaban casi pegados en la misma escala, sin
+   salto real entre niveles). h2 sube de peso normal a 700 y se separa mas de h1
+   (ya en 1.9rem/700 desde Fase 1); h3 baja de tamaño y sube tracking para leerse
+   claramente como etiqueta de categoria, no como un titulo mas pequeño. */
+h2 { font-family: var(--display-font); font-size: 1.3rem; font-weight: 700; color: var(--text-bright); margin: 2rem 0 0.6rem; letter-spacing: -0.005em; }
+h3 { font-size: 0.78rem; color: var(--text-dim); margin: 1rem 0 0.4rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+
+/* Semantica del naranja (segundo analisis, 2026-08-21, punto 9): "el naranja
+   brillante deberia significar 'haz esto' o 'esto importa ahora', no todo a la
+   vez" - antes CUALQUIER <a> sin clase propia salia naranja por defecto, solo por
+   ser un enlace. Mismo patron que .card-title ya usaba (texto normal, naranja solo
+   al hover) extendido a la regla base - los CTA reales (.btn, .read-more,
+   .manual-link-inline...) ya tienen su propio color mas especifico y no cambian. */
+a { color: var(--text-bright); text-decoration-color: var(--border); }
+a:hover { color: var(--accent); }
+
+/* Foco por teclado consistente con la paleta (Fase 5, analisis 2026-08-21) - antes
+   solo los <input> tenian tratamiento de foco propio, cualquier enlace/boton/
+   tarjeta clicable caia al outline azul nativo del navegador. :focus-visible (no
+   :focus) para que el anillo solo aparezca navegando por teclado, no en cada click
+   de raton/tactil. */
+a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.page-hint { color: var(--text-dim); font-size: 0.95rem; margin: 0 0 1.2rem; max-width: 60ch; }
+
+/* ---------- /ajustes: cada bloque en su propia tarjeta ---------- */
+/* Antes era un h2 detras de otro sin ningun marco (Tara: "es muy feo, cerrar sesion
+   es raro, tus datos es raro") - cada seccion ahora vive en su propia tarjeta, igual
+   de peso visual que el resto de la app (.form-page, .stat-tile...) en vez de una
+   lista plana de titulos y formularios sueltos. */
+.settings-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem;
+    margin-top: 1rem;
+}
+.settings-section:first-child { margin-top: 0.6rem; }
+.settings-section h2 { margin-top: 0; }
+.settings-section .list-row:first-of-type { margin-top: 0.6rem; }
+.page-actions { margin-bottom: 0.6rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+/* Limpieza tecnica (segundo analisis, punto 10) - 3 plantillas repetian el mismo
+   style="margin-top:0.4rem" inline sobre .page-actions letra por letra. */
+.page-actions.tight { margin-top: 0.4rem; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
+.section-head h2 { margin-bottom: 0; }
+.section-head button { font-size: 0.78rem; padding: 0.3rem 0.7rem; }
+
+/* ---------- /ajustes: jerarquia entre secciones (auditoria visual 2026-08-20) ---------- */
+/* "Tus datos" y "Sesion" bajan a tarjetas compactas en fila - poco frecuentes, una
+   accion simple - dejando el peso visual grande para lo que de verdad se toca. */
+.settings-compact-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem; margin-top: 1rem; }
+.settings-compact-row:first-child { margin-top: 0.6rem; }
+.settings-section.compact { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.85rem 1rem; margin-top: 0; }
+.settings-compact-head { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
+.settings-compact-head svg { width: 16px; height: 16px; color: var(--text-dim); flex: 0 0 auto; }
+.settings-compact-title { font-size: 0.88rem; font-weight: 600; color: var(--text-bright); }
+.settings-compact-hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.1rem; }
+
+/* Indice de afinidad: tarjeta destacada (la seccion mas tecnica, la que mas se
+   toca al calibrar) - una sombra propia y una etiqueta "Avanzado" la distinguen
+   del resto, mismo peso visual antes que Tus datos/Sesion. */
+.settings-section.hero { background: var(--surface-elevated); box-shadow: var(--shadow); border-color: #333; }
+.hero-tag {
+    font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--star); background: rgba(224, 175, 104, 0.14); border: 1px solid rgba(224, 175, 104, 0.4);
+    border-radius: 999px; padding: 0.2rem 0.55rem;
+}
+
+/* ---------- Navegacion escritorio ---------- */
+.topnav {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+    padding: 0.55rem 1.2rem;
+    background: rgba(10, 10, 10, 0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    /* Fuerza su propia capa de composicion: en Safari de iOS, sticky/fixed sin esto
+       puede parpadear o quedar por debajo del contenido al hacer scroll rapido. */
+    transform: translateZ(0);
+}
+.topnav a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+}
+.topnav a:hover { color: var(--text-bright); background: var(--surface-hover); }
+.topnav a.active { color: var(--accent); background: rgba(255, 158, 100, 0.12); }
+/* Marca reforzada como punto de anclaje visual (analisis 2026-08-21: "TaraTrack no
+   actua como una marca o punto de anclaje fuerte") - mas tamaño/peso. Logo a la
+   izquierda (posicion original), nav a la derecha - margin-right:auto empuja todo
+   lo demas hacia el otro extremo, creando el hueco pedido entre el logo y el nav. */
+.topnav a.brand {
+    font-family: var(--display-font);
+    color: var(--text-bright);
+    font-weight: 800;
+    font-size: 1.3rem;
+    letter-spacing: -0.02em;
+    margin-right: auto;
+    padding-left: 0;
+}
+.topnav a.brand::after {
+    content: "";
+    display: inline-block;
+    width: 0.4em;
+    height: 0.4em;
+    margin-left: 0.15em;
+    border-radius: 50%;
+    background: var(--accent);
+    vertical-align: middle;
+}
+.topnav a.brand:hover { background: none; color: var(--accent); }
+.topnav a.nav-gear { padding: 0.35rem; line-height: 0; }
+.topnav a.nav-gear svg { width: 17px; height: 17px; }
+
+/* Nav agrupada en 3 bloques (uso diario / exploracion / analisis) en vez de 11
+   enlaces sueltos con el mismo peso - Tara: "no me acaba de tragar visualmente". */
+.nav-cluster { display: flex; align-items: center; gap: 0.15rem; }
+.nav-divider { width: 1px; height: 1.3rem; background: var(--border); margin: 0 0.5rem; flex: 0 0 auto; }
+.topnav a { position: relative; }
+/* "Puntuar" con cola: antes un badge numerico absoluto (0.62rem, position:absolute
+   con offsets en rem muy pequeños) - Tara: "me da mucho TOC que salga el numero...
+   en segunda pantalla se ve raro, como que no escala". Un indicador (no
+   notificacion) en linea, sin cifra ni position:absolute - evita el problema de
+   escalado del badge diminuto y quita la sensacion de "deuda pendiente". */
+.nav-cola { color: var(--accent); margin-left: 0.2rem; font-size: 0.8em; }
+
+/* Menu "Mas" de escritorio (Historial/Stats/Mosaico) - mismo patron visual que
+   .bottomnav-more de movil, dropdown en vez de hoja inferior. */
+.topnav-more { position: relative; }
+.topnav-more summary {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    list-style: none;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+}
+.topnav-more summary::-webkit-details-marker { display: none; }
+.topnav-more summary svg { width: 16px; height: 16px; }
+.topnav-more summary:hover { color: var(--text-bright); background: var(--surface-hover); }
+.topnav-more summary.active { color: var(--accent); background: rgba(255, 158, 100, 0.12); }
+.topnav-more[open] summary { color: var(--text-bright); background: var(--surface-hover); }
+.topnav-more-menu {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    min-width: 170px;
+    z-index: 15;
+}
+.topnav-more-menu a {
+    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.88rem;
+    text-decoration: none;
+}
+.topnav-more-menu a:hover { background: var(--surface-hover); color: var(--text-bright); }
+
+/* Ancho puro no bastaba: el iPhone 17 Pro en horizontal supera los 640px y caia
+   en el topnav de escritorio en vez del bottomnav pensado para el pulgar - justo
+   en la orientacion que mas se usa para calendario o una ficha apaisada. La altura
+   corta en landscape (<=500px) es la señal real de "esto es un telefono". */
+@media (max-width: 640px), (max-height: 500px) and (orientation: landscape) {
+    .nav-divider, .nav-cluster, .topnav-more { display: none; }
+}
+
+.container {
+    /* Antes max-width fijo (1080px, luego 1400px): en un monitor grande de verdad
+       seguia sobrando margen muerto (Tara: "no habia una manera de que lo haga
+       solo, en vez de limitarlo yo"). Sin tope en px - ancho como % del viewport,
+       asi escala solo con cualquier pantalla sin que yo tenga que adivinar un
+       numero. Las rejillas auto-fill (char-grid, mosaic-grid...) meten mas
+       columnas solas con mas ancho disponible, no hace falta tocarlas aparte. */
+    width: 96%;
+    margin: 0 auto;
+    padding: 1.2rem;
+}
+
+/* Segundo analisis de diseño (2026-08-21, punto 1): "no volveria a imponer un
+   max-width global, crearia anchos por tipo de contenido - rejillas/mosaico: ancho
+   completo; filas, historial, formularios, sinopsis y estadisticas: una columna mas
+   contenida". .container sigue sin tope (las rejillas lo necesitan, ver arriba) -
+   esta clase se añade SOLO en el contenido de las paginas que son listas/paneles/
+   texto, no en las de rejilla. */
+/* 900px se veia demasiado estrecho en el monitor QHD 27" de Tara (2560px) - "no
+   ocupa toda la pag como antes, ahora es solo la mitad". Subido a ~la mitad del
+   ancho util del monitor grande en vez de una cifra de lectura generica. */
+.content-narrow { max-width: 1300px; }
+/* /estadisticas necesita mas que 900px: .stats-columns ya mete hasta 3 secciones
+   de 480px en paralela (pedido explicito de Tara en la ronda anterior) - un ancho
+   "de lectura" mas generoso que listas/formularios, pero igual muy por debajo del
+   96% suelto de antes. */
+.content-medium { max-width: 1500px; }
+
+/* ---------- Formularios ---------- */
+input, textarea, button, select {
+    font: inherit;
+    color: inherit;
+}
+
+input[type="text"], input[type="number"], input[type="date"], textarea, select {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-bright);
+}
+/* Mobile Safari ignora la mayoria del CSS de un <select> y le pone su propia
+   capsula nativa (fondo/borde/flecha propios) por encima - en escritorio
+   (Chrome/Firefox) el mismo CSS ya se respetaba de sobra, por eso "Recientes"/
+   "Todos los generos" solo se veian mal en el iPhone (Tara, captura real).
+   appearance:none apaga ese chrome nativo en los dos motores y una flecha
+   propia (mismo trazo que el resto de iconos de la app) sustituye a la nativa
+   - asi el select se pinta con el CSS de aqui en cualquier navegador. */
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23858585' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 14px;
+    padding-right: 2.1rem;
+}
+input::placeholder, textarea::placeholder { color: var(--text-dim); }
+input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+textarea { resize: vertical; min-height: 5rem; }
+
+/* Buscador con lupa (auditoria visual 2026-08-20) - antes un input[type="text"]
+   a secas, el control mas usado de la app. El input real pierde su chrome propio
+   (border/radius van en el wrapper) y usa :focus-within para que el foco se note
+   en la caja entera, no solo en el campo. */
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0 0.9rem;
+    transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+.search-box .search-icon { width: 18px; height: 18px; color: var(--text-dim); flex: 0 0 auto; }
+.search-box input[type="text"] {
+    flex: 1;
+    width: auto;
+    border: none;
+    background: none;
+    padding: 0.75rem 0;
+}
+.search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 158, 100, 0.15); }
+.search-box:focus-within .search-icon { color: var(--accent); }
+
+button, .btn {
+    display: inline-block;
+    padding: 0.5rem 0.95rem;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    transition: transform 80ms var(--ease), opacity 80ms var(--ease), background 120ms var(--ease);
+}
+button:hover, .btn:hover { background: var(--accent-bright); }
+/* Microinteracciones (Fase 5, analisis 2026-08-21): antes solo habia :hover, que
+   nunca dispara en tactil (iPhone 17 Pro) - :active da feedback real al pulsar en
+   cualquier dispositivo. */
+button:active, .btn:active { transform: scale(0.97); }
+/* htmx añade .htmx-request automaticamente al elemento que dispara la peticion,
+   sin tocar ninguna plantilla - antes "Marcar vista"/favorito/habito/etc. se
+   quedaban mudos entre el clic y que llegara el swap. */
+button.htmx-request, .btn.htmx-request, .fav-star.htmx-request {
+    opacity: 0.55;
+    pointer-events: none;
+}
+button.secondary, .btn.secondary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+button.secondary:hover, .btn.secondary:hover { background: var(--surface-hover); color: var(--text-bright); }
+
+/* 4 plantillas ya marcaban "Borrar lista"/"Reiniciar Elo" con class="btn secondary
+   danger" pero no existia NINGUN CSS para .danger - se veian identicos a un boton
+   cualquiera (auditoria punto 10: "todos se parecen aunque algunos sean
+   destructivos"). Mismo --danger que ya usa el resto de la app (inercia, .error). */
+button.danger, .btn.danger {
+    color: var(--danger);
+    border-color: rgba(224, 95, 120, 0.5);
+}
+button.danger:hover, .btn.danger:hover {
+    background: rgba(224, 95, 120, 0.14);
+    color: var(--danger);
+    border-color: var(--danger);
+}
+button:disabled { opacity: 0.55; cursor: default; }
+
+.inline-form { display: flex; gap: 0.5rem; margin-bottom: 1.2rem; max-width: 480px; }
+
+/* Fila de filtros de /pendientes y /vistas: buscador + orden + direccion + genero +
+   Sorpréndeme. Con .inline-form (max-width:480px, pensado para un solo campo) todo
+   quedaba apretado y el texto de los <select> se veia cortado en escritorio - aqui no
+   hay tope de ancho, y flex-wrap deja que baje de linea en vez de comprimirse. */
+/* Jerarquia dentro de filtros (analisis 2026-08-21: "buscador, selects, flechas,
+   checkbox, tabs y boton compiten todos por atencion; falta una accion dominante y
+   controles secundarios mas discretos"). Ancho contenido (antes se estiraba a todo
+   el 96% del contenedor en monitores grandes, "dispersion horizontal") + selects y
+   checkbox bajan de tamaño/contraste para leerse como controles secundarios frente
+   al buscador, que sigue siendo el input real de la fila. */
+/* Toolbar reestructurada otra vez (cuarto ajuste, mismo dia): el max-width:1300px
+   volvia a dejar hueco en el QHD 27" - Tara: "no limitaria la barra, en tu 27
+   debe ocupar todo el lateral y adaptarse sola... la lista usa todo el ancho, la
+   barra tambien debe hacerlo". Sin tope de ancho - el buscador absorbe TODO el
+   espacio sobrante (flex:1, sin max-width) y el resto mantiene ancho fijo/natural
+   (select con width fijo, botones con flex:0 0 auto) para que "ocupar el lateral"
+   no signifique estirar cada control por igual, solo el buscador. */
+.filter-bar {
+    display: flex; gap: 0.5rem 0.7rem; margin: 0.6rem 0 0.2rem; flex-wrap: wrap; align-items: center;
+    padding-bottom: 0.9rem; border-bottom: 1px solid var(--border);
+}
+.filter-bar input[type="text"] { flex: 1 1 280px; width: auto; min-width: 200px; }
+.filter-bar select {
+    flex: 0 0 auto; width: 11rem;
+    font-size: 0.82rem; color: var(--text-dim);
+    /* background-color, no el shorthand background: el shorthand resetea
+       tambien background-image a "none", tapando la flecha nueva del select
+       generico de mas arriba. */
+    background-color: transparent;
+}
+.filter-bar select:hover, .filter-bar select:focus { color: var(--text-bright); }
+.filter-bar > a { flex: 0 0 auto; white-space: nowrap; }
+/* Select de orden + flecha de direccion agrupados como un unico control (antes
+   sueltos, la flecha no se leia como parte del selector de al lado). */
+.sort-control { display: flex; align-items: center; gap: 0.15rem; }
+.sort-control select { width: 9.5rem; }
+/* Flecha de direccion de orden: era un .btn.secondary igual de "real" que
+   Sorprendeme, compitiendo por atencion con la unica accion real de la fila
+   (analisis 2026-08-21). Baja a icono discreto sin caja propia. */
+.filter-bar > a.sort-dir, .sort-control > a.sort-dir {
+    background: none; border: none; color: var(--text-dim);
+    padding: 0.4rem 0.55rem; font-weight: 700;
+}
+.filter-bar > a.sort-dir:hover, .sort-control > a.sort-dir:hover { color: var(--text-bright); background: var(--surface-hover); }
+.filter-checkbox {
+    display: flex; align-items: center; gap: 0.35rem; flex: 0 0 auto; white-space: nowrap;
+    font-size: 0.8rem; color: var(--text-dim); cursor: pointer;
+    padding: 0.4rem 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.filter-checkbox input[type="checkbox"] { accent-color: var(--accent); }
+.filter-checkbox:has(input:checked) { color: var(--accent); border-color: var(--accent); background: rgba(255, 158, 100, 0.12); }
+
+.form-page {
+    max-width: 520px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem;
+}
+.form-page .field { margin-bottom: 1rem; }
+.form-page label { display: block; margin-bottom: 0.3rem; font-weight: 600; color: var(--text-bright); }
+.error { color: var(--danger); font-size: 0.85rem; margin-top: 0.3rem; }
+
+.empty { color: var(--text-dim); margin-top: 1rem; }
+
+/* Estado vacio de /buscar con personalidad (auditoria visual 2026-08-20) - antes
+   un parrafo gris suelto ("Sin resultados para X"), igual que cualquier otro
+   .empty de la app. Icono (lupa + aviso) + titulo + el enlace de alta manual,
+   que aqui reaparece con mas peso justo cuando de verdad hace falta. */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.6rem;
+    padding: 2.4rem 1.5rem;
+    margin-top: 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+/* Estado "completado" (punto 8, segundo analisis: diseño de estados, no solo de
+   reposo) - "nada pendiente de puntuar, al dia" es una buena noticia, no un hueco
+   vacio triste. Icono/titulo en verde en vez del gris neutro del resto de vacios. */
+.empty-state.done .empty-icon { color: var(--success); }
+.empty-state.done h3 { color: var(--success); }
+/* El badge "x" superpuesto (esquina inferior derecha) chocaba con el mango de la
+   lupa, que apunta justo hacia esa misma esquina - tapaba el mango y quedaba un
+   circulo suelto con una x flotando sin sentido (Tara: "se ve raro, que es una
+   lupa?"). Ahora es una sola lupa con la x pequeña DENTRO del cristal, sin
+   superposicion. */
+.empty-icon { width: 52px; height: 52px; color: var(--text-dim); }
+.empty-icon svg.main { width: 52px; height: 52px; }
+.empty-state h3 { font-size: 0.95rem; color: var(--text-bright); margin: 0.3rem 0 0; font-weight: 700; }
+.empty-state p { font-size: 0.83rem; color: var(--text-dim); margin: 0; max-width: 340px; }
+.manual-link-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+    font-size: 0.83rem;
+    color: var(--accent);
+}
+.manual-link-inline svg { width: 14px; height: 14px; }
+.manual-link-inline:hover { color: var(--accent-bright); }
+.overview { color: var(--text); font-size: 0.9rem; line-height: 1.5; margin-top: 1rem; max-width: 70ch; }
+/* Ficha tecnica (title_detail.html): Tara, 2026-08-21 - "solo ocupa 1/3 de la
+   pantalla en vez de todo". El .overview base (70ch) tiene sentido para texto
+   continuo normal, pero aqui es la unica pagina dedicada al titulo entero, sin
+   nada compitiendo por el ancho - se deja usar el ancho real de .synopsis-block
+   en vez del tope de legibilidad generico. El "Leer mas"/clamp (auditoria visual
+   2026-08-20) se quito de title_detail.html en la ronda anterior - las reglas
+   .overview.clamp/.overview-toggle-check ya no las usa ninguna plantilla, borradas. */
+.synopsis-block .overview { max-width: none; }
+.read-more { display: inline-block; margin-top: 0.4rem; font-size: 0.82rem; font-weight: 600; color: var(--accent); cursor: pointer; }
+
+.htmx-indicator { opacity: 0; transition: opacity 150ms var(--ease); }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+
+/* Antes los swaps de htmx (filtrar, cambiar pestaña, marcar visto) eran
+   instantaneos - sensacion de "salto" aunque el cambio fuera parcial. Patron
+   oficial de htmx: el contenido nuevo entra en opacity:0 (.htmx-added) y se
+   desvanece a 1 durante el settle (.htmx-settling) - global, sin tocar ninguna
+   plantilla ni ruta una por una. */
+.htmx-added { opacity: 0; }
+.htmx-settling { opacity: 1; transition: opacity 180ms var(--ease); }
+
+/* Antes solo texto con opacidad animada ("Buscando...", "Recalculando...") - sin
+   nada que comunique "esto sigue trabajando" mas alla del fundido. Un anillo
+   giratorio pequeño, reutilizado en todos los indicadores de carga de la app. */
+.spinner {
+    display: inline-block;
+    width: 0.85em;
+    height: 0.85em;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    vertical-align: -0.15em;
+    margin-right: 0.4rem;
+    animation: spinner-turn 0.7s linear infinite;
+}
+@keyframes spinner-turn { to { transform: rotate(360deg); } }
+
+/* ---------- Rejilla de portadas ---------- */
+/* auto-fit (no auto-fill): con pocas tarjetas en una pantalla ancha, auto-fill
+   reserva columnas vacías igualmente y las tarjetas quedan apelotonadas a la
+   izquierda con hueco muerto a la derecha - auto-fit colapsa las columnas vacías.
+   Reemplaza al intento de carrusel para /buscar (descartado, Tara: "se ve raro,
+   tarjeta cortada") - esto es una rejilla normal que envuelve, sin scroll ni
+   recortes. Con suficientes tarjetas para llenar la fila (vistas, listas grandes)
+   el tope de arriba no cambia nada, ya vienen mas o menos a ese tamaño solas.
+   Tope de ancho en vez de 1fr (auditoria visual 2026-08-20, /buscar con 3
+   resultados en un monitor ancho): con 1fr las pocas tarjetas que SI hay se
+   repartian TODO el ancho de la fila - el poster (aspect-ratio 2/3) se volvia
+   enorme y los botones de "Vista"/"Puntuar" quedaban fuera de la pantalla, Tara
+   tenia que bajar para pulsarlos. 190px es un tope, no el tamaño real (auto-fit
+   sigue colapsando columnas vacias, solo que ahora las que SI tienen tarjeta no
+   crecen sin limite) - con pocos resultados puede quedar hueco a la derecha de
+   la fila, aceptado a proposito: tarjetas de tamaño cuerdo pesa mas que llenar
+   el ancho entero. */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 190px));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+/* Variante "descubrir" (segundo analisis, punto 4): "tarjetas algo mayores y mas
+   editoriales" para /recomendados - la misma .card, pero mas grande y con mas aire
+   entre ellas que la densidad de "biblioteca" (/vistas, /buscar, listas propias). */
+.grid.discover {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 240px));
+    gap: 1.3rem;
+}
+.grid.discover .card-title { font-size: 0.92rem; }
+
+/* Profundidad tonal (segundo analisis, 2026-08-21, punto 2): "casi todas las
+   superficies son rectangulos oscuros con borde gris... se lee como cajas sobre
+   negro". El fondo --surface sobre --bg ya distingue la tarjeta sin necesitar
+   tambien un borde en reposo - el borde reaparece solo al interactuar (hover),
+   reforzando ademas que es clicable en vez de ser puro ruido visual siempre
+   encendido en una rejilla de decenas de tarjetas. */
+.card {
+    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform 120ms var(--ease), border-color 120ms var(--ease);
+}
+.card:hover { transform: translateY(-2px); border-color: #3d3d3d; }
+.card:active { transform: scale(0.98); }
+.card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%); background-size: 200% 100%; animation: poster-shimmer 1.6s ease-in-out infinite; }
+.card .card-body { padding: 0.55rem 0.6rem; display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+.card .card-title { font-size: 0.85rem; font-weight: 600; color: var(--text-bright); }
+.card .card-year { color: var(--text-dim); font-size: 0.8rem; }
+.actions { display: flex; gap: 0.4rem; align-items: center; }
+.card .actions { margin-top: auto; flex-direction: column; align-items: stretch; }
+.card .actions .btn, .card .actions button { font-size: 0.78rem; padding: 0.4rem; white-space: nowrap; }
+.card .rating { font-weight: 700; color: var(--accent); }
+.card .comment { font-size: 0.8rem; color: var(--text-dim); }
+/* "Editar orden" como banda propia, no botones .secondary sueltos mezclados con
+   Elo/nota/nombre (cuarto analisis, 2026-08-21: "parecen controles tecnicos
+   incrustados al final de una ficha de poster... rompen el aspecto de ranking").
+   Fondo hundido (--bg-dark, como los inputs) para leerse como una zona de edicion
+   aparte, no como otra fila de acciones normales de la tarjeta. */
+.actions.reorder {
+    justify-content: center;
+    gap: 0.3rem;
+    background: var(--bg-dark);
+    border-radius: var(--radius-sm);
+    padding: 0.3rem;
+    margin-top: 0.5rem;
+}
+.actions.reorder form { display: contents; }
+.actions.reorder button {
+    flex: 0 0 auto; padding: 0.25rem 0.6rem;
+    background: none; border: none; color: var(--text-dim); font-weight: 700;
+}
+.actions.reorder button:hover { color: var(--accent); background: var(--surface-hover); }
+.actions.reorder .year { margin-right: auto; font-size: 0.8rem; color: var(--text-dim); }
+
+/* ---------- Filas de lista ---------- */
+/* Dos intentos previos descartados por Tara: centrar con margin:auto ("tira todo
+   el borde" - el titulo/filtros de arriba quedan pegados a la izquierda, una fila
+   centrada no pegaba con nada) y luego un tope de 900px sin centrar ("la cajetilla
+   gris que ocupe todo el lateral, queda mal ahora" - en /historial y /pendientes
+   quería la fila a lo ancho, "como las listas"). Sin tope: la fila ocupa el mismo
+   ancho que el contenedor (fluido, ver .container), igual que el titulo/filtros de
+   arriba - consistente con el resto de la pagina, sin casos especiales. */
+.list-row {
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+    padding: 0.7rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-top: 0.6rem;
+}
+.list-row img { width: 46px; height: 69px; object-fit: cover; border-radius: 4px; background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%); background-size: 200% 100%; animation: poster-shimmer 1.6s ease-in-out infinite; }
+/* /pendientes con la misma portada grande en escritorio y movil (antes solo en movil,
+   Tara: "como en el telefono, pon el mismo pixel" - un tamano, no dos segun pantalla). */
+.list-row.swipeable img { width: 78px; height: 117px; }
+/* Portada de la cabecera de la ficha tecnica: la generica de .list-row (46x69, para
+   filas compactas de listas) se quedaba diminuta como imagen principal de una ficha
+   - Tara la queria "igual de grande" que las fotos de personaje del reparto
+   (.char-card, hasta ~140px de ancho en la rejilla). */
+/* Cabecera de la ficha tecnica elevada sobre el resto de la pagina (auditoria
+   visual 2026-08-20, punto "elevacion selectiva en los puntos que si importan") -
+   antes pesaba igual que cualquier fila suelta de lista. */
+.title-header { background: var(--surface-elevated); box-shadow: var(--shadow); border-color: #333; margin-top: 0; }
+.title-header h1 { font-size: 1.7rem; }
+.title-header img { width: 140px; height: 210px; border-radius: var(--radius-sm); box-shadow: var(--shadow); background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%); background-size: 200% 100%; animation: poster-shimmer 1.6s ease-in-out infinite; }
+.list-row .info { flex: 1; min-width: 0; }
+.list-row .info .year { color: var(--text-dim); font-size: 0.85rem; }
+.list-row .info > a, .card-title { color: var(--text-bright); text-decoration: none; }
+.list-row .info > a:hover, .card-title:hover { color: var(--accent); }
+
+/* Subtitulo romaji/ingles bajo el h1, y metadatos (año/nota/duracion/proximo
+   episodio) en chips en vez de lineas de texto plano apiladas en .year - antes
+   generaban lineas largas tipo "2019 · Serie · Internet: 7.2 · 82%" sin separacion
+   visual entre datos de naturaleza distinta. Reutilizado tambien en /pendientes. */
+.alt-title { color: var(--text-dim); font-size: 0.84rem; margin-top: 0.1rem; }
+.meta-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.35rem; }
+.meta-chip {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+}
+.meta-chip.rating { color: var(--accent); border-color: rgba(255, 158, 100, 0.35); font-weight: 700; }
+
+/* Badges tipados con icono (auditoria visual 2026-08-20, punto 3) - antes solo
+   texto+color, sin acento que distinguiera "tipo" de un vistazo. .badge-missing
+   se queda sin tocar (definida pero sin uso real en ninguna plantilla, ver
+   ronda de arriba de /pendientes - se deja, cero riesgo). */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.badge svg { width: 12px; height: 12px; flex: 0 0 auto; }
+.badge-missing { background: rgba(255, 158, 100, 0.15); color: var(--accent); }
+.badge-ok { background: rgba(158, 206, 106, 0.14); color: var(--success); }
+.badge-fav { background: rgba(224, 175, 104, 0.15); color: var(--star); font-size: 0.7rem; }
+
+/* ---------- Swipe (solo movil): el fondo verde queda oculto hasta que arrancas el gesto ---------- */
+.list-row.swipeable { position: relative; padding: 0; overflow: hidden; }
+.list-row.swipeable .swipe-bg {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    padding-left: 1.2rem;
+    background: var(--success);
+    color: #14210a;
+    font-weight: 700;
+    opacity: 0;
+}
+.list-row.swipeable.swiping .swipe-bg { opacity: 1; }
+.list-row.swipeable .swipe-bg svg { width: 22px; height: 22px; }
+.list-row.swipeable .swipe-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+    padding: 0.7rem;
+    width: 100%;
+    background: var(--surface);
+    touch-action: pan-y;
+    will-change: transform;
+}
+.swipe-tip { color: var(--text-dim); font-size: 0.8rem; margin-top: 1rem; }
+@media (min-width: 641px) {
+    .swipe-tip { display: none; }
+}
+@media (max-width: 640px) {
+    .list-row.swipeable .swipe-bg { display: flex; }
+}
+
+/* ---------- Carruseles de inicio (estilo Trakt) ---------- */
+.carousel {
+    display: flex;
+    gap: 0.8rem;
+    overflow-x: auto;
+    padding: 0.4rem 0 0.8rem;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+}
+.home-card {
+    flex: 0 0 150px;
+    scroll-snap-align: start;
+    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 120ms var(--ease);
+}
+.home-card:hover { border-color: #3d3d3d; }
+.home-card-poster { position: relative; display: block; }
+.home-card-poster img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%); background-size: 200% 100%; animation: poster-shimmer 1.6s ease-in-out infinite; }
+.home-card-runtime, .home-card-left {
+    position: absolute;
+    bottom: 6px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(10, 10, 10, 0.85);
+}
+.home-card-runtime { left: 6px; color: var(--text-bright); }
+.home-card-left { right: 6px; color: var(--accent); }
+.home-card-info { padding: 0.5rem 0.6rem; display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+/* Barra de progreso real (segundo analisis, punto 4: variante "continuar viendo"
+   con foco en progreso, no solo en siguiente episodio) - vistos vs. emitidos. */
+.home-card-progress { height: 3px; background: var(--bg-dark); border-radius: 999px; overflow: hidden; margin-bottom: -0.15rem; }
+.home-card-progress-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+.home-card-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-bright);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.home-card-title:hover { color: var(--accent); }
+.home-card-ep {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-top: auto;
+}
+.home-card-check {
+    padding: 0.3rem 0.55rem;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--success);
+    line-height: 0;
+}
+.home-card-check:hover { background: var(--success); color: #14210a; }
+.home-card-check svg { width: 15px; height: 15px; }
+/* El "no" de la confirmacion del doble tick (confirmacion server-side, sin window.confirm). */
+.home-card-check.no { color: var(--danger); }
+.home-card-check.no:hover { background: var(--danger); color: var(--text-bright); }
+
+.rec-seeds { font-size: 0.75rem; color: var(--text-dim); }
+.rec-dislike { width: 100%; font-size: 0.75rem; }
+
+/* Botones de accion dentro de tarjetas de carrusel (Similares): compactos y apilados
+   en columna - con el tamaño normal se salian de la tarjeta y se veian cortados. */
+.home-card .actions { flex-direction: column; align-items: stretch; gap: 0.3rem; }
+.home-card .actions .btn, .home-card .actions button {
+    font-size: 0.72rem;
+    padding: 0.3rem 0.4rem;
+}
+
+/* ---------- Calendario (estilo Trakt: grid de portadas por dia) ---------- */
+.cal-day { margin-top: 1.6rem; }
+.cal-day-title {
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+}
+.cal-today .cal-day-title { color: var(--accent); }
+.cal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.8rem;
+}
+/* Componente maestro "tarjeta de poster" (Fase 2, analisis 2026-08-21: "tarjetas de
+   vistas, pendientes, continuar viendo... comparten color, pero no un mismo ritmo de
+   espaciado, elevacion, tamaños ni estructura"). Antes .cal-card era una imagen
+   suelta con radius-sm sin marco propio - unico caso sin el mismo fondo/borde/radius
+   que .card/.home-card/.duel-pick, mismo proposito (portada+titulo, clicable). */
+.cal-card {
+    display: block;
+    text-decoration: none;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: transform 120ms var(--ease), border-color 120ms var(--ease);
+}
+.cal-card:hover { transform: translateY(-2px); border-color: #3d3d3d; }
+.cal-card:active { transform: scale(0.98); }
+.cal-card-poster { position: relative; }
+.cal-card-poster img {
+    width: 100%;
+    aspect-ratio: 2/3;
+    object-fit: cover;
+    display: block;
+    background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%);
+    background-size: 200% 100%;
+    animation: poster-shimmer 1.6s ease-in-out infinite;
+}
+.cal-new, .cal-seen {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(10, 10, 10, 0.85);
+}
+.cal-new { color: var(--accent); }
+.cal-seen { color: var(--success); }
+.cal-card-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-bright);
+    padding: 0.5rem 0.6rem 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cal-card-ep {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    padding: 0 0.6rem 0.55rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cal-watched { opacity: 0.55; }
+.cal-past { margin-top: 2rem; }
+.cal-past > summary { cursor: pointer; color: var(--text-dim); font-weight: 600; }
+.cal-past > summary:hover { color: var(--text-bright); }
+
+/* ---------- Historial ---------- */
+/* Portada al mismo tamano/criterio que /pendientes (78x117, ver .list-row.swipeable
+   img) - antes 36x54, la mas pequena de toda la app justo en la vista pensada para
+   "revivir lo que viste" (auditoria visual 2026-08-20). La sombra propia que llevaba
+   se quita en Fase 2 (2026-08-21): "elevacion selectiva" se reserva para lo
+   realmente elevado (.title-header, .settings-section.hero) - /historial es una
+   lista plana como /pendientes o /vistas, no una cabecera ni un panel destacado. */
+.hist-row { margin-top: 0.4rem; }
+.hist-row img { width: 78px; height: 117px; }
+
+/* ---------- Puntuar (cola) ---------- */
+/* ---------- Pagina de error (404/500) ---------- */
+.error-page {
+    max-width: 420px;
+    margin: 3rem auto 0;
+    text-align: center;
+}
+.error-code {
+    font-size: 3.5rem;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1;
+}
+.error-page h1 { margin: 0.4rem 0 0.6rem; }
+.error-page .btn { margin-top: 1rem; }
+
+.review-card {
+    max-width: 420px;
+    margin: 1rem auto 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem;
+    text-align: center;
+}
+.review-poster {
+    width: min(240px, 70%);
+    aspect-ratio: 2/3;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%);
+    background-size: 200% 100%;
+    animation: poster-shimmer 1.6s ease-in-out infinite;
+    box-shadow: var(--shadow);
+}
+.review-info h2 { margin: 0.8rem 0 0.1rem; }
+.review-actions {
+    display: flex;
+    gap: 0.8rem;
+    justify-content: center;
+    margin-top: 1.1rem;
+}
+
+/* ---------- Estadisticas ---------- */
+.stat-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.8rem;
+    margin-top: 1rem;
+}
+/* La "historia personal" (punto 6, segundo analisis) - una frase, no otro tile de
+   numero. Fondo elevado + texto mas grande que el resto de la pagina para que se
+   lea como LA observacion, no como un dato mas entre los demas. */
+.stat-insight {
+    margin-top: 1.2rem;
+    padding: 1.1rem 1.3rem;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.stat-insight p { margin: 0; font-size: 1.05rem; color: var(--text-bright); line-height: 1.5; }
+.stat-insight strong { color: var(--accent); font-weight: 700; }
+a.stat-tile { text-decoration: none; color: inherit; }
+a.stat-tile:hover { border-color: var(--accent); }
+.stat-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+/* Los 8 numeros de /estadisticas eran naranjas por igual - "episodios vistos" con
+   el mismo peso de color que "waifus" (punto 9 del segundo analisis). Solo los 2
+   tiles hero (las 2 metricas realmente destacadas) se quedan con el acento; el
+   resto pasa a texto normal - la jerarquia de tamaño (1.5rem vs 2.4rem) ya
+   distinguia hero de secundario, ahora el color tambien lo hace. */
+.stat-num { font-size: 1.5rem; font-weight: 700; color: var(--text-bright); }
+.stat-label { font-size: 0.78rem; color: var(--text-dim); }
+
+/* Antes los 8 tiles pesaban igual (episodios vistos = mismo peso que "waifus") -
+   2 metricas "hero" (episodios, dias viendo) destacadas, el resto como chips
+   secundarios en .stat-tiles debajo. */
+.stat-hero-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8rem; margin-top: 1rem; }
+.stat-tile.hero {
+    padding: 1.3rem 1.5rem;
+    background: linear-gradient(135deg, rgba(255, 158, 100, 0.14), var(--surface));
+    border-color: rgba(255, 158, 100, 0.35);
+}
+.stat-tile.hero .stat-num { font-size: 2.4rem; color: var(--accent); }
+.stat-tile.hero .stat-label { font-size: 0.85rem; }
+
+/* Las 3 listas de afinidad (genero/tag/estudio) eran visualmente identicas
+   seguidas - facil perder en cual estas tras un scroll largo. Icono distinto por
+   forma (no color nuevo, eso es el punto 3 de la auditoria, aparte). */
+.stat-section-head { display: flex; align-items: center; gap: 0.5rem; }
+.stat-section-icon { width: 17px; height: 17px; flex: 0 0 auto; color: var(--text-dim); }
+
+/* Tara, con captura real del monitor 27": las barras (max-width:560px, pensado
+   para que las etiquetas no se pierdan) dejaban medio monitor en blanco a la
+   derecha - "se ve muy vacio". auto-fit (no auto-fill, mismo criterio que .grid
+   mas abajo) mete 2+ secciones por fila cuando sobra ancho y cae a 1 columna
+   sola en movil, sin tocar ninguna barra/calculo individual. */
+.stats-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+    gap: 0 3rem;
+}
+.stat-section { min-width: 0; }
+.stat-bars { display: flex; flex-direction: column; gap: 0.35rem; max-width: 560px; }
+
+/* /resumen: barras a la izquierda + titulos destacados a la derecha (cuarto
+   analisis, 2026-08-21: "en QHD se convierte en una columna estrecha flotando a
+   la izquierda... dos bloques en paralelo"). auto-fit colapsa a 1 columna sola
+   cuando no hay .yearly-highlights (top_rated vacio), sin dejar hueco muerto. */
+.yearly-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 1rem 3rem;
+    align-items: start;
+}
+.yearly-highlights h2 { margin-top: 0; }
+.stat-bar-row { display: flex; align-items: center; gap: 0.6rem; }
+.stat-bar-label { min-width: 1.6rem; text-align: right; color: var(--text-dim); font-size: 0.85rem; }
+.stat-bar-label.wide { min-width: 9.5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-bar-track { flex: 1; height: 0.9rem; background: var(--bg-dark); border-radius: 999px; overflow: hidden; }
+.stat-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+.stat-bar-count { min-width: 2rem; font-size: 0.8rem; color: var(--text-dim); }
+/* Perfil de gustos (/ajustes): el contador es "cubiertos/puntuados" (p.ej.
+   "99/122" vs "524/538") - con solo min-width, una fila con menos digitos deja
+   mas ancho libre para .stat-bar-track (flex:1), asi que esa fila entera se veia
+   mas ancha que las demas (Tara: "la barra de abajo es mas grande... que TOC").
+   Ancho fijo SOLO aqui (no en .stat-bar-count global, que tambien usan
+   yearly.html/calibration.html/stats.html con contenido de longitud muy
+   distinta) para que las 8 filas midan siempre lo mismo pase lo que pase el dato. */
+.profile-bars .stat-bar-count { width: 4.5rem; min-width: 4.5rem; flex: 0 0 auto; text-align: right; }
+/* La fecha ("2026-08-20") heredaba .stat-bar-label.wide (min-width:9.5rem,
+   text-align:right - pensado para nombres de genero/tag largos) - de sobra
+   para 10 caracteres de fecha, dejaba un hueco muerto entre el borde y donde
+   arranca la barra de verdad (Tara: "espacio en ajustes... no esta a la
+   izquierda", tambien en escritorio, no es cosa de ancho de pantalla sino de
+   la reserva fija). Ancho ajustado al contenido real + alineado a la
+   izquierda para que la barra empiece pegada a la fecha, no a mitad de fila. */
+.profile-bars .stat-bar-label { min-width: 5.2rem; text-align: left; }
+
+/* ---------- Indice de afinidad (Bloque 2, 2026-08-14) ---------- */
+.affinity-list { display: flex; flex-direction: column; gap: 0.9rem; max-width: 560px; }
+.affinity-row { display: flex; flex-direction: column; gap: 0.2rem; }
+.affinity-head { display: flex; justify-content: space-between; align-items: baseline; }
+.affinity-score { font-weight: 700; color: var(--accent); }
+/* Estado de recalculo + "Ver calibracion" + el propio desplegable, los 3 en una
+   fila en vez de apilados como una lista (Tara: "puedes poner los 3 botones en
+   paralelo y no en lista"). */
+.hero-controls { display: flex; align-items: stretch; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.6rem; }
+/* A tercios iguales (Tara: "que ocupe 1/3 de cada boton para que sea
+   profesional") - min-width para que en movil envuelvan a fila completa en vez
+   de apretarse ilegibles, gracias al flex-wrap de arriba. */
+.hero-controls .recompute-status,
+.hero-controls > a.btn,
+.hero-controls .weights-summary {
+    flex: 1 1 0;
+    min-width: 160px;
+    margin: 0;
+}
+.hero-controls > a.btn { display: flex; align-items: center; justify-content: center; }
+
+/* Desplegable de pesos: checkbox oculto + label, mismo recurso sin JS que ya usa
+   el blur +18 y "Leer mas" de la ficha - colapsado por defecto (Tara: "el tema de
+   pesos... que sea un desplegable"). Sustituye al <details><summary> plano de
+   antes por un summary con mas pinta de control real (chevron que gira). El
+   checkbox vive dentro de .hero-controls (para poder ponerlo en fila con sus dos
+   vecinos), asi que el estado se lee con :has() en la tarjeta entera en vez del
+   combinador de hermanos ~ (que exigiria que los tres fueran hijos directos del
+   mismo padre). */
+.weights-toggle-check { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.weights-summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+    cursor: pointer; padding: 0.65rem 0.85rem;
+    background: var(--bg-dark); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 0.85rem; font-weight: 600; color: var(--text);
+}
+.weights-summary:hover { border-color: #3d3d3d; color: var(--text-bright); }
+.weights-summary .chev { width: 16px; height: 16px; color: var(--text-dim); transition: transform 150ms var(--ease); }
+.settings-section.hero:has(.weights-toggle-check:checked) .weights-summary { color: var(--accent); border-color: rgba(255, 158, 100, 0.35); }
+.settings-section.hero:has(.weights-toggle-check:checked) .weights-summary .chev { transform: rotate(180deg); color: var(--accent); }
+.weights-body { display: none; margin-top: 0.8rem; }
+.settings-section.hero:has(.weights-toggle-check:checked) .weights-body { display: block; }
+
+/* Rejilla por categoria (Apetito/Calidad/Combinacion/Prediccion) en vez del
+   <fieldset> que envolvia como pillaba - cada input enseña su valor por defecto
+   real debajo (auditoria visual: "sin valor de referencia junto a cada input"). */
+.weight-section { border: none; margin: 0 0 1.1rem; padding: 0; }
+.weight-section legend { padding: 0; font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; margin-bottom: 0.6rem; }
+.weight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem 1rem; }
+.weight-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.weight-field label { display: block; font-size: 0.8rem; color: var(--text); font-weight: 500; margin: 0; }
+.weight-field input[type="number"] { width: 100%; }
+.weight-hint { font-size: 0.68rem; color: var(--text-dim); opacity: 0.8; }
+
+/* Guardar y Restablecer en la misma fila - antes dos <form> sueltos, uno debajo
+   del otro. Restablecer como accion secundaria de texto, menos peso que Guardar. */
+.weights-actions { display: flex; align-items: center; gap: 0.7rem; margin-top: 0.4rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.btn-text { background: none; color: var(--text-dim); font-weight: 600; border: none; padding: 0.55rem 0.4rem; }
+.btn-text:hover { background: none; color: var(--danger); }
+/* Detalle de afinidad plegado por fila (Tara: "de un vistazo", el numero+barra ya basta
+   por defecto, el desglose de apetito/calidad/inercia/señales se abre a demanda). */
+.affinity-detail { margin-top: 0.1rem; }
+.affinity-detail summary { cursor: pointer; color: var(--text-dim); font-size: 0.78rem; list-style: none; }
+.affinity-detail summary::-webkit-details-marker { display: none; }
+.affinity-detail summary:hover { color: var(--text-bright); }
+.affinity-detail[open] summary { color: var(--accent); }
+.affinity-detail .stat-bar-count { display: block; margin-top: 0.2rem; }
+
+/* Barra divergente (inercia: apetito vs calidad) - una fila por atributo, crece desde
+   el centro hacia danger (costumbre, apetito > calidad) o success (infravalorado,
+   calidad > apetito). Mismos tokens de color que ya usa el resto de la app, mismo
+   patron de fila que .affinity-row (nombre+valor arriba, barra debajo). */
+/* 560px (igual que .stat-bars) se quedaba corto aqui a proposito ampliado: estas
+   listas van solas a todo lo ancho (no en rejilla junto a otras, ver .stats-columns
+   mas abajo - mezclarlas alli desnivelaba muchisimo la altura de las columnas y
+   metia 3 colores a la vez en la misma fila, Tara: "se ve rara de cojones"). Con
+   mas ancho propio se nota menos el hueco en el monitor sin arriesgar ese lio. */
+.diverging-list { display: flex; flex-direction: column; gap: 0.6rem; max-width: 880px; }
+.diverging-row { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+/* affinity-head es un flex row (label + valor); sin min-width:0 el label con
+   white-space:nowrap se niega a encoger por debajo de su texto completo
+   ("Tag: Proxy Battle"...), empujando toda la fila (y con ella la pagina
+   entera) mas ancha que el viewport - en iPhone obligaba a desplazar a la
+   derecha para ver el resto (Tara: "quiero que todo sea subir o bajar").
+   min-width:0 deja que el overflow:hidden/text-overflow:ellipsis que ya
+   tenia .stat-bar-label.wide entre en juego de verdad. */
+.affinity-head { min-width: 0; }
+.affinity-head .stat-bar-label.wide { min-width: 0; flex-shrink: 1; }
+.diverging-track { position: relative; height: 10px; background: var(--surface-hover); border-radius: 5px; }
+.diverging-zero { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 1px; background: var(--border); }
+.diverging-fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+.diverging-fill.positive { left: 50%; background: var(--danger); border-radius: 0 5px 5px 0; }
+.diverging-fill.negative { right: 50%; background: var(--success); border-radius: 5px 0 0 5px; }
+.diverging-value { font-weight: 600; }
+.diverging-value.positive { color: var(--danger); }
+.diverging-value.negative { color: var(--success); }
+
+/* ---------- Waifus / rankings ---------- */
+/* "% que te gustara" del calendario de temporada - arriba a la derecha para no chocar
+   con .char-rank/.rank-badge (arriba a la izquierda) si algun dia coinciden. */
+.predict-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(10, 10, 10, 0.85);
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+/* >95% de prediccion ("La Regla del 10", Tara 2026-08-13) - borde en --star (el mismo
+   dorado que ya usa la estrella de favoritos) para no meter un color fuera de paleta,
+   sin parpadeo ni animacion, que quede serio no llamativo de mas. */
+.masterpiece-candidate { border-color: var(--star); box-shadow: 0 0 0 1px var(--star); }
+.masterpiece-candidate .predict-badge { color: var(--star); }
+.predict-inline { color: var(--accent); font-weight: 600; }
+.confirm-banner {
+    background: rgba(255, 158, 100, 0.12);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.8rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin: 0.6rem 0;
+}
+/* Estado del ultimo sync en /calendario (2026-08-21, "guardar y mostrar ultimo sync
+   correcto, duracion y si fallo") - subdued como .page-hint mientras todo va bien,
+   solo pasa a --danger si el ultimo sync fallo de verdad (no cuenta los fallos por
+   titulo sueltos, esos ya se ven en el propio texto). */
+.sync-status { color: var(--text-dim); font-size: 0.85rem; margin: -0.6rem 0 1.2rem; }
+.sync-status.error { color: var(--danger); }
+.recompute-status {
+    background: rgba(255, 158, 100, 0.12);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.8rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin: 0.6rem 0;
+    animation: recompute-pulse 1.4s ease-in-out infinite;
+}
+@keyframes recompute-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+/* Skeleton shimmer de portadas (directrices de diseño 2026-08-21): el fondo animado
+   vive en el propio <img>, así que no hace falta JS ni clase de carga - en cuanto la
+   imagen real pinta (object-fit:cover cubre el 100% del área), lo tapa por completo. */
+@keyframes poster-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.outcome-label {
+    width: 100%;
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+.masterpiece-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--star);
+    padding: 0 0.3rem 0.3rem;
+}
+
+.char-rank, .rank-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 2;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(10, 10, 10, 0.85);
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+.char-card { position: relative; }
+.char-show {
+    display: block;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    padding: 0 0.3rem 0.3rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.char-show:hover { color: var(--accent); }
+.card-poster { position: relative; }
+.list-admin { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.list-admin .inline-form { max-width: 16rem; }
+.list-admin button { font-size: 0.78rem; padding: 0.35rem 0.7rem; }
+button.danger:hover { border-color: var(--danger); color: var(--danger); background: var(--surface); }
+/* Confirmacion en dos pasos de acciones destructivas (borrar lista): summary-boton + Confirmar. */
+/* Dentro de un .sort-bar de "modo de vista" (Manual/Duelos), una accion
+   destructiva como Reiniciar Elo se separa a la derecha - "ver ranking" (los
+   toggles) vs "administrar ranking" (esto), cuarto analisis 2026-08-21. */
+.sort-bar .del-confirm { margin-left: auto; }
+.del-confirm { display: flex; gap: 0.5rem; align-items: center; }
+.del-confirm summary { list-style: none; cursor: pointer; font-size: 0.78rem; padding: 0.35rem 0.7rem; }
+.del-confirm summary::-webkit-details-marker { display: none; }
+.del-confirm[open] summary { border-color: var(--danger); color: var(--danger); }
+button.danger-solid { background: var(--danger); color: var(--text-bright); font-size: 0.78rem; padding: 0.35rem 0.7rem; }
+button.danger-solid:hover { background: var(--danger); opacity: 0.85; }
+.home-card-checks { display: flex; gap: 0.35rem; }
+
+/* ---------- Listas ---------- */
+/* Padding/margin unificados con el resto de paneles (.settings-section, .form-page:
+   1.2rem/1rem) en Fase 2 - antes 0.9rem/0.8rem sin motivo documentado, misma familia
+   de "panel/seccion" que el resto. */
+.list-card {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem;
+    margin-top: 1rem;
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color 120ms var(--ease);
+}
+.list-card:hover { border-color: #3d3d3d; }
+.list-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; }
+.list-card-name { font-weight: 700; color: var(--text-bright); }
+.list-card-posters { display: flex; gap: 0.5rem; margin-top: 0.7rem; overflow: hidden; }
+.list-card-posters img {
+    width: 74px;
+    aspect-ratio: 2/3;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%);
+    background-size: 200% 100%;
+    animation: poster-shimmer 1.6s ease-in-out infinite;
+    box-shadow: var(--shadow);
+}
+.list-card .empty { margin-top: 0.5rem; font-size: 0.85rem; }
+
+/* ---------- Examen de puntuar (sliders) ---------- */
+.exam-title { margin-top: 0.8rem; }
+.exam-q {
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.8rem;
+    margin-bottom: 0.6rem;
+}
+.exam-q.rated { border-color: rgba(255, 158, 100, 0.5); }
+.exam-q-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+.exam-q-head label { flex: 1; margin: 0; font-weight: 600; color: var(--text); }
+.exam-q-value {
+    min-width: 2.4rem;
+    text-align: center;
+    font-weight: 700;
+    color: var(--text-dim);
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    padding: 0.1rem 0.3rem;
+}
+.exam-q.rated .exam-q-value { color: var(--accent); }
+.exam-q.reevaluar {
+    display: block;
+    text-decoration: none;
+    margin-top: 2rem;
+    transition: border-color 120ms var(--ease);
+}
+.exam-q.reevaluar .exam-q-head { margin-bottom: 0; }
+.exam-q.reevaluar:hover { border-color: var(--accent); }
+.exam-q-clear {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1rem;
+    padding: 0 0.3rem;
+    line-height: 1;
+    visibility: hidden;
+}
+.exam-q.rated .exam-q-clear { visibility: visible; }
+.exam-q-clear:hover { background: none; color: var(--danger); }
+.exam-q input[type="range"] {
+    width: 100%;
+    padding: 0;
+    accent-color: var(--accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}
+.cat-hint { color: var(--text-dim); font-size: 0.78rem; margin: 0.1rem 0 0.8rem; }
+.exam-result {
+    margin: 0.8rem 0 1rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    color: var(--text-bright);
+}
+.exam-result span { color: var(--accent); font-weight: 700; }
+details.categories { margin: 0.5rem 0 1rem; }
+details.categories summary { cursor: pointer; color: var(--text-dim); font-weight: 600; margin-bottom: 0.6rem; }
+details.categories summary:hover { color: var(--text-bright); }
+
+/* Buscador/Anadir titulos + Jugar duelos en Waifus y Listas, agrupados en una
+   fila a partes iguales (Tara, 2026-08-21: "en linea en vez de paralelo",
+   pidio agruparlos "para que sea profesional") - mismo patron que
+   .hero-controls de /ajustes. align-items:flex-start (no stretch): el
+   <details> puede crecer mucho al abrirse (input + rejilla de resultados), un
+   boton estirado a esa altura se veria raro. */
+.search-actions-row { display: flex; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; margin: 0.6rem 0; }
+.search-actions-row > .manual-add,
+.search-actions-row > a.btn {
+    flex: 1 1 0; min-width: 160px; margin: 0;
+}
+.search-actions-row > a.btn { display: flex; align-items: center; justify-content: center; }
+.search-actions-row > .manual-add summary { width: 100%; box-sizing: border-box; text-align: center; }
+
+/* ---------- Alta manual ---------- */
+.manual-add { margin-top: 2rem; }
+/* El summary de estos <details> ("Corregir fecha", "Cambiar portada"...) era texto
+   gris plano - Tara: "es raro, boton?" (ficha tecnica). Mismo recurso que ya usaba
+   .del-confirm summary (list-style:none + marker oculto) pero con la pinta de
+   .btn.secondary en vez de solo texto, para que se lea como un boton de verdad. */
+.manual-add summary {
+    cursor: pointer;
+    list-style: none;
+    display: inline-block;
+    padding: 0.5rem 0.95rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    margin-bottom: 0.8rem;
+}
+.manual-add summary::-webkit-details-marker { display: none; }
+.manual-add summary:hover { background: var(--surface-hover); color: var(--text-bright); }
+/* Alta manual de /buscar (unico .form-page dentro de un .manual-add - el resto
+   de .form-page son paginas enteras de formulario, ahi si tiene sentido el
+   centrado a 520px). Aqui vive dentro de una pagina ancha (buscador + rejilla de
+   resultados a todo el ancho) - centrado y a 520px se veia como una cajita
+   perdida en medio de hueco vacio en un monitor grande (Tara: "solo ocupa 1/3 en
+   la pantalla del ordenador, no me gusta visualmente eso"). Sin centrar (queda
+   pegado al borde izquierdo, como el resto del contenido de la pagina) y algo
+   mas ancho. */
+.manual-add .form-page { margin: 0; max-width: 640px; }
+
+/* Alta manual de /buscar, "escondida" (Tara: "un poco mas escondido") - en vez
+   del boton destacado que usa el resto de .manual-add (Corregir fecha, Cambiar
+   portada...), esta instancia concreta baja a enlace de texto pequeño bajo el
+   buscador. Mas especifico que ".manual-add summary" (2 clases+elemento vs 1),
+   gana sin tocar el resto de sitios que comparten .manual-add. */
+.manual-add.subtle { margin-top: 0.6rem; }
+.manual-add.subtle summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+    font-weight: 400;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+}
+.manual-add.subtle summary svg { width: 13px; height: 13px; }
+.manual-add.subtle summary:hover { background: none; color: var(--text-bright); }
+
+/* Quitar nota (.del-confirm, pensado como aviso compacto de 0.78rem) y Corregir
+   fecha/Cambiar portada (.manual-add, sin font-size propio = hereda el normal, mas
+   grande) se veian de tamaño distinto puestas una al lado de otra en la misma fila
+   (Tara: "los botones paralelos son de diferente tamaño") - normalizado solo dentro
+   de este grupo concreto, sin tocar el tamaño de cada clase en el resto de la app. */
+.page-actions.equal-buttons summary {
+    font-size: 0.85rem;
+    padding: 0.45rem 0.85rem;
+    margin-bottom: 0;
+}
+.manual-row { display: flex; gap: 0.8rem; }
+.manual-row > div { flex: 1; }
+
+/* ---------- Grupos de acciones secundarias de la ficha (auditoria visual 2026-08-20) ---------- */
+/* Antes: 5 <details> con la misma pinta de boton gris (Histórico de notas, Corregir
+   fecha, Cambiar portada, Quitar nota, Deshacer "Marcar vista") sin distinguir
+   "esto es solo informacion" de "esto cambia datos" de "esto es peligroso" - se
+   leian como un muro homogeneo. Ahora agrupados en 3 tarjetas por intencion. */
+.action-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8rem; margin: 1rem 0; }
+.group-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.9rem; }
+.group-card.danger-card { border-color: rgba(224, 95, 120, 0.35); background: rgba(224, 95, 120, 0.05); }
+.group-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.6rem; }
+.group-head svg { width: 15px; height: 15px; color: var(--text-dim); }
+.group-card.danger-card .group-head svg { color: var(--danger); }
+.group-head span { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+.group-card.danger-card .group-head span { color: var(--danger); }
+.group-items { display: flex; flex-direction: column; gap: 0.4rem; }
+.group-accordion summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.83rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: var(--radius-sm);
+    background: var(--bg-dark);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+.group-accordion summary::-webkit-details-marker { display: none; }
+.group-accordion summary::after { content: "›"; color: var(--text-dim); font-size: 0.85rem; transition: transform 120ms var(--ease); }
+.group-accordion[open] summary::after { transform: rotate(90deg); }
+.group-accordion summary:hover { border-color: #3d3d3d; }
+.group-card.danger-card .group-accordion summary { color: var(--danger); border-color: rgba(224, 95, 120, 0.3); }
+.group-accordion > *:not(summary) { margin-top: 0.5rem; }
+
+/* ---------- Episodios ---------- */
+.season-progress { display: flex; align-items: center; gap: 0.6rem; margin: 1rem 0 0.5rem; flex-wrap: wrap; }
+.season-progress h3 { flex: 0 0 auto; white-space: nowrap; }
+.season-progress .stat-bar-track { flex: 1; min-width: 4rem; }
+.season-progress-count { flex: 0 0 auto; font-size: 0.8rem; color: var(--text-dim); }
+.season-progress form { flex: 0 0 auto; margin: 0; }
+.season-progress form button { font-size: 0.75rem; padding: 0.3rem 0.6rem; white-space: nowrap; }
+
+.ep-list { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 1rem; }
+.ep-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0.7rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+}
+/* "ep-watched" ahora es "alguna vez visto" (watch_count > 0), no "visto en ESTA
+   ronda" - un episodio nunca vuelve a parecer "sin ver" solo por empezar un rewatch
+   (Tara, 2026-08-20: "no se como lo harias para que no se desmarque"). El circulo
+   (.ep-toggle) SI distingue las dos rondas, con dos verdes distintos en vez de
+   lleno/vacio: .seen (esta ronda ya confirmada) y .stale (visto antes, pendiente de
+   re-ver esta vez) - nunca vuelve al circulo hueco de "jamas visto" una vez tiene
+   historial. */
+.ep-row.ep-watched { background: rgba(158, 206, 106, 0.07); border-color: rgba(158, 206, 106, 0.35); }
+.ep-toggle {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1.7rem;
+    height: 1.7rem;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    color: transparent;
+}
+/* 1.7rem (~27px) queda por debajo del minimo tactil recomendado (~44px,
+   auditoria punto 15) - zona de toque ampliada de forma invisible con ::after
+   sin agrandar el circulo visible ni el espacio que ocupa en la fila. Con
+   espacio libre a su alrededor en .ep-row (el vecino, .ep-num, no es
+   interactivo), a diferencia de .fav-star/.ep-more que van pegados entre si y
+   no caben 44px sin invadirse - esos dos quedan fuera de esta pasada, harian
+   falta mas separacion real en la fila para hacerlo sin riesgo de toque
+   equivocado, y eso no se puede verificar sin verlo en el movil de verdad. */
+.ep-toggle::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+}
+.ep-toggle:hover { background: var(--surface-hover); color: var(--text-dim); }
+.ep-toggle.seen { background: var(--success); border-color: var(--success); color: #14210a; }
+.ep-toggle.seen:hover { background: var(--success); opacity: 0.85; color: #14210a; }
+.ep-toggle.stale { background: rgba(158, 206, 106, 0.18); border-color: var(--success); color: var(--success); }
+.ep-toggle.stale:hover { background: rgba(158, 206, 106, 0.32); }
+.ep-toggle svg { width: 13px; height: 13px; }
+/* Contador "x2"/"x3" (episode_watches, cuantas veces se ha marcado este episodio) -
+   solo aparece a partir de la segunda vez, la primera no necesita "x1". */
+.ep-watch-count {
+    position: absolute;
+    top: -0.4rem;
+    right: -0.4rem;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 0.6rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.15rem 0.3rem;
+    border-radius: 999px;
+    border: 2px solid var(--surface);
+}
+.ep-num { color: var(--text-dim); min-width: 2.6rem; }
+.ep-name { flex: 1; min-width: 0; }
+.ep-seen-label { color: var(--success); font-size: 0.75rem; margin-left: 0.5rem; }
+.ep-comment { display: block; color: var(--text-dim); font-size: 0.78rem; font-style: italic; }
+/* Fecha de emision movida junto al titulo (menos prominencia, no es un dato que
+   haga falta ver siempre a primer golpe de vista - cuarto analisis 2026-08-21). */
+.ep-date { color: var(--text-dim); font-size: 0.72rem; margin-left: 0.5rem; opacity: 0.85; }
+/* Acciones del episodio agrupadas a la derecha como una sola zona coherente,
+   en vez de fav-star y "comentar" sueltos sin relacion visual entre si. */
+.ep-actions { display: flex; align-items: center; gap: 0.3rem; flex: 0 0 auto; }
+.ep-row .fav-star { font-size: 1.05rem; }
+a.ep-row { text-decoration: none; color: inherit; }
+a.ep-row:hover { border-color: var(--accent); }
+.ep-more { position: relative; }
+.ep-more summary {
+    list-style: none;
+    cursor: pointer;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+}
+.ep-more summary::-webkit-details-marker { display: none; }
+.ep-more summary:hover { color: var(--text-bright); }
+.ep-more summary svg { width: 15px; height: 15px; }
+.ep-more[open] summary { color: var(--accent); }
+.ep-comment-form {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 5;
+    display: flex;
+    gap: 0.4rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem;
+    width: min(320px, 78vw);
+    box-shadow: var(--shadow);
+}
+.ep-comment-form input { flex: 1; }
+.ep-comment-form button { font-size: 0.8rem; padding: 0.35rem 0.6rem; }
+
+/* Volver a ver un episodio suelto (2026-08-21) - mismo lenguaje visual que .ep-more
+   (icono solo, sin fondo, en gris apagado hasta el hover). */
+.ep-rewatch {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    padding: 0.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+.ep-rewatch:hover { background: none; color: var(--text-bright); }
+.ep-rewatch svg { width: 15px; height: 15px; }
+.ep-history[open] summary { color: var(--accent); }
+.ep-history-body {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 5;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.7rem;
+    width: min(220px, 78vw);
+    box-shadow: var(--shadow);
+    font-size: 0.82rem;
+}
+.ep-watch-history { margin: 0; padding: 0; list-style: none; color: var(--text-dim); }
+.ep-watch-history li { padding: 0.1rem 0; }
+.ep-watch-history-empty { margin: 0; color: var(--text-dim); }
+
+.sort-bar { display: flex; gap: 0.3rem; margin: 0.6rem 0 0.2rem; flex-wrap: wrap; }
+.sort-bar a, .sort-bar button, .sort-bar label {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.85rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+.sort-bar a:hover, .sort-bar button:hover, .sort-bar label:hover { color: var(--text-bright); background: var(--surface-hover); }
+.sort-bar a.active, .sort-bar button.active { color: var(--accent); background: rgba(255, 158, 100, 0.12); }
+
+/* Tabs reales de /estadisticas (cuarto analisis, 2026-08-21: "dividiria el
+   contenido en dos rutas o dos tabs reales - Resumen / Perfil de gustos" en vez
+   de un unico desplegable con "otra pagina entera" dentro). CSS puro con
+   radio+label+~, sin JS, mismo patron ya usado en el resto de la app para
+   toggles sin backend. */
+.stats-tab-radio { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.stats-panel-resumen, .stats-panel-perfil { display: none; }
+#stats-tab-resumen:checked ~ .stats-panel-resumen { display: block; }
+#stats-tab-perfil:checked ~ .stats-panel-perfil { display: block; }
+#stats-tab-resumen:checked ~ .stats-tabs label[for="stats-tab-resumen"],
+#stats-tab-perfil:checked ~ .stats-tabs label[for="stats-tab-perfil"] {
+    color: var(--accent);
+    background: rgba(255, 158, 100, 0.12);
+}
+.stats-tabs label { font-size: 0.92rem; font-weight: 600; padding: 0.5rem 1rem; }
+/* Para que un <form> dentro de .sort-bar no rompa el flex-wrap (dos toggles de modo,
+   p.ej. Manual/Duelos en listas y waifus) - el form desaparece del layout, solo cuenta el boton. */
+.sort-bar form { display: contents; }
+
+/* Fila de estado/accion + favorito en la ficha tecnica (analisis 2026-08-21: la
+   "megapildora" anterior mezclaba 5 decisiones de nivel distinto - estado, accion
+   principal, favorito, habito, autover - en un unico grupo visual, "no son cinco
+   miniacciones equivalentes"). Ya no es una pildora que envuelve todo: cada pieza
+   (estado/rating, accion, favorito) lleva su propia forma natural, solo agrupadas
+   por proximidad (gap), no por un contenedor comun con su propio fondo/borde. */
+.entry-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.6rem;
+}
+/* La nota, cuando ya existe, es la unica pieza de "estado" de la fila - un cuerpo
+   propio (antes flotaba como texto suelto dentro de la pildora) la distingue de
+   texto normal sin depender de un contenedor compartido. */
+.entry-actions-row .rating {
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.7rem;
+}
+/* Favorito con su propia caja de icono (antes solo un caracter suelto flotando en
+   la pildora) - mismo tratamiento que un boton secundario compacto. */
+.entry-actions-row .fav-star {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.6rem;
+}
+.entry-actions-row .fav-star:hover { border-color: var(--star); background: var(--surface-hover); }
+
+/* "Seguimiento" revelado EN LINEA (segunda vuelta, Tara: "no debera de
+   desaparecer y mostrar los botones extra" - no un desplegable que empuja la
+   pagina hacia abajo). Al marcar el checkbox oculto, el propio boton
+   "Seguimiento" desaparece y los extras (habito/autover + una X para cerrar)
+   ocupan su sitio en la MISMA fila (.tracking-extras pasa a display:contents,
+   sus hijos se integran como items directos del flex de .entry-actions-row en
+   vez de crear un nivel de caja nuevo). Cerrar (la X, misma label del mismo
+   checkbox) vuelve a marcar/desmarcar y restaura el estado compacto. */
+.tracking-toggle-check { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.tracking-summary {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 0.83rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+.tracking-summary:hover { border-color: #3d3d3d; color: var(--text-bright); }
+.tracking-extras { display: none; }
+.entry-actions-row:has(.tracking-toggle-check:checked) .tracking-summary { display: none; }
+.entry-actions-row:has(.tracking-toggle-check:checked) .tracking-extras { display: contents; }
+.tracking-extras .btn.secondary.is-habit { color: var(--accent); border-color: var(--accent); background: rgba(255, 158, 100, 0.12); }
+.tracking-close {
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0.35rem 0.55rem;
+    border-radius: var(--radius-sm);
+}
+.tracking-close:hover { color: var(--text-bright); background: var(--surface-hover); }
+
+.fav-star {
+    background: none;
+    border: none;
+    font-size: 1.3rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    color: var(--text-dim);
+}
+.fav-star:hover { background: none; color: var(--star); }
+.fav-star.is-fav { color: var(--star); }
+
+.btn.secondary.is-habit { color: var(--accent); border-color: var(--accent); background: rgba(255, 158, 100, 0.12); }
+
+/* ---------- Aviso +18 (contenido marcado "adult" por TMDB): borroso hasta tocar ---------- */
+.nsfw-check { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.nsfw-img { filter: blur(18px); transition: filter 150ms var(--ease); }
+.nsfw-label {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0.5rem;
+    background: rgba(10, 10, 10, 0.55);
+    color: var(--text-bright);
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.card:has(.nsfw-check:checked) .nsfw-img,
+.home-card:has(.nsfw-check:checked) .nsfw-img,
+.list-row:has(.nsfw-check:checked) .nsfw-img,
+.nsfw-frame:has(.nsfw-check:checked) .nsfw-img { filter: none; }
+.card:has(.nsfw-check:checked) .nsfw-label,
+.home-card:has(.nsfw-check:checked) .nsfw-label,
+.list-row:has(.nsfw-check:checked) .nsfw-label,
+.nsfw-frame:has(.nsfw-check:checked) .nsfw-label { display: none; }
+.nsfw-frame { position: relative; }
+
+/* ---------- Mosaico (todas las portadas, sin texto) ---------- */
+.mosaic-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.4rem;
+    margin-top: 0.8rem;
+}
+.mosaic-grid a { display: block; border-radius: var(--radius-sm); overflow: hidden; }
+.mosaic-grid img {
+    width: 100%;
+    aspect-ratio: 2/3;
+    object-fit: cover;
+    display: block;
+    background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%);
+    background-size: 200% 100%;
+    animation: poster-shimmer 1.6s ease-in-out infinite;
+    transition: transform 150ms var(--ease);
+}
+.mosaic-grid a:hover img { transform: scale(1.06); }
+.custom-poster-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+    font-size: 0.7rem;
+    color: var(--star);
+    background: rgba(10, 10, 10, 0.85);
+    padding: 1px 5px;
+    border-radius: 999px;
+}
+
+/* Calendario de temporada consolidado a 2 niveles (cuarto analisis, 2026-08-21):
+   nivel 1 = cuando (año+estacion), nivel 2 = como se mira (vista+filtro+
+   actualizar). */
+.season-nav {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+    margin-top: 0.6rem;
+}
+.year-switch { display: flex; align-items: center; gap: 0.3rem; }
+.year-arrow {
+    color: var(--text-dim);
+    font-weight: 700;
+    padding: 0.3rem 0.5rem;
+    border-radius: var(--radius-sm);
+}
+.year-arrow:hover { color: var(--text-bright); background: var(--surface-hover); }
+.year-label { font-family: var(--display-font); font-weight: 800; font-size: 1.15rem; color: var(--text-bright); min-width: 3.2rem; text-align: center; }
+/* "Calendario normal" es volver, no parte de cuando/como se mira - empujado a la
+   derecha, discreto en vez de un .btn.secondary con el mismo peso que el resto. */
+.season-back { margin-left: auto; color: var(--text-dim); font-size: 0.85rem; text-decoration: underline; text-decoration-color: var(--border); }
+.season-back:hover { color: var(--accent); }
+.season-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    margin: 0.8rem 0 1.2rem;
+}
+.season-controls form { display: contents; }
+.season-controls button.secondary { font-size: 0.82rem; }
+
+/* Separador claro entre estaciones del calendario anual (Tara: "separadores claros de
+   invierno/verano/otoño/primavera", 2026-08-13) - mas prominente que el h2 de dia de
+   la semana que va dentro, para que la jerarquia estacion > dia > tarjetas se lea de
+   un vistazo. */
+.season-divider {
+    font-size: 1.3rem;
+    color: var(--accent);
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 0.4rem;
+    margin: 2.2rem 0 0.8rem;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+.season-divider .season-count { font-size: 0.8rem; color: var(--text-dim); font-weight: 400; }
+
+.char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.8rem; margin-top: 0.6rem; }
+.season-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.season-card a { display: block; text-decoration: none; color: inherit; }
+.char-card {
+    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    overflow: hidden;
+    text-align: center;
+    padding-bottom: 0.4rem;
+    transition: border-color 120ms var(--ease);
+}
+.char-card:hover { border-color: #3d3d3d; }
+.char-card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%); background-size: 200% 100%; animation: poster-shimmer 1.6s ease-in-out infinite; }
+.char-card .char-name { font-size: 0.75rem; padding: 0.3rem 0.3rem 0.1rem; }
+.char-card .fav-star { font-size: 1.1rem; }
+.char-card .char-add { font-size: 0.72rem; padding: 0.25rem 0.6rem; margin-top: 0.2rem; }
+
+@media (min-width: 900px) {
+    .container { padding: 2.5rem; }
+}
+
+/* ---------- Navegacion movil ---------- */
+.bottomnav { display: none; }
+
+@media (max-width: 640px), (max-height: 500px) and (orientation: landscape) {
+    .topnav a:not(.brand) { display: none; }
+
+    /* safe-area-inset-left/-right (antes sin usar en todo el CSS): con Dynamic
+       Island, al girar el iPhone 17 Pro a horizontal la isla y la barra de gestos
+       quedan a los lados, no arriba - contenido pegado al borde en landscape sin
+       esto. */
+    body {
+        padding-bottom: calc(4.6rem + env(safe-area-inset-bottom));
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+
+    .bottomnav {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 20;
+        background: rgba(10, 10, 10, 0.96);
+        backdrop-filter: blur(8px);
+        border-top: 1px solid var(--border);
+        padding: 0.4rem calc(0.2rem + env(safe-area-inset-right)) calc(0.4rem + env(safe-area-inset-bottom)) calc(0.2rem + env(safe-area-inset-left));
+        transform: translateZ(0);
+    }
+
+    /* Carruseles (Continuar viendo / Similares) tambien mas grandes en movil. */
+    .home-card { flex-basis: 168px; }
+    .bottomnav > a, .bottomnav > details > summary {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
+        color: var(--text-dim);
+        text-decoration: none;
+        font-size: 0.68rem;
+        padding: 0.2rem 0;
+        list-style: none;
+        cursor: pointer;
+    }
+    .bottomnav > details > summary::-webkit-details-marker { display: none; }
+    .bottomnav svg { width: 22px; height: 22px; }
+    .bottomnav a.active, .bottomnav summary.active { color: var(--accent); }
+    .bottomnav a.active svg, .bottomnav summary.active svg { stroke: var(--accent); }
+
+    .bottomnav-more { position: relative; flex: 1; }
+    .bottomnav-more[open] summary { color: var(--accent); }
+    .bottomnav-more-menu {
+        position: absolute;
+        bottom: calc(100% + 0.6rem);
+        right: -0.4rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 0.4rem;
+        display: flex;
+        flex-direction: column;
+        min-width: 9rem;
+        box-shadow: var(--shadow);
+    }
+    .bottomnav-more-menu a {
+        color: var(--text);
+        text-decoration: none;
+        padding: 0.5rem 0.6rem;
+        border-radius: calc(var(--radius) - 4px);
+        font-size: 0.9rem;
+    }
+    .bottomnav-more-menu a:hover { background: var(--bg); }
+
+    .manual-row { flex-direction: column; gap: 0; }
+
+    /* Botones de accion apilados (no en linea) en las filas: en movil, con la portada
+       grande de /pendientes y poco ancho libre, dos botones en linea se apretaban y
+       se veian mal. Mismo patron que .card/.home-card .actions, aqui solo en movil
+       porque en list-row de escritorio ya hay ancho de sobra. */
+    .list-row .actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.3rem;
+    }
+    .list-row .actions .btn, .list-row .actions button {
+        font-size: 0.72rem;
+        padding: 0.3rem 0.5rem;
+    }
+
+    /* Cabecera de la ficha tecnica (.list-row > .entry-actions-row): a este cuarto
+       contexto con varios botones ("Vista"/"Puntuar", favorito, habito, autover) no
+       le habia llegado el mismo patron de arriba - se quedaba en la misma fila que
+       la portada y el texto (.info) sin envolver, y en movil los botones acababan
+       superpuestos encima del titulo/año/nota (bug visual real, Tara, captura de
+       movil). :has() acota el flex-wrap a la fila de la ficha sin tocar el resto de
+       .list-row (listas de /pendientes, /vistas, etc., que no llevan .entry-actions-row). */
+    .list-row:has(.entry-actions-row) { flex-wrap: wrap; }
+    /* Ya no es una pildora de 5 piezas que forzar en columna - habito/autover
+       viven ahora dentro de la misma .entry-actions-row (revelados en linea al
+       pulsar Seguimiento), el flex-wrap heredado ya los baja a una segunda linea
+       en movil si no caben, sin necesitar una regla aparte. */
+    .entry-actions-row { flex-basis: 100%; }
+    .entry-actions-row .btn, .entry-actions-row button {
+        font-size: 0.72rem;
+        padding: 0.3rem 0.5rem;
+    }
+
+    /* Cabecera de la ficha tecnica, segundo intento (screenshots reales, iPhone
+       17 Pro): el flex-wrap de arriba en teoria bajaba .entry-actions-row a su
+       propia linea, pero con la portada fija a 140px de ancho, .info (flex:1,
+       min-width:0) se quedaba apretada en la MISMA linea que la portada en vez
+       de saltar tambien de linea - en ~190px utiles el h1 partia una palabra por
+       renglon y los chips de metadatos se amontonaban, con la portada (210px de
+       alto) sobresaliendo por debajo del bloque de texto corto de al lado (Tara:
+       "no se ve nada profesional", "demasiado espacio vacio"). Apilado vertical
+       de verdad en vez de confiar en que el wrap encuentre el hueco solo:
+       portada centrada arriba, info y acciones a ancho completo debajo. */
+    .title-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+    .title-header .info { width: 100%; }
+    .title-header .meta-row { justify-content: center; }
+    .title-header .entry-actions-row { justify-content: center; }
+    /* "Proximo: T2E1 - Episodio 1 (fecha)" es el chip mas largo de la fila y el
+       que menos aporta en el telefono (Tara: "no hace falta este campo aqui") -
+       el resto de metadatos (nota, duracion...) se quedan. */
+    .meta-chip.next-ep { display: none; }
+
+    /* Botones de la tarjeta de resultados (grid de /buscar, /vistas...) en
+       paralelo en vez de apilados (Tara: "los botones son raros, ponerlos en
+       paralelo"). flex-wrap en vez de row a secas: si un texto de boton no
+       cupiera en una tarjeta muy estrecha, baja de linea en vez de recortarse. */
+    .card .actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+    .card .actions .btn, .card .actions button {
+        flex: 1 1 auto;
+        font-size: 0.72rem;
+        padding: 0.35rem 0.3rem;
+    }
+
+    /* /vistas mostraba una sola tarjeta por fila en el iPhone 17 Pro real
+       (captura de Tara) - mismo auto-fit/minmax al limite que .grid.discover
+       (/recomendados, tambien reportado despues con el mismo sintoma: "se ve
+       mal con solo una tarjeta"). En vez de seguir fiado del calculo
+       automatico al limite en un movil real, 2 columnas fijas en movil para
+       las dos variantes - predecible, igual en toda la app. */
+    .grid, .grid.discover { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- Duelos (ranking por comparacion A/B) ---------- */
+/* Rediseñada como "escena de duelo" (cuarto analisis, 2026-08-21): antes dos
+   tarjetas de 260px sueltas en 560px se leian como "dos tarjetas normales
+   perdidas en el centro", sin nada que dijera "estas comparando A contra B".
+   Un VS central en la propia rejilla (3 columnas en vez de 2) hace ese trabajo
+   sin necesitar imagenes ni JS nuevo. */
+/* Cabecera centrada de "pantalla de decision" - generalizada de .duel-header tras
+   ver Duelo centrado ("la cabecera deberia estar centrada para que la vista este
+   centrada y no se vea raro") y reusada en /puntuar, misma familia de pantalla
+   (punto 8 del cuarto analisis: Duelo y Puntuar son "momento de decision", deben
+   abrazar la misma composicion). El h1/hint de coverage seguian con el alineado a
+   la izquierda por defecto mientras la tarjeta de debajo ya estaba centrada. */
+.decision-header { text-align: center; }
+.decision-header .page-hint { margin-left: auto; margin-right: auto; }
+.decision-intro { text-align: center; margin-left: auto; margin-right: auto; }
+.duel-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 1.2rem;
+    margin-top: 1rem;
+    align-items: center;
+    justify-items: center;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.duel-vs {
+    font-family: var(--display-font);
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    padding: 0 0.2rem;
+}
+.duel-card { margin: 0; }
+.duel-pick {
+    /* Tamaño subido de 260 a 340px maximo - tarjetas mas grandes, una "escena"
+       en vez de una rejilla de tarjetas normales pequeñas. */
+    width: 100%;
+    max-width: 340px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 120ms var(--ease), border-color 120ms var(--ease);
+}
+.duel-pick:hover { transform: translateY(-2px); border-color: var(--accent); }
+.duel-pick:active { transform: scale(0.98); }
+.duel-pick img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; background: linear-gradient(90deg, var(--bg-dark) 25%, var(--surface-hover) 50%, var(--bg-dark) 75%); background-size: 200% 100%; animation: poster-shimmer 1.6s ease-in-out infinite; }
+.duel-title { padding: 0.5rem 0.6rem 0.1rem; font-weight: 600; font-size: 0.85rem; color: var(--text-bright); }
+.duel-subtitle { padding: 0 0.6rem 0.5rem; font-size: 0.78rem; color: var(--text-dim); }
+
+@media (max-width: 480px) {
+    /* Dos portadas + VS en linea se aprietan demasiado en un movil estrecho -
+       apiladas, el VS pasa a marcar la separacion horizontal entre ambas. */
+    .duel-grid { grid-template-columns: 1fr; }
+    .duel-vs { padding: 0.2rem 0; }
+}
+/* "Empate" como control integrado justo debajo de la escena, no una fila de
+   botones aparte - menos separacion que antes, mismo naranja discreto que el
+   resto de acciones secundarias. */
+.duel-tie {
+    justify-content: center;
+    margin-top: 1.2rem;
+}
+.duel-tie .btn { padding: 0.55rem 1.4rem; }
+/* "Otro par"/"Ver ranking actual" bajan a navegacion discreta - antes dos
+   .btn.secondary con el mismo peso visual que la propia decision del duelo. */
+.duel-nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 1.6rem;
+    font-size: 0.85rem;
+}
+.duel-nav a { color: var(--text-dim); text-decoration: underline; text-decoration-color: var(--border); }
+.duel-nav a:hover { color: var(--accent); }
+.duel-nav .sep { color: var(--text-dim); opacity: 0.5; }
+
+.elo-badge { font-size: 0.75rem; color: var(--text-dim); }
+.elo-delta { margin-left: 0.35rem; }
+.elo-delta.up { color: var(--accent); font-weight: 600; }
+.elo-delta.down { color: var(--text-dim); }
+
+/* Fase final del cuarto analisis (2026-08-21, punto 12): "falta prefers-reduced-
+   motion - hay shimmer, fades, escalados y transiciones por toda la app". Patron
+   estandar: colapsar CUALQUIER animacion/transicion a casi-instantanea en vez de
+   enumerar cada una (shimmer de posters, fade de swaps htmx, scale de :active,
+   translateY de :hover, spinner, pulso de recalculo...) - respeta la preferencia
+   sin dejar saltos de layout bruscos donde antes habia una transicion suave. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
