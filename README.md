@@ -1,5 +1,7 @@
 # TaraTrack
 
+Mi segundo proyecto de este verano (el primero fue [TarArch](https://github.com/Tara7ara/TarArch), mi escritorio Linux) — en desarrollo activo desde hace varios meses, el historial de commits de este repo es reciente porque lo publico ahora, no porque se haya hecho en un día.
+
 Tracker personal de series y películas, autoalojado y de un solo usuario — un sustituto propio de Trakt/TV Time. FastAPI + Jinja2 + htmx + SQLite, server-rendered, sin build step de frontend.
 
 Los metadatos vienen de TMDB (y de Jikan/AniList para anime), pero en la base de datos solo se guarda lo que realmente sigues: lo pendiente, lo visto, tus notas, tus listas y tus personajes favoritos.
