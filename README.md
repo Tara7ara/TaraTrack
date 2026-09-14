@@ -4,6 +4,14 @@ Tracker personal de series y películas, autoalojado y de un solo usuario — un
 
 Los metadatos vienen de TMDB (y de Jikan/AniList para anime), pero en la base de datos solo se guarda lo que realmente sigues: lo pendiente, lo visto, tus notas, tus listas y tus personajes favoritos.
 
+## Capturas
+
+_(biblioteca de ejemplo, no la real — ver "Índice de afinidad" más abajo para lo interesante de verdad)_
+
+![Pendientes](screenshots/pendientes.png)
+![Vistas](screenshots/vistas.png)
+![Perfil de gustos](screenshots/perfil-gustos.png)
+
 ## Arrancar en local
 
 ```bash
