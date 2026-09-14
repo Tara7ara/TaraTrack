@@ -21,7 +21,7 @@ TMDB_API_KEY=... TARATRACK_SECRET_KEY=... TARATRACK_PASSWORD=... TARATRACK_DB_PA
 
 Abre http://127.0.0.1:8000. El esquema se crea solo al arrancar (`init_db()`): no hay paso de migración manual.
 
-La única credencial externa necesaria es una API key v3 de [TMDB](https://www.themoviedb.org/settings/api) (gratis). Jikan y AniList no piden key. `TARATRACK_SECRET_KEY`/`TARATRACK_PASSWORD` son del login propio (ver `CLAUDE.md` § Seguridad) — sin `TARATRACK_SECRET_KEY` el arranque falla a propósito, no hay valor por defecto.
+La única credencial externa necesaria es una API key v3 de [TMDB](https://www.themoviedb.org/settings/api) (gratis). Jikan y AniList no piden key. `TARATRACK_SECRET_KEY`/`TARATRACK_PASSWORD` son del login propio (cookie firmada de 1 año, sin dependencia de ningún proxy) — sin `TARATRACK_SECRET_KEY` el arranque falla a propósito, no hay valor por defecto.
 
 ## Tests y calidad
 
@@ -116,4 +116,3 @@ Ese es el orden correcto. `scripts/backup.sh` se ejecuta en el host, no dentro d
 
 - Hay tests en `tests/` (`pytest -q`, ver § Tests y calidad) y Ruff configurado en modo solo-revisión (`pyproject.toml`).
 - La interfaz no usa Tailwind ni ningún framework JS; los colores salen de las variables de `:root` en `app.css`.
-- `CLAUDE.md` tiene el detalle fino de arquitectura y quirks para trabajar con Claude Code en este repo.

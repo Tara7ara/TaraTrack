@@ -1151,7 +1151,7 @@ _NO_EN_EMISION_SQL = "titles.next_episode_air_date IS NULL"
 
 # Bug real (Tara, 2026-08-21): Dorohedoro entro en /puntuar con solo 4 de 23
 # episodios emitidos vistos - entries.status pasa a 'watched' con solo marcar el
-# PRIMER episodio (decision de diseño de siempre, ver CLAUDE.md), asi que sin
+# PRIMER episodio (decision de diseño de siempre), asi que sin
 # esta condicion cualquier serie "empezada y abandonada" (o simplemente a medio
 # ver) que ademas no este emitiendo AHORA MISMO (_NO_EN_EMISION_SQL) cae en la
 # cola de puntuar antes de que Tara la haya terminado de verdad. Mismo criterio

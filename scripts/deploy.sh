@@ -1,12 +1,12 @@
 #!/bin/bash
 # Despliegue de TaraTrack: valida en local, saca un snapshot de seguridad del
 # servidor, sincroniza, reconstruye el contenedor y verifica que responde -
-# todo en un solo comando en vez del ritual manual documentado en CLAUDE.md
-# (rsync + build + docker rm -f + up -d), que ya ha fallado una vez de verdad
-# por un rsync mal apuntado que aplano rutas dentro de app/ (ronda 2026-08-21).
+# todo en un solo comando en vez del ritual manual (rsync + build + docker rm -f
+# + up -d), que ya ha fallado una vez de verdad por un rsync mal apuntado que
+# aplano rutas dentro de app/.
 #
-# Sin git en el proyecto (decision consciente de Tara), este script es la unica
-# red de seguridad real que existe hoy: antes de tocar nada en el servidor,
+# El despliegue real (servidor casero) va por rsync, no por git push - este
+# script es la unica red de seguridad real que existe hoy: antes de tocar nada,
 # empaqueta el app/ actual del servidor en un .tar.gz fechado. Si el despliegue
 # sale mal, `scripts/deploy.sh --rollback` restaura ese snapshot y reconstruye.
 #

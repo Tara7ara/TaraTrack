@@ -17,8 +17,8 @@ EXPECTED_SEASON_RATINGS_COLUMNS = {
 
 
 def test_fresh_db_has_every_migrated_column(tmp_path, monkeypatch):
-    """Regresion del bug documentado en CLAUDE.md (Ronda 2026-08-20):
-    _migrate_rating_scale_0_10 reconstruye entries/season_ratings con una lista de
+    """Regresion de un bug real: _migrate_rating_scale_0_10 reconstruye
+    entries/season_ratings con una lista de
     columnas hardcodeada aparte de MIGRATIONS - si alguien añade una columna nueva
     via MIGRATIONS y se olvida de replicarla ahi, una instalacion NUEVA (o los
     tests) pierde esa columna en el primer arranque, aunque produccion (que ya

@@ -28,7 +28,7 @@ MAX_POSTER_BYTES = 8 * 1024 * 1024  # 8 MB, de sobra para una portada
 POSTER_CONTENT_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 
 AUTH_COOKIE = "taratrack_auth"
-AUTH_MAX_AGE = 60 * 60 * 24 * 365  # 1 año - "recuerdame" de verdad, ver Seguridad en CLAUDE.md
+AUTH_MAX_AGE = 60 * 60 * 24 * 365  # 1 año - "recuerdame" de verdad, sin reintroducir la contraseña a cada rato
 
 # Freno a fuerza bruta contra /login (ronda 2026-08-21) - global, no por IP: ver
 # el porque en el comentario junto a su uso en main.py (_login_locked_out).
