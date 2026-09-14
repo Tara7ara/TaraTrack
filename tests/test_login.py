@@ -14,7 +14,7 @@ def client(tmp_path, monkeypatch):
     """TestClient real contra una BBDD sqlite temporal. base_url en https:// a
     proposito (no http://) - la cookie de sesion es Secure=True y un cliente
     hablando por http nunca la reenviaria en peticiones siguientes, igual que un
-    navegador real jamas la manda salvo por HTTPS (tara.series fuerza SSL)."""
+    navegador real jamas la manda salvo por HTTPS (tracker.midominio.com fuerza SSL)."""
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     main._login_failures.clear()
     with TestClient(main.app, base_url="https://testserver") as c:

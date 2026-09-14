@@ -78,7 +78,7 @@ async def static_cache_headers(request: Request, call_next):
     return response
 
 
-# ---------- Login (cookie larga, sustituye al Access List de NPM para tara.series) ----------
+# ---------- Login (cookie larga, sustituye al Access List de NPM para tracker.midominio.com) ----------
 # Tara, 2026-08-20: "el pass... se puede guardar en la coockie o algo? como hacen las
 # grandes apps?" - antes la unica auth era el Access List de Nginx Proxy Manager (basic
 # auth HTTP delante del proxy), sin "recuerdame", asi que el navegador volvia a pedirla
