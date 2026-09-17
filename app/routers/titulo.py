@@ -35,9 +35,38 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
                 except Exception:
                     continue
         repo.mark_watched_quick(conn, entry["id"], title_row)
-    return templates.TemplateResponse(
-        request, "partials/entry_actions.html", {"tmdb_id": tmdb_id, "type": type, "state": "watched"}
+        # Bug real (2026-09-17, Tara: "marco vista y no se pone en continuar viendo,
+        # tengo que refrescar"): marcar el primer episodio desde /pendientes quita la
+        # fila de ahi (swipe.js, via htmx:afterRequest) pero nunca inyectaba la
+        # tarjeta nueva en el carrusel de "Continuar viendo" - solo un reload la traia.
+        # Mismo patron OOB que render_nav_cola_oob: si la entry ya califica para el
+        # carrusel (get_home_card, None si no), se manda de mas junto a la respuesta
+        # normal. Si /pendientes no esta abierto (llamado desde /buscar, una ficha...)
+        # el hx-swap-oob simplemente no encuentra "#continuar-carousel" y no hace nada.
+        #
+        # Bug real encontrado en pruebas ANTES de desplegar a produccion (pillado con
+        # una captura de Tara: la tarjeta salia "hiper mega grande", portada y titulo
+        # sueltos en vez de dentro de la tarjeta): con estilos de swap distintos de
+        # "outerHTML" (aqui "afterbegin"), htmx DESCARTA el propio elemento que lleva
+        # hx-swap-oob y solo inserta sus HIJOS (confirmado leyendo htmx.min.js: la
+        # funcion de insercion recorre childNodes del "contenido" y tira el wrapper) -
+        # poner hx-swap-oob directo en el <div class="home-card"> perdia ese div entero
+        # y dejaba la portada/info sueltas como hijos directos de .carousel, sin la
+        # clase que les da tamaño/flex-basis. Fix: hx-swap-oob va en un <div> "portador"
+        # de usar y tirar que envuelve la tarjeta real - ese portador es el que se
+        # descarta, la tarjeta de dentro llega intacta con su clase "home-card".
+        oob = ""
+        if type == "show":
+            card = repo.get_home_card(conn, entry["id"])
+            if card:
+                card_html = templates.env.get_template("partials/home_card.html").render(
+                    {"request": request, "c": card, "confirm_all": False}
+                )
+                oob = f'<div hx-swap-oob="afterbegin:#continuar-carousel">{card_html}</div>'
+    html = templates.env.get_template("partials/entry_actions.html").render(
+        {"request": request, "tmdb_id": tmdb_id, "type": type, "state": "watched"}
     )
+    return HTMLResponse(html + oob)
 
 
 

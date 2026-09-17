@@ -5,15 +5,43 @@
    vuelve a pedir esta pagina cuando la pestaña recupera el foco de verdad (evento
    nativo `visibilitychange` del documento, filtrado a "visible"), htmx puro sin JS
    nuevo. Envuelve TODO el contenido (no solo #pendientes-section) porque "Continuar
-   viendo"/"nuevas" tambien pueden quedar desactualizados, no solo la lista. #}
+   viendo"/"nuevas" tambien pueden quedar desactualizados, no solo la lista.
+   Bug real (2026-09-15): el doble tick de "Continuar viendo" ("¿Los X?" Si/No, ver
+   home_card.html) solo existe como swap local de esa tarjeta - si el movil cambia de
+   app o se bloquea la pantalla entre el primer toque (confirmar) y el segundo (Si),
+   este trigger recargaba TODA la pagina y devolvia la tarjeta a su estado normal antes
+   de que el segundo toque llegara, así que el "Si" nunca se pudo pulsar (confirmado en
+   logs: docenas de GET /todos/confirmar, cero POST /todos). Condicion extra: no
+   refrescar solo mientras haya una confirmacion de doble tick abierta en pantalla.
+
+   BUG REAL ENCONTRADO EL 2026-09-16 (Tara: "le doy al tick y desaparece la tarjeta"):
+   `hx-select` es un atributo HEREDADO en htmx (se resuelve con getClosestAttributeValue,
+   caminando hacia arriba por el DOM igual que hx-target/hx-swap) - confirmado leyendo
+   el propio htmx.min.js, no solo la documentacion. Como NINGUN boton de dentro de esta
+   pagina (el tick de home_card.html, "Quitar de pendientes", "Marcar vista"...) declara
+   su propio hx-select, TODOS heredaban sin querer el `hx-select="#pendientes-page"` de
+   aqui - pensado solo para EL PROPIO refresco de esta caja al recuperar el foco. Cuando
+   cualquier otro boton hacia su swap normal, htmx filtraba su respuesta (un fragmento
+   suelto, sin ningun `#pendientes-page` dentro) a la nada, y hacia el swap con contenido
+   vacio - la tarjeta desaparecia sin ningun error, con la respuesta HTTP perfectamente
+   correcta. `hx-disinherit="hx-select"` corta esa herencia aqui mismo, sin tener que
+   tocar cada boton hijo uno a uno - los que SI quieren su propio hx-select (los filtros
+   de busqueda/orden/genero de mas abajo) ya lo declaran explicito, que siempre gana
+   sobre lo heredado, asi que no se ven afectados. #}
 <div id="pendientes-page"
      hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo={{ tipo }}"
-     hx-select="#pendientes-page" hx-target="#pendientes-page" hx-swap="outerHTML"
-     hx-trigger="visibilitychange[document.visibilityState=='visible'] from:document">
+     hx-select="#pendientes-page" hx-disinherit="hx-select" hx-target="#pendientes-page" hx-swap="outerHTML"
+     hx-trigger="visibilitychange[document.visibilityState=='visible' && !document.querySelector('.home-card-check.no')] from:document">
 
 {% if continuar %}
 <h1>Continuar viendo</h1>
-<div class="carousel">
+{# id fijo (2026-09-17): "Marcar vista" en /pendientes marca el primer episodio y
+   quita la fila de aqui via swipe.js, pero antes el titulo no aparecia en este
+   carrusel hasta recargar - marcar_vista_rapido ahora inyecta la tarjeta nueva aqui
+   con hx-swap-oob="afterbegin:#continuar-carousel" (ver titulo.py), por eso hace
+   falta un id estable en vez de depender solo de la clase .carousel (compartida con
+   "Animes pendientes de la temporada" mas abajo). #}
+<div class="carousel" id="continuar-carousel">
     {% for c in continuar %}
     {% include "partials/home_card.html" %}
     {% endfor %}

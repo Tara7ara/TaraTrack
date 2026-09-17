@@ -1,9 +1,13 @@
 {% if c %}
-<div class="home-card">
+{# id fijo en vez de "closest .home-card": mas robusto ante varios swaps outerHTML
+   encadenados (normal->confirmacion->cancelar), aunque la causa real del bug de
+   "desaparece" del 2026-09-16 resultase ser otra (hx-select heredado desde
+   #pendientes-page, ver pending.html) - se mantiene igualmente por ser mas solido. #}
+<div class="home-card" id="home-card-{{ c.id }}">
     <a class="home-card-poster" href="/titulo/{{ c.tmdb_id }}/show">
         <img src="{{ c.poster_path|poster_size('w185') if c.poster_path else '/static/img/sin-portada.svg' }}"{% if c.poster_path %} srcset="{{ c.poster_path|poster_size('w185') }} 1x, {{ c.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ c.title }}" loading="lazy">
         {% if c.runtime_minutes %}<span class="home-card-runtime">{{ c.runtime_minutes }} min</span>{% endif %}
-        {% if c.missing_eps > 1 %}<span class="home-card-left">+{{ c.missing_eps - 1 }}</span>{% endif %}
+        {% if c.missing_eps > 1 and not confirm_all %}<span class="home-card-left">+{{ c.missing_eps - 1 }}</span>{% endif %}
     </a>
     <div class="home-card-info">
         <a class="home-card-title" href="/titulo/{{ c.tmdb_id }}/show" title="{{ c.title }}">{{ c.title }}</a>
@@ -20,31 +24,60 @@
         <div class="home-card-ep">
             {% if confirm_all %}
             {# Confirmacion del doble tick renderizada por el servidor: window.confirm
-               (hx-confirm) no salta en el navegador de Tara. #}
+               (hx-confirm) no salta en el navegador de Tara. Vuelve al estilo de iconos
+               original (Tara: prefiere visualmente esto a los botones de texto que se
+               probaron el 2026-09-16) - ya no hace falta que sea visualmente distinta del
+               estado normal para evitar el clic reflejo: la causa real de aquel bug era
+               que "Sí"/doble-tick coincidian en la MISMA posicion (izquierda) antes del
+               reordenamiento de botones de esta misma ronda; con el tick simple ahora
+               fijo a la izquierda y el doble tick a la derecha, un segundo clic reflejo
+               en la posicion del doble tick cae sobre "Cancelar" (inofensivo), no sobre
+               "Sí". #}
             <span>¿Los {{ c.missing_eps }}?</span>
             <span class="home-card-checks">
                 <button class="home-card-check" title="Sí, marcar los {{ c.missing_eps }} vistos"
-                        hx-post="/entrada/{{ c.id }}/todos" hx-target="closest .home-card" hx-swap="outerHTML">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 7 7 17 3 13"></polyline><polyline points="21 9 13 18"></polyline></svg>
+                        hx-post="/entrada/{{ c.id }}/todos" hx-target="#home-card-{{ c.id }}" hx-swap="delete">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </button>
                 <button class="home-card-check no" title="Cancelar"
-                        hx-get="/entrada/{{ c.id }}/tarjeta" hx-target="closest .home-card" hx-swap="outerHTML">
+                        hx-get="/entrada/{{ c.id }}/tarjeta" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </span>
             {% else %}
             <span>T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }}</span>
             <span class="home-card-checks">
+                {# throttle: un doble clic accidental marcaba DOS episodios seguidos en vez
+                   de uno - con solo 2 pendientes eso vaciaba la cola entera y la tarjeta
+                   desaparecia del carrusel de golpe, pareciendo un bug de datos cuando en
+                   realidad marcaba de verdad los 2 episodios reales (Tara: "le doy a
+                   vista... desaparece la tarjeta en vez de actualizarse"). #}
+                <button class="home-card-check" title="Marcar T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }} visto"
+                        hx-post="/entrada/{{ c.id }}/siguiente" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML"
+                        hx-trigger="click throttle:800ms">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </button>
                 {% if c.missing_eps > 1 %}
-                <button class="home-card-check" title="Marcar TODOS los emitidos ({{ c.missing_eps }}) vistos"
-                        hx-get="/entrada/{{ c.id }}/todos/confirmar" hx-target="closest .home-card" hx-swap="outerHTML">
+                {# Doble clic de verdad (raton, escritorio) va directo al POST sin pasar
+                   por la confirmacion de un toque. Primer intento (ondblclick nativo del
+                   navegador) no servia: en LAN el primer clic dispara la confirmacion
+                   (GET) y el swap outerHTML sustituye este boton ANTES de que llegue el
+                   segundo clic fisico - el navegador no dispara "dblclick" si el target
+                   del segundo clic ya no es el mismo nodo, asi que nunca llegaba a nada
+                   (confirmado en logs: un solo GET /confirmar por intento, nunca un
+                   segundo evento). Fix real: el propio onclick retrasa el swap 400ms con
+                   un timer guardado en el elemento (this._dt) - si llega un segundo clic
+                   dentro de esos 400ms, el DOM todavia no ha cambiado (mismo boton,
+                   misma posicion), se cancela el timer y se va directo al POST. Si no
+                   llega, pasados los 400ms se muestra la confirmacion de siempre (toque
+                   unico en movil, window.confirm no salta ahi). Puesto DESPUES del tick
+                   simple a proposito (2026-09-16): antes iba primero/a la izquierda, y un
+                   clic ahi creyendo marcar solo el episodio actual marcaba TODOS. #}
+                <button class="home-card-check" title="Marcar TODOS los emitidos ({{ c.missing_eps }}) vistos (doble clic para marcar directo)"
+                        onclick="if (this._dt) { clearTimeout(this._dt); this._dt = null; htmx.ajax('POST', '/entrada/{{ c.id }}/todos', {target: '#home-card-{{ c.id }}', swap: 'delete'}); } else { const el = this; el._dt = setTimeout(function () { el._dt = null; htmx.ajax('GET', '/entrada/{{ c.id }}/todos/confirmar', {target: '#home-card-{{ c.id }}', swap: 'outerHTML'}); }, 400); }">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 7 7 17 3 13"></polyline><polyline points="21 9 13 18"></polyline></svg>
                 </button>
                 {% endif %}
-                <button class="home-card-check" title="Marcar T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }} visto"
-                        hx-post="/entrada/{{ c.id }}/siguiente" hx-target="closest .home-card" hx-swap="outerHTML">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </button>
             </span>
             {% endif %}
         </div>
