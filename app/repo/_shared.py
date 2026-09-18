@@ -48,6 +48,22 @@ def _is_anime(title_row) -> bool:
     return genres is None or genres == "" or "Animation" in genres or "Animación" in genres
 
 
+def user_has_anime(conn, user_id) -> bool:
+    """¿Tiene ESTE usuario algo de anime en su biblioteca? (Tara, 2026-09-18: "que
+    a las personas normales le salga 'personajes fav', a la que haya un anime
+    puesto en la lista se transforme a lista de waifus") - decide si /waifus,
+    /listas y /estadisticas hablan de "Waifus" (termino de nicho, tiene sentido
+    para Tara) o de "Personajes favoritos" (para quien no ve anime, como tu
+    hermana/amigo puedan ser)."""
+    return bool(
+        conn.execute(
+            f"""SELECT 1 FROM entries JOIN titles ON titles.id = entries.title_id
+               WHERE entries.user_id = ? AND {_IS_ANIME_SQL} LIMIT 1""",
+            (user_id,),
+        ).fetchone()
+    )
+
+
 
 
 # TMDB devuelve generos en ingles o español segun cuando se cacheo el titulo - unificar para stats.
@@ -63,72 +79,85 @@ _GENRE_ES = {
 
 
 
-def _pending_clause(rewatch_started_at: str | None):
-    """Fragmento SQL (+ params) para "este episodio falta por ver ahora" sobre la
-    tabla episodes directamente (sin JOIN a entries) - version parametrizada gemela
-    de la subquery correlacionada de _HOME_SHOWS_SQL, para las funciones que marcan
-    episodios en bloque (mark_all_aired_watched, mark_season_watched,
-    next_unwatched_episode)."""
+def _pending_clause(rewatch_started_at: str | None, user_id: int):
+    """Fragmento SQL (+ params) para "este episodio falta por ver ahora PARA ESTE
+    USUARIO" sobre la tabla episodes directamente (sin JOIN a entries) - version
+    parametrizada gemela de la subquery correlacionada de _HOME_SHOWS_SQL, para las
+    funciones que marcan episodios en bloque (mark_all_aired_watched,
+    mark_season_watched, next_unwatched_episode). `episodes.id` debe estar en scope
+    en la query que use este fragmento (referencia correlacionada a episode_watches).
+
+    Multiusuario Fase 2 (2026-09-17): antes miraba episodes.watched_at directamente
+    (compartido); ahora consulta episode_watches filtrado por user_id - "pendiente"
+    significa que ESTE usuario no tiene ningun marcado (o ninguno posterior al inicio
+    de su propio rewatch, si tiene uno en curso)."""
     if rewatch_started_at:
-        return "(watched_at IS NULL OR watched_at < ?)", (rewatch_started_at,)
-    return "(watched_at IS NULL)", ()
-
-
-
-
-def _log_episode_watch(conn, episode_id: int, when: str):
-    """Marca un episodio visto AHORA sin pisar el historial (2026-08-20, "Volver a
-    ver" estilo Trakt): cada marcado/re-marcado deja su propia fila en
-    episode_watches, que nunca se borra sola - episodes.watched_at se actualiza como
-    cache de "la vez mas reciente", asi que todo el codigo que ya lo lee como "la
-    fecha" (estadisticas, historial, exportar...) sigue funcionando igual, solo que
-    ahora esa fecha nunca se pierde de verdad al re-marcar."""
-    conn.execute("INSERT INTO episode_watches (episode_id, watched_at) VALUES (?, ?)", (episode_id, when))
-    conn.execute("UPDATE episodes SET watched_at = ? WHERE id = ?", (when, episode_id))
-
-
-
-
-def _unlog_episode_watch(conn, episode_id: int):
-    """Deshace el ULTIMO marcado de este episodio (no todo su historial) - simetrico a
-    _log_episode_watch, para cuando se desmarca desde la UI. episodes.watched_at
-    vuelve a la fecha anterior si la habia (p.ej. visto antes de un rewatch en curso),
-    no a NULL sin mas - eso solo pasa si de verdad no queda ningun marcado."""
-    last = conn.execute(
-        "SELECT id FROM episode_watches WHERE episode_id = ? ORDER BY watched_at DESC, id DESC LIMIT 1",
-        (episode_id,),
-    ).fetchone()
-    if last:
-        conn.execute("DELETE FROM episode_watches WHERE id = ?", (last["id"],))
-    conn.execute(
-        """UPDATE episodes SET watched_at = (
-             SELECT max(watched_at) FROM episode_watches WHERE episode_id = ?
-           ) WHERE id = ?""",
-        (episode_id, episode_id),
+        return (
+            "NOT EXISTS (SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id "
+            "AND ew.user_id = ? AND ew.watched_at >= ?)",
+            (user_id, rewatch_started_at),
+        )
+    return (
+        "NOT EXISTS (SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id AND ew.user_id = ?)",
+        (user_id,),
     )
 
 
 
 
-def _promote_if_first_watch(conn, title_id):
+def _log_episode_watch(conn, episode_id: int, user_id: int, when: str):
+    """Marca un episodio visto AHORA por ESTE usuario, sin pisar el historial
+    (2026-08-20, "Volver a ver" estilo Trakt) - cada marcado/re-marcado deja su
+    propia fila en episode_watches, que nunca se borra sola. Multiusuario Fase 2
+    (2026-09-17): episodes.watched_at DEJA de actualizarse como cache - con varias
+    personas viendo lo mismo, "la ultima vez que se vio" ya no tiene un unico dueño;
+    todo el codigo que necesita saber si ALGUIEN concreto lo ha visto consulta
+    episode_watches filtrado por user_id directamente."""
+    conn.execute(
+        "INSERT INTO episode_watches (episode_id, user_id, watched_at) VALUES (?, ?, ?)",
+        (episode_id, user_id, when),
+    )
+
+
+
+
+def _unlog_episode_watch(conn, episode_id: int, user_id: int):
+    """Deshace el ULTIMO marcado de ESTE usuario para este episodio (no todo su
+    historial, y no el de otros usuarios) - simetrico a _log_episode_watch."""
+    last = conn.execute(
+        "SELECT id FROM episode_watches WHERE episode_id = ? AND user_id = ? ORDER BY watched_at DESC, id DESC LIMIT 1",
+        (episode_id, user_id),
+    ).fetchone()
+    if last:
+        conn.execute("DELETE FROM episode_watches WHERE id = ?", (last["id"],))
+
+
+
+
+def _promote_if_first_watch(conn, title_id, user_id):
     """Simetrico al 'si al desmarcar no queda ninguno, vuelve a pending' de abajo:
-    si al marcar (episodio suelto, temporada completa o doble tick) la entry seguia
-    'pending' pero ya hay algun episodio visto de verdad, pasa a 'watched'. Sin esto,
-    marcar episodios sin pasar por el boton "Marcar vista" (checkboxes uno a uno,
-    "Temp. completa", doble tick) dejaba la entry en pending para siempre aunque
-    estuviera vista entera - bug real, Tara: "he visto toda la serie pero no me deja
-    valorar, aunque sea en la ficha tecnica" (confirmado en produccion, entry 913,
-    tmdb_id 325052: 12/12 episodios vistos, status seguia 'pending')."""
+    si al marcar (episodio suelto, temporada completa o doble tick) la entry de ESTE
+    usuario seguia 'pending' pero ya hay algun episodio visto de verdad POR EL, pasa
+    a 'watched'. Sin esto, marcar episodios sin pasar por el boton "Marcar vista"
+    dejaba la entry en pending para siempre aunque estuviera vista entera - bug real,
+    Tara: "he visto toda la serie pero no me deja valorar" (entry 913, 2026-08-13).
+
+    Multiusuario Fase 2 (2026-09-17): antes actualizaba CUALQUIER entry 'pending' de
+    ese title_id (bug real encontrado en pruebas - con varios usuarios, el episodio
+    marcado por uno promocionaria tambien la entry de otro que no ha visto nada).
+    Ahora solo toca la entry de ESTE user_id."""
     has_watched = conn.execute(
-        "SELECT EXISTS(SELECT 1 FROM episodes WHERE title_id = ? AND watched_at IS NOT NULL)",
-        (title_id,),
+        """SELECT EXISTS(
+             SELECT 1 FROM episode_watches ew JOIN episodes e ON e.id = ew.episode_id
+             WHERE e.title_id = ? AND ew.user_id = ?)""",
+        (title_id, user_id),
     ).fetchone()[0]
     if has_watched:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         conn.execute(
             """UPDATE entries SET status = 'watched', watched_at = COALESCE(watched_at, ?)
-               WHERE title_id = ? AND status = 'pending'""",
-            (now, title_id),
+               WHERE title_id = ? AND user_id = ? AND status = 'pending'""",
+            (now, title_id, user_id),
         )
 
 

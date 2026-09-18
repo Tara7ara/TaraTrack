@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>TaraTrack — Entrar</title>
+    <title>TaraTrack — Crear cuenta</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
@@ -16,20 +16,24 @@
 <body>
     <main class="container" style="max-width:420px; padding-top:3rem">
         <h1 style="text-align:center; margin-bottom:1.5rem">TaraTrack</h1>
-        <form method="post" action="/login" class="form-page">
+        <form method="post" action="/registro" class="form-page">
             <input type="hidden" name="next" value="{{ next }}">
             {% if error %}<p class="empty" style="color:var(--danger)">{{ error }}</p>{% endif %}
             <div class="field">
-                <label for="login-username">Usuario</label>
-                <input type="text" id="login-username" name="username" autocomplete="username" autofocus required>
+                <label for="registro-username">Usuario</label>
+                <input type="text" id="registro-username" name="username" autocomplete="username" minlength="3" autofocus required>
             </div>
             <div class="field">
-                <label for="login-password">Contraseña</label>
-                <input type="password" id="login-password" name="password" autocomplete="current-password" required>
+                <label for="registro-password">Contraseña</label>
+                <input type="password" id="registro-password" name="password" autocomplete="new-password" minlength="8" required>
             </div>
-            <button type="submit">Entrar</button>
+            <div class="field">
+                <label for="registro-password2">Repite la contraseña</label>
+                <input type="password" id="registro-password2" name="password2" autocomplete="new-password" minlength="8" required>
+            </div>
+            <button type="submit">Crear cuenta</button>
         </form>
-        <p style="text-align:center; margin-top:1rem"><a href="/registro">Crear cuenta</a></p>
+        <p style="text-align:center; margin-top:1rem"><a href="/login">Ya tengo cuenta</a></p>
     </main>
 </body>
 </html>

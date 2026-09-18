@@ -7,11 +7,24 @@ import time
 from datetime import date, datetime, timezone
 
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from app import repo
 from app.db import get_connection
 
 templates = Jinja2Templates(directory="app/templates")
+
+
+def avatar(username: str, avatar_path: str | None = None) -> Markup:
+    """Foto de perfil si el usuario ha subido una, si no iniciales con un color
+    estable derivado del nombre (Tara, 2026-09-18: "como pongo fotos de usr").
+    Un solo sitio para el marcado - antes cada plantilla repetia el mismo
+    `<span class="avatar avatar-N">` a mano con criterios de color distintos."""
+    username = username or "?"
+    if avatar_path:
+        return Markup(f'<img class="avatar avatar-img" src="{escape(avatar_path)}" alt="{escape(username)}">')
+    idx = sum(ord(c) for c in username) % 6
+    return Markup(f'<span class="avatar avatar-{idx}">{escape(username[0].upper())}</span>')
 
 
 
@@ -78,15 +91,19 @@ def fmt_month(mm: str) -> str:
 
 
 def fmt_ago(iso_str):
-    """'2026-08-21T12:00:00Z' -> 'hace 3 min' / 'hace 2 h' / 'hace 5 días' - para el
-    estado del ultimo sync en /calendario (Tara: "guardar y mostrar ultimo sync
-    correcto, duracion y si fallo")."""
+    """'2026-08-21T12:00:00Z' o '2026-08-21 12:00:00' (datetime('now') de SQLite,
+    sin T ni Z) -> 'hace 3 min' / 'hace 2 h' / 'hace 5 días'. Antes solo entendia
+    el primer formato (fromisoformat crudo revienta con el de SQLite) - bug real
+    encontrado por AGY (2026-09-18) antes de que llegara a usarse en comentarios,
+    donde created_at siempre viene de SQLite."""
     if not iso_str:
         return ""
     try:
-        dt = datetime.strptime(iso_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        dt = datetime.fromisoformat(iso_str)
     except ValueError:
         return iso_str
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     seconds = (datetime.now(timezone.utc) - dt).total_seconds()
     if seconds < 60:
         return "hace un momento"
@@ -142,20 +159,23 @@ templates.env.filters["fmt_ago"] = fmt_ago
 templates.env.filters["fmt_sync_duration"] = fmt_sync_duration
 templates.env.filters["poster_size"] = poster_size
 templates.env.filters["elo_confidence"] = repo.elo_confidence_label
+templates.env.filters["avatar"] = avatar
 # Cache-busting de estaticos propios: /static se cachea 7 dias, asi que sin esto un
 # cambio de CSS tarda una semana en llegar al movil de Tara. Cambia en cada arranque.
 templates.env.globals["static_v"] = int(time.time())
 
 
-def _puntuar_queue_count() -> int:
+def _puntuar_queue_count(user_id: int) -> int:
     """Contador vivo para el nav (topnav agrupado). Registrado como global de Jinja
     en vez de context_processor a proposito: un context_processor correria en CADA
     TemplateResponse, incluidos los partials de htmx (marcar episodio, favorito...),
     sumando una conexion/query de mas a cada micro-interaccion - aqui solo se paga
-    el coste cuando base.html la llama de verdad (paginas completas, no partials)."""
+    el coste cuando base.html la llama de verdad (paginas completas, no partials).
+    `user_id` obligatorio desde el multiusuario (2026-09-17) - la cola es por-usuario,
+    base.html la llama como `puntuar_queue_count(request.state.user_id)`."""
     try:
         with get_connection() as conn:
-            return repo.count_review_queue(conn)
+            return repo.count_review_queue(conn, user_id)
     except Exception:
         return 0
 
@@ -163,13 +183,41 @@ def _puntuar_queue_count() -> int:
 templates.env.globals["puntuar_queue_count"] = _puntuar_queue_count
 
 
-def render_nav_cola_oob(conn) -> str:
+def _comments_badge_count(user_id: int) -> int:
+    """Aviso de comentarios nuevos en el nav (Tara, 2026-09-18: "estilo tvtime") -
+    mismo criterio de coste que _puntuar_queue_count de arriba."""
+    try:
+        with get_connection() as conn:
+            return repo.count_unseen_comments(conn, user_id)
+    except Exception:
+        return 0
+
+
+templates.env.globals["comments_badge_count"] = _comments_badge_count
+
+
+def _waifus_label(user_id: int) -> str:
+    """"Waifus" tiene sentido para Tara (anime de sobra), pero es jerga de nicho para
+    quien no ve anime (Tara, 2026-09-18: "que a las personas normales le salga
+    'personajes fav', a la que haya un anime puesto en la lista se transforme a lista
+    de waifus") - un termino u otro segun tenga o no anime en su biblioteca."""
+    try:
+        with get_connection() as conn:
+            return "Waifus" if repo.user_has_anime(conn, user_id) else "Personajes favoritos"
+    except Exception:
+        return "Personajes favoritos"
+
+
+templates.env.globals["waifus_label"] = _waifus_label
+
+
+def render_nav_cola_oob(conn, user_id: int) -> str:
     """Fragmento OOB (hx-swap-oob) para refrescar el indicador '✦' de Puntuar sin
     recargar la pagina - solo se llama desde las 3 rutas que pueden cambiar la cola
     con una respuesta parcial (toggle de episodio, marcar todos/siguiente episodio),
     nunca desde el resto de partials, mismo criterio de coste que _puntuar_queue_count
     de arriba. Los ids deben coincidir con los de base.html (desktop y movil)."""
-    cola = repo.count_review_queue(conn)
+    cola = repo.count_review_queue(conn, user_id)
     hidden = "" if cola else " hidden"
     span = (
         '<span id="{id}" class="nav-cola" hx-swap-oob="true"'
@@ -180,7 +228,7 @@ def render_nav_cola_oob(conn) -> str:
     )
 
 
-def _recompute_with_status(extra=None):
+def _recompute_with_status(user_id, extra=None):
     """Envuelve recompute_taste_profile marcando running=True/False en app_settings
     (repo.set_recompute_running) - sin esto, lanzar el recalculo desde /ajustes o
     /calendario/anual redirigia al instante sin ninguna señal de que estuviera
@@ -188,14 +236,16 @@ def _recompute_with_status(extra=None):
     cuenta dentro de la misma ventana de "running" (el backfill de AniList de
     /calendario/anual/perfil, que puede tardar varios minutos el solo). `finally`
     para que un fallo a medias no deje el indicador pegado en "recalculando" para
-    siempre. Compartida por routers/ajustes.py y routers/calendario.py, ver ahi."""
+    siempre. Compartida por routers/ajustes.py y routers/calendario.py, ver ahi.
+    `user_id` obligatorio desde el multiusuario Fase 3 (2026-09-18) - el recalculo
+    manual solo recalcula TU perfil, no el de todos (eso lo hace la sync de fondo)."""
     with get_connection() as conn:
-        repo.set_recompute_running(conn, True)
+        repo.set_recompute_running(conn, user_id, True)
     try:
         if extra:
             extra()
         with get_connection() as conn:
-            repo.recompute_taste_profile(conn)
+            repo.recompute_taste_profile(conn, user_id)
     finally:
         with get_connection() as conn:
-            repo.set_recompute_running(conn, False)
+            repo.set_recompute_running(conn, user_id, False)

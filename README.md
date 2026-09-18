@@ -2,7 +2,7 @@
 
 Mi segundo proyecto de este verano (el primero fue [TarArch](https://github.com/Tara7ara/TarArch), mi escritorio Linux) — en desarrollo activo desde hace varios meses, el historial de commits de este repo es reciente porque lo publico ahora, no porque se haya hecho en un día.
 
-Tracker personal de series y películas, autoalojado y de un solo usuario — un sustituto propio de Trakt/TV Time. FastAPI + Jinja2 + htmx + SQLite, server-rendered, sin build step de frontend.
+Tracker personal de series y películas, autoalojado — un sustituto propio de Trakt/TV Time. FastAPI + Jinja2 + htmx + SQLite, server-rendered, sin build step de frontend. Empezó siendo de un solo usuario; ahora soporta varias cuentas en la misma instancia (ver "Multiusuario" más abajo).
 
 Los metadatos vienen de TMDB (y de Jikan/AniList para anime), pero en la base de datos solo se guarda lo que realmente sigues: lo pendiente, lo visto, tus notas, tus listas y tus personajes favoritos.
 
@@ -37,6 +37,15 @@ Ambos se normalizan a percentil dentro de tu propio perfil y se combinan con **m
 El score final no se enseña en crudo — se calibra contra la distribución real de tus propias notas (percentil: "95%" = mejor que el 95% de lo que has visto en tu vida) y se valida con **backtesting leave-one-out**: recalcula tu perfil sacando cada título puntuado uno a uno, predice su nota sin haberlo visto, y compara contra la real (`scripts/tune_affinity_weights.py` hace un grid search sobre los pesos usando este mismo mecanismo).
 
 **Marcado de hábito** (`entries.is_habit`): series de fondo tipo sitcom/kids que ves por costumbre, no porque las persigas de verdad — se excluyen del eje apetito (no del de calidad, tu nota sigue contando) para que no infle esa métrica solo por volumen. Sin este flag, un estudio como el de una serie con miles de episodios vistos salía con "inercia +47" solo por volumen bruto.
+
+## Multiusuario
+
+Varias cuentas reales en la misma instancia (pensado para 2-3 personas de confianza compartiendo un despliegue, no para un servicio público): cada una con su propio seguimiento, notas, listas, índice de afinidad, duelos/Elo y personajes favoritos — aislado del resto, solo el catálogo de títulos/episodios se comparte entre cuentas (evita descargar los mismos metadatos dos veces).
+
+- **Cuentas**: usuario + contraseña (`pbkdf2_hmac`, sin dependencia nueva tipo `passlib`), autoregistro público desde `/login` — pensado para desplegarse detrás de una red ya de por sí privada (VPN, LAN), no protegido por invitación ni CAPTCHA.
+- **Comentarios por episodio**: la única pieza pensada para verse *entre* cuentas — un hilo de debate por episodio, oculto/difuminado hasta que tú mismo lo has marcado como visto (con opción de saltarte el spoiler). Se abre solo al marcar un episodio, sin tener que ir a buscarlo después.
+- **Admin**: la primera cuenta (migrada desde `TARATRACK_PASSWORD`) puede crear cuentas nuevas, dar/quitar el rol de admin a otras, y resetearles la contraseña si la pierden — no hay email de por medio, es la única vía de recuperación real en un self-host así.
+- **Términos que se adaptan solos**: si una cuenta no tiene anime en su biblioteca, "Waifus" pasa a llamarse "Personajes favoritos" y el "Duelo" (pensado originalmente solo para anime) cae a comparar toda tu biblioteca vista en vez de quedarse vacío.
 
 ## Más detalle
 

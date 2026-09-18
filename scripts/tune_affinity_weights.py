@@ -12,7 +12,9 @@ biblioteca actual de Tara) - el grid por defecto (9 combinaciones) tarda del ord
 imprime el resultado. Si el resultado convence, aplicar los valores a mano desde
 /ajustes.
 
-Uso: python3 scripts/tune_affinity_weights.py
+Uso: python3 scripts/tune_affinity_weights.py [usuario]
+El indice de afinidad es por-usuario (multiusuario Fase 3, 2026-09-18) - sin
+argumento, prueba contra el primer usuario admin de la instancia.
 """
 import os
 import sys
@@ -39,11 +41,24 @@ def _mae(raw, cfg) -> tuple[float, int]:
 
 
 def main():
+    username = sys.argv[1] if len(sys.argv) > 1 else None
     with get_connection() as conn:
-        base_cfg = repo.get_affinity_config(conn)
-        raw = repo._load_affinity_raw(conn)
+        if username:
+            user = repo.get_user_by_username(conn, username)
+            if not user:
+                print(f"No existe el usuario '{username}'")
+                return
+        else:
+            users = repo.list_users(conn)
+            user = next((u for u in users if u["is_admin"]), users[0] if users else None)
+            if not user:
+                print("No hay ningun usuario todavia - crea una cuenta primero.")
+                return
+        user_id = user["id"]
+        base_cfg = repo.get_affinity_config(conn, user_id)
+        raw = repo._load_affinity_raw(conn, user_id)
 
-    print(f"Biblioteca: {len(raw['titles'])} titulos con anilist_id\n")
+    print(f"Usuario: {user['username']} - biblioteca: {len(raw['titles'])} titulos con anilist_id\n")
     print(f"{'apetito_exp':>12} {'calidad_exp':>12} {'gap_factor':>11} {'MAE':>8} {'n':>5}")
 
     results = []

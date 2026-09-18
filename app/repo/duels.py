@@ -121,18 +121,23 @@ def _glicko_update(rating: float, rd: float, rival_rating: float, rival_rd: floa
 
 
 
-def reseed_undueled_entries_elo(conn):
-    """Recalcula el Elo semilla de TODAS las entries de anime que aun no han jugado
-    ni un duelo - se llama cada vez que una nota cambia (mark_watched) y tambien
-    desde reset_elo. Por que en lote y no solo la entry que cambio: el percentil de
-    una nota depende de TODA la poblacion de notas, asi que si solo se recalculara
-    la que acaba de tocarse, dos entries con la MISMA nota podrian acabar con Elo
-    semilla ligeramente distinto solo por en que momento se puntuo cada una -
-    justo lo que se queria evitar. Las que YA jugaron un duelo no se tocan (su Elo
-    es evidencia real ganada en duelo, no una estimacion de partida)."""
+def reseed_undueled_entries_elo(conn, user_id):
+    """Recalcula el Elo semilla de TODAS las entries de anime de ESTE usuario que aun
+    no han jugado ni un duelo - se llama cada vez que una nota cambia (mark_watched) y
+    tambien desde reset_elo. Por que en lote y no solo la entry que cambio: el
+    percentil de una nota depende de TODA la poblacion de notas (de este usuario), asi
+    que si solo se recalculara la que acaba de tocarse, dos entries con la MISMA nota
+    podrian acabar con Elo semilla ligeramente distinto solo por en que momento se
+    puntuo cada una - justo lo que se queria evitar. Las que YA jugaron un duelo no se
+    tocan (su Elo es evidencia real ganada en duelo, no una estimacion de partida).
+
+    Multiusuario Fase 3 (2026-09-18): antes calculaba el percentil sobre TODAS las
+    notas de la instancia, mezclando el gusto de cualquiera - ahora solo sobre las
+    propias."""
     rows = conn.execute(
         f"""SELECT entries.id, entries.rating FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.rating IS NOT NULL AND {_IS_ANIME_SQL}"""
+           WHERE entries.rating IS NOT NULL AND entries.user_id = ? AND {_IS_ANIME_SQL}""",
+        (user_id,),
     ).fetchall()
     if len(rows) < 4:
         return
@@ -140,8 +145,14 @@ def reseed_undueled_entries_elo(conn):
     n = len(ratings_sorted)
     dueled_ids = {
         r["id"] for r in conn.execute(
-            """SELECT winner_id AS id FROM duels WHERE table_name = 'entries'
-               UNION SELECT loser_id AS id FROM duels WHERE table_name = 'entries'"""
+            """SELECT winner_id AS id FROM duels
+                 JOIN entries ON entries.id = duels.winner_id
+               WHERE duels.table_name = 'entries' AND entries.user_id = ?
+               UNION
+               SELECT loser_id AS id FROM duels
+                 JOIN entries ON entries.id = duels.loser_id
+               WHERE duels.table_name = 'entries' AND entries.user_id = ?""",
+            (user_id, user_id),
         )
     }
     for row in rows:
@@ -168,16 +179,17 @@ def elo_confidence_label(rd: float) -> str:
 
 
 
-def reset_elo(conn, table: str, ids: list[int]):
+def reset_elo(conn, table: str, ids: list[int], user_id: int | None = None):
     """Reinicia el Elo/RD de estos ids concretos y borra su historial de duelos y
     sus fotos de Elo (elo_snapshots) - para cuando algo deja el ranking descolocado
     (duelos de prueba, un lote raro) y Tara prefiere empezar de cero. En `entries`
     reseed desde la nota real en vez de 1500 plano (ver reseed_undueled_entries_elo -
     se llama DESPUES de borrar sus duelos, para que estos ids vuelvan a contar como
-    "sin duelar" y entren en el recalculo); las otras tablas no tienen nota con la
-    que anclar, vuelven a 1500 tal cual. Acotado siempre a una lista de ids ya
-    resuelta por el llamador (list_items.id/favorite_characters.id son globales, NO
-    por lista - nunca vaciar `table` entera sin querer)."""
+    "sin duelar" y entren en el recalculo, `user_id` obligatorio en ese caso desde la
+    Fase 3); las otras tablas no tienen nota con la que anclar, vuelven a 1500 tal
+    cual. Acotado siempre a una lista de ids ya resuelta por el llamador
+    (list_items.id/favorite_characters.id son globales, NO por lista - nunca vaciar
+    `table` entera sin querer)."""
     if not ids:
         return
     placeholders = ",".join("?" * len(ids))
@@ -189,14 +201,15 @@ def reset_elo(conn, table: str, ids: list[int]):
     )
     conn.execute(f"DELETE FROM elo_snapshots WHERE table_name = ? AND item_id IN ({placeholders})", [table, *ids])
     if table == "entries":
-        reseed_undueled_entries_elo(conn)
+        reseed_undueled_entries_elo(conn, user_id)
 
 
 
 
-def list_watched_ids(conn):
-    """Entry_id vistos que son anime - el pool del duelo global (Tara: "el duelo es
-    solo de animes", 2026-08-13, corrigiendo mi primera version que cogia TODO lo
+def list_watched_ids(conn, user_id):
+    """Entry_id vistos de ESTE usuario que son anime - el pool del duelo global
+    (Tara: "el duelo es solo de animes", 2026-08-13, corrigiendo mi primera version
+    que cogia TODO lo
     visto). Mismo criterio que _is_anime()/_genero_sql("Anime"): genero Animation/
     Animacion, o sin genero cacheado (altas manuales, el catalogo importado es casi
     todo anime) - no confundir con 'Animacion' a secas, que en TMDB tambien mete
@@ -225,7 +238,7 @@ def list_watched_ids(conn):
     return [
         r["id"] for r in conn.execute(
             f"""SELECT entries.id FROM entries JOIN titles ON titles.id = entries.title_id
-               WHERE entries.status = 'watched' AND {_IS_ANIME_SQL}
+               WHERE entries.status = 'watched' AND entries.user_id = ? AND {_IS_ANIME_SQL}
                  AND (
                      titles.type != 'show'
                      OR NOT EXISTS (SELECT 1 FROM episodes WHERE episodes.title_id = titles.id)
@@ -233,15 +246,42 @@ def list_watched_ids(conn):
                          SELECT 1 FROM episodes AS ep
                          WHERE ep.title_id = titles.id
                          GROUP BY ep.season_number
-                         HAVING sum(CASE WHEN ep.watched_at IS NOT NULL THEN 1 ELSE 0 END) > 0
-                            AND sum(CASE WHEN ep.watched_at IS NULL AND ep.air_date IS NOT NULL
+                         HAVING sum(CASE WHEN EXISTS(SELECT 1 FROM episode_watches WHERE episode_watches.episode_id = ep.id AND episode_watches.user_id = entries.user_id)
+                                         THEN 1 ELSE 0 END) > 0
+                            AND sum(CASE WHEN NOT EXISTS(SELECT 1 FROM episode_watches WHERE episode_watches.episode_id = ep.id AND episode_watches.user_id = entries.user_id)
+                                          AND ep.air_date IS NOT NULL
                                           AND date(ep.air_date) <= date('now') THEN 1 ELSE 0 END) = 0
                      )
-                 )"""
+                 )""",
+            (user_id,),
         ).fetchall()
     ]
 
 
+
+
+def list_all_watched_ids(conn, user_id):
+    """TODO lo visto de este usuario, sin filtrar por genero - la red de seguridad de
+    duel_pool_for_user cuando el pool de anime sale vacio (cuentas sin anime, Tara,
+    2026-09-18: "el duelo era para anime pero para las otras personas no se como
+    adaptarlo"). A diferencia de list_watched_ids no exige temporada completa - es
+    el pool "normal" (no especificamente pensado para maratones de anime a medias)."""
+    return [
+        r["id"] for r in conn.execute(
+            "SELECT id FROM entries WHERE user_id = ? AND status = 'watched'", (user_id,)
+        ).fetchall()
+    ]
+
+
+def duel_pool_for_user(conn, user_id) -> tuple[list[int], bool]:
+    """Elige el pool del duelo general: anime si el usuario tiene suficiente (>= 2,
+    para poder formar un par), si no cae a todo lo visto - para que /duelo no salga
+    vacio solo por no ver anime. Devuelve (ids, es_pool_de_anime) - lo segundo decide
+    el titulo/rotulo que enseña la plantilla (ver routers/duelo.py)."""
+    ids = list_watched_ids(conn, user_id)
+    if len(ids) >= 2:
+        return ids, True
+    return list_all_watched_ids(conn, user_id), False
 
 
 def get_entries_by_ids(conn, ids: list[int]):
@@ -316,7 +356,27 @@ def random_duel_pair(conn, table: str, ids: list[int]):
 
 
 
-def record_duel(conn, table: str, a_id: int, b_id: int, result: float = 1.0):
+_DUEL_OWNERSHIP_SQL = {
+    "entries": "SELECT count(*) FROM entries WHERE id IN (?, ?) AND user_id = ?",
+    "list_items": """SELECT count(*) FROM list_items JOIN lists ON lists.id = list_items.list_id
+                      WHERE list_items.id IN (?, ?) AND lists.user_id = ?""",
+    "favorite_characters": """SELECT count(*) FROM favorite_characters
+                               JOIN entries ON entries.id = favorite_characters.entry_id
+                               WHERE favorite_characters.id IN (?, ?) AND entries.user_id = ?""",
+}
+
+
+def _duel_ids_owned(conn, table: str, a_id: int, b_id: int, user_id: int) -> bool:
+    """Gap real (AGY, 2026-09-18): las 3 rutas de voto (/duelo, /waifus/duelo,
+    /lista/{id}/duelo) reciben a_id/b_id del formulario y llamaban a record_duel
+    directamente - la interfaz solo propone pares propios, pero un POST manipulado
+    a mano podia votar sobre entries/waifus/list_items de OTRO usuario e inflar o
+    desinflar su Elo."""
+    sql = _DUEL_OWNERSHIP_SQL[table]
+    return conn.execute(sql, (a_id, b_id, user_id)).fetchone()[0] == 2
+
+
+def record_duel(conn, table: str, a_id: int, b_id: int, user_id: int, result: float = 1.0):
     """El "¿A o B?" en vez de arrastrar flechas: con 15 elementos ya cuesta y con 60
     (las waifus) el orden manual real nunca llega a existir - unas pocas docenas de
     duelos dan un orden mas honesto que ir arrastrando a ojo.
@@ -329,7 +389,13 @@ def record_duel(conn, table: str, a_id: int, b_id: int, result: float = 1.0):
     votos), y el Elo NO pisa `position` - el orden manual (flechas) y el orden por
     duelos (Elo) conviven aparte, se elige cual se ENSEÑA con `lists.order_mode` / el
     ajuste global de waifus (ver list_items_in_list, list_waifus, set_list_order_mode,
-    set_waifus_order_mode)."""
+    set_waifus_order_mode).
+
+    `user_id` obligatorio (AGY, 2026-09-18): ver _duel_ids_owned - sin comprobar que
+    a_id/b_id son de este usuario, un POST manipulado podia votar sobre el Elo de
+    otra cuenta."""
+    if not _duel_ids_owned(conn, table, a_id, b_id, user_id):
+        return
     rows = {
         r["id"]: (r["elo"], r["rd"])
         for r in conn.execute(f"SELECT id, elo, rd FROM {table} WHERE id IN (?, ?)", (a_id, b_id))

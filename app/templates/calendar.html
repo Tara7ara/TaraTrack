@@ -3,7 +3,9 @@
 <h1>Calendario</h1>
 <p class="page-hint">Episodios del próximo mes (y los últimos 7 días, plegados al final).</p>
 <div class="page-actions">
+    {% if show_anime_calendar %}
     <a class="btn secondary" href="/calendario/anual">Calendario de temporada</a>
+    {% endif %}
     <form method="post" action="/calendario/sincronizar" style="display:contents">
         <button type="submit" class="secondary">Sincronizar ahora</button>
     </form>
@@ -32,7 +34,7 @@
     <h2 class="cal-day-title">{{ day|fmt_day }}</h2>
     <div class="cal-grid">
         {% for item in items %}
-        {% set visto = item.watched_at or item.auto_watch %}
+        {% set visto = item.watched_now or item.auto_watch %}
         <a class="cal-card {{ 'cal-watched' if visto else '' }}" href="/titulo/{{ item.tmdb_id }}/show">
             <div class="cal-card-poster">
                 <img src="{{ item.poster_path|poster_size('w185') if item.poster_path else '/static/img/sin-portada.svg' }}"{% if item.poster_path %} srcset="{{ item.poster_path|poster_size('w185') }} 1x, {{ item.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ item.title }}" loading="lazy">

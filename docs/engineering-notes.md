@@ -29,6 +29,16 @@ El índice de afinidad (ver README) predice cuánto te va a gustar algo que no h
 
 Con ~450 títulos puntuados, recalcular el perfil completo 450 veces sería demasiado lento contra la base de datos — por eso toda la materia prima (notas, episodios, géneros, franquicias...) se carga una única vez en memoria (`_load_affinity_raw`) y el backtesting reagrega sobre esa copia en Python, sin volver a tocar SQLite en cada iteración.
 
+## `PRAGMA foreign_keys = OFF` como no-op silencioso durante una migración real
+
+Pasar de una única cuenta a varias exige reconstruir tablas con restricciones `UNIQUE` distintas (SQLite no permite tocar un `UNIQUE` con `ALTER TABLE`) — mismo patrón que ya usaba el proyecto para otro cambio de esquema: `CREATE TABLE nueva AS SELECT...` + `DROP` de la vieja + `RENAME`, con `PRAGMA foreign_keys = OFF` mientras dura para que el hueco intermedio sin la tabla no rompiera las referencias de otras tablas.
+
+Contra una base de datos de pruebas (siempre vacía) funcionaba perfecto. Contra una **copia real** de la base de datos de producción (probada antes de desplegar, nunca en caliente), el `DROP TABLE` reventaba con `FOREIGN KEY constraint failed` en cuanto la tabla tenía filas de verdad referenciadas desde otras tablas.
+
+La causa, documentada en la propia SQLite pero fácil de pasar por alto: `PRAGMA foreign_keys` es un no-op si ya hay una transacción abierta — y la había, porque el resto del esquema/migraciones ya habían escrito antes en esa misma conexión. El `OFF` se aceptaba sin error y sin efecto real. **Fix**: un `conn.commit()` explícito justo antes de cada `PRAGMA foreign_keys = OFF`, para forzar el cierre de la transacción en curso antes de tocar el flag.
+
+Es exactamente el tipo de bug que un test con base de datos vacía nunca va a encontrar — solo aparece con datos reales referenciados de verdad. De ahí la regla que quedó para cualquier migración futura: probarla siempre contra una copia real antes de tocar producción, no solo contra los tests.
+
 ## Sesiones y cookies: cuatro fixes tras una revisión de seguridad
 
 Una revisión de seguridad externa sobre el código encontró cuatro problemas reales en la capa de autenticación, verificados uno a uno contra el código antes de tocar nada y con tests (`TestClient`) antes de desplegar:

@@ -24,9 +24,11 @@ Regla de capas: `app/routers/*` → `app/repo/*` → `db.py`. **Nunca SQL fuera 
 
 ## Modelo de datos
 
-`titles`, `entries` (1:1 con títulos, es tu estado de seguimiento), `episodes`, `lists`/`list_items`, `watch_sessions` (rewatches), `characters`/`favorite_characters`, `duels`/`elo_snapshots` (ranking por duelos), `rating_history`, `season_ratings`, `rejected_recommendations`, `recommendations_cache`, `app_settings`.
+`users`, `titles` (catálogo compartido entre cuentas), `entries` (una por *título+usuario*, es tu estado de seguimiento — no 1:1 con títulos desde el multiusuario), `episodes` (también compartida), `episode_watches`/`episode_user_state` (visto/comentario privado/favorito, por usuario), `episode_comments` (la única tabla pensada para verse entre usuarios: el debate por episodio), `lists`/`list_items`, `watch_sessions` (rewatches), `characters`/`favorite_characters`, `duels`/`elo_snapshots` (ranking por duelos), `rating_history`, `season_ratings`, `rejected_recommendations`, `recommendations_cache`, `app_settings`.
 
 Detalles que importan al tocar código:
+
+- **Multiusuario**: cualquier función de `app/repo/*` que reciba un id que venga de la URL (`entry_id`, `list_id`, `episode_id`...) tiene que comprobar que pertenece al usuario de la sesión antes de tocarlo — el patrón es un helper `get_owned_*`/`_owned_*_or_404` por dominio (ver `app/repo/lists.py:get_owned_list`, `app/repo/titles.py:get_owned_entry_with_title`). `titles`/`episodes`/`characters` son catálogo compartido a propósito (evita re-descargar los mismos metadatos por cada cuenta) — todo lo demás es privado por defecto salvo `episode_comments`, que es la excepción deliberada.
 
 - Los títulos sin match en TMDB (altas manuales) usan un **`tmdb_id` negativo sintético**. Cualquier código que vaya a llamar a la API real debe filtrarlos.
 - `runtime_minutes` en series son **minutos por episodio**; la duración total es `runtime_minutes × episode_count`.
@@ -53,7 +55,7 @@ docker-compose up -d --build
 curl -s localhost:8420/healthz     # {"status":"ok"}
 ```
 
-Publica en `127.0.0.1:8420` a propósito (detrás de un reverse proxy). Los datos persistentes van en cuatro volúmenes con nombre: `taratrack-data` (BBDD), `taratrack-posters`, `taratrack-uploads`, `taratrack-profiles`. Reconstruir la imagen no los toca; `docker-compose down -v` **sí los borra**.
+Publica en `127.0.0.1:8420` a propósito (detrás de un reverse proxy). Los datos persistentes van en volúmenes con nombre: `taratrack-data` (BBDD), `taratrack-posters`, `taratrack-uploads`, `taratrack-profiles`, `taratrack-avatars` (fotos de perfil de cuenta). Reconstruir la imagen no los toca; `docker-compose down -v` **sí los borra**. Si añades un volumen nuevo al `docker-compose.yml`, recuerda que tu propio script de despliegue tiene que sincronizar ese fichero al servidor además de `app/` — un volumen definido solo en tu repo local, sin llegar nunca a desplegarse, falla en silencio.
 
 ## Sincronización
 

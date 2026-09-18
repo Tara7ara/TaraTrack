@@ -59,5 +59,51 @@
                 <button type="submit">Guardar</button>
             </form>
         </details>
+        {# Debate por episodio (Fase 4, 2026-09-18) - hilo publico entre usuarios, distinto
+           del comentario privado de arriba. Oculto/difuminado hasta que ESTE usuario ha
+           marcado el episodio como visto (ep.watched_now), con opcion de quitar el
+           spoiler antes de tiempo - mismo patron CSS que el aviso +18 (checkbox oculto +
+           label + filter:blur() + :has(), sin JS ni estado persistido). #}
+        <details class="ep-more ep-debate" {{ 'open' if ep.open_debate else '' }} onclick="event.stopPropagation()">
+            <summary title="Comentarios ({{ ep.debate|length }})">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v3l-3-3H9a2 2 0 0 1-1.8-1.1"></path><path d="M17 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1v3z"></path></svg>
+                {% if ep.debate %}<span class="ep-comment-count">{{ ep.debate|length }}</span>{% endif %}
+            </summary>
+            <div class="ep-debate-form {{ 'spoiler-frame' if not ep.watched_now else '' }}">
+                <div class="spoiler-body">
+                    <ul class="ep-debate-list">
+                        {% for c in ep.debate %}
+                        <li>
+                            {{ c.username|avatar(c.avatar_path) }}
+                            <div class="ep-debate-msg">
+                                <strong>{{ c.username }}</strong><span class="ep-debate-date">{{ c.created_at|fmt_ago }}</span>
+                                <p>{{ c.body }}</p>
+                            </div>
+                            {% if c.user_id == request.state.user_id or request.state.is_admin %}
+                            <button type="button" class="ep-debate-del" title="Borrar comentario"
+                                    hx-post="/episodio/{{ ep.id }}/debate/{{ c.id }}/borrar"
+                                    hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">×</button>
+                            {% endif %}
+                        </li>
+                        {% else %}
+                        <li class="empty">Sin comentarios todavía.</li>
+                        {% endfor %}
+                    </ul>
+                    <form hx-post="/episodio/{{ ep.id }}/debate" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">
+                        <input type="text" name="body" placeholder="Comenta este episodio..." required>
+                        <button type="submit">Enviar</button>
+                    </form>
+                </div>
+                {% if not ep.watched_now %}
+                {# Bug real (AGY, 2026-09-18): al enviar un comentario sin haber marcado el
+                   episodio como visto, el swap entero de la fila reiniciaba el checkbox y
+                   el propio comentario que acabas de escribir volvia a quedar difuminado
+                   para ti. Si esta respuesta viene de enviar un comentario (open_debate),
+                   el checkbox nace marcado - sigues viendo tu spoiler propio sin tocar nada. #}
+                <input type="checkbox" id="spoiler-ep-{{ ep.id }}" class="spoiler-check" {{ 'checked' if ep.open_debate else '' }}>
+                <label for="spoiler-ep-{{ ep.id }}" class="spoiler-label">Spoiler · Toca para ver</label>
+                {% endif %}
+            </div>
+        </details>
     </div>
 </div>

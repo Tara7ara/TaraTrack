@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get("/historial", response_class=HTMLResponse)
 def historial(request: Request):
     with get_connection() as conn:
-        items = repo.list_history(conn)
+        items = repo.list_history(conn, request.state.user_id)
     days = {}
     for item in items:
         days.setdefault((item["at"] or "")[:10], []).append(item)

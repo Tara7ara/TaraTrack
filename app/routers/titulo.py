@@ -20,7 +20,7 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
     En series marca solo el primer episodio (no la serie entera) - si ya se ha visto
     todo, para eso esta el doble tick de la tarjeta de "Continuar viendo"."""
     with get_connection() as conn:
-        entry = repo.ensure_entry(conn, tmdb_id, type)
+        entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         title_row = repo.get_title(conn, tmdb_id)
         if type == "show" and not repo.list_episodes(conn, title_row["id"]):
             # Un solo intento fallaba en silencio dejando la entry "watched" sin
@@ -57,7 +57,7 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
         # descarta, la tarjeta de dentro llega intacta con su clase "home-card".
         oob = ""
         if type == "show":
-            card = repo.get_home_card(conn, entry["id"])
+            card = repo.get_home_card(conn, entry["id"], request.state.user_id)
             if card:
                 card_html = templates.env.get_template("partials/home_card.html").render(
                     {"request": request, "c": card, "confirm_all": False}
@@ -74,7 +74,7 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
 @router.get("/marcar-vista/{tmdb_id}/{type}", response_class=HTMLResponse)
 def marcar_vista_form(request: Request, tmdb_id: int, type: str, volver: str = ""):
     with get_connection() as conn:
-        entry = repo.ensure_entry(conn, tmdb_id, type)
+        entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         entry = repo.get_entry_with_title(conn, entry["id"])
     categories = {
         "historia": entry["cat_historia"],
@@ -161,7 +161,9 @@ def marcar_vista_submit(
         errors["comment"] = "El comentario es obligatorio."
 
     with get_connection() as conn:
-        entry = repo.get_entry_with_title(conn, entry_id)
+        entry = repo.get_owned_entry_with_title(conn, entry_id, request.state.user_id)
+        if not entry:
+            raise StarletteHTTPException(status_code=404, detail="No encontrado")
         if errors:
             return templates.TemplateResponse(
                 request,
@@ -195,7 +197,7 @@ def marcar_vista_submit(
 
 
 @router.get("/titulo/{tmdb_id}/{type}", response_class=HTMLResponse)
-def titulo_detalle(request: Request, tmdb_id: int, type: str):
+def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0):
     """Unica ruta que llamaba a TMDB sin ningun try/except: abrir por primera vez la
     ficha de algo (ensure_entry pide get_details) daba un 500 en la cara si TMDB iba
     lento o daba un hipo, mismo problema ya resuelto en /buscar y /vista pero que
@@ -207,7 +209,7 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str):
         title_row = repo.get_title(conn, tmdb_id)
         if title_row is None:
             try:
-                repo.ensure_entry(conn, tmdb_id, type)
+                repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
             except Exception:
                 raise StarletteHTTPException(
                     status_code=503, detail="TMDB no responde ahora mismo, prueba en un rato."
@@ -221,18 +223,69 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str):
                 episodes = repo.list_episodes(conn, title_row["id"])
             except Exception:
                 episodes = repo.list_episodes(conn, title_row["id"])
+        # Bug real encontrado en pruebas (multiusuario, 2026-09-17): sin filtrar por
+        # user_id, la ficha de un titulo que OTRO usuario ya tiene en su biblioteca
+        # renderizaria botones ("Puntuar", "Deshacer vista", favorito...) atados al
+        # entry_id AJENO - pulsarlos actuaria sobre los datos de otra cuenta.
         entry = conn.execute(
-            "SELECT * FROM entries WHERE title_id = ?", (title_row["id"],)
+            "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",
+            (title_row["id"], request.state.user_id),
         ).fetchone()
         # "Visto AHORA" es round-aware (Volver a ver estilo Trakt, 2026-08-20): un
-        # episodio con fecha ANTERIOR a la ronda de rewatch en curso cuenta como
-        # pendiente de re-ver otra vez, aunque episodes.watched_at siga con la fecha
-        # vieja (que ya no se borra) - dict() porque sqlite3.Row no admite claves nuevas.
+        # episodio con marcado ANTERIOR a la ronda de rewatch en curso cuenta como
+        # pendiente de re-ver otra vez - dict() porque sqlite3.Row no admite claves
+        # nuevas. Multiusuario Fase 2 (2026-09-17): "visto"/"veces"/comentario/favorito
+        # son de ESTE usuario (episode_watches/episode_user_state), no columnas
+        # compartidas de `episodes` - una sola pasada por los ids de la serie en vez
+        # de una query por episodio.
         rewatch_started_at = entry["rewatch_started_at"] if entry else None
         episodes = [dict(ep) for ep in episodes]
+        ep_ids = [ep["id"] for ep in episodes]
+        last_watch_by_ep, count_by_ep, state_by_ep = {}, {}, {}
+        comments_by_ep: dict[int, list] = {}
+        if ep_ids:
+            placeholders = ",".join("?" * len(ep_ids))
+            for row in conn.execute(
+                f"""SELECT episode_id, max(watched_at) AS last_watch, count(*) AS n
+                   FROM episode_watches WHERE episode_id IN ({placeholders}) AND user_id = ?
+                   GROUP BY episode_id""",
+                (*ep_ids, request.state.user_id),
+            ):
+                last_watch_by_ep[row["episode_id"]] = row["last_watch"]
+                count_by_ep[row["episode_id"]] = row["n"]
+            for row in conn.execute(
+                f"""SELECT * FROM episode_user_state
+                   WHERE episode_id IN ({placeholders}) AND user_id = ?""",
+                (*ep_ids, request.state.user_id),
+            ):
+                state_by_ep[row["episode_id"]] = row
+            # Debate por episodio (Fase 4, visible entre usuarios) - una sola query
+            # para toda la ficha, mismo criterio que el resto de datos por episodio
+            # de aqui arriba (evitar una query por episodio con series de miles).
+            for row in conn.execute(
+                f"""SELECT episode_comments.id, episode_comments.episode_id, episode_comments.body,
+                           episode_comments.created_at, episode_comments.user_id, users.username,
+                           users.avatar_path
+                    FROM episode_comments
+                    JOIN users ON users.id = episode_comments.user_id
+                    WHERE episode_comments.episode_id IN ({placeholders})
+                    ORDER BY episode_comments.created_at ASC, episode_comments.id ASC""",
+                ep_ids,
+            ):
+                comments_by_ep.setdefault(row["episode_id"], []).append(row)
         for ep in episodes:
+            ep["watched_at"] = last_watch_by_ep.get(ep["id"])
+            ep["watch_count"] = count_by_ep.get(ep["id"], 0)
             ep["watched_now"] = _episode_watched_now(ep["watched_at"], rewatch_started_at)
-        is_favorite = repo.is_entry_favorite(conn, entry["id"]) if entry else False
+            state = state_by_ep.get(ep["id"])
+            ep["comment"] = state["comment"] if state else None
+            ep["is_favorite"] = state["is_favorite"] if state else 0
+            ep["debate"] = comments_by_ep.get(ep["id"], [])
+            # Llegada desde el aviso "¿comentas?" (Continuar viendo/Pendientes, ver
+            # pendientes.py) - abre solo el hilo de ESE episodio, con el enlace
+            # llevando ademas a "#ep-{id}" para que el navegador haga scroll solo.
+            ep["open_debate"] = comentar == ep["id"]
+        is_favorite = repo.is_entry_favorite(conn, entry["id"], request.state.user_id) if entry else False
 
         try:
             repo.sync_characters(conn, title_row)
@@ -327,11 +380,21 @@ def corregir_dia_emision(request: Request, tmdb_id: int, type: str, weekday: str
         if title_row and title_row["anilist_id"]:
             if weekday.strip() == "":
                 repo.clear_weekday_override(conn, title_row["anilist_id"])
-            else:
+            # Bug real (AGY, 2026-09-18): int(weekday) sin validar tumbaba la peticion
+            # con un 500 si llegaba algo no numerico (un POST manipulado a mano; el
+            # <select> real solo manda 0-6, pero eso no protege el endpoint en si).
+            elif weekday.strip().lstrip("-").isdigit():
                 repo.set_weekday_override(conn, title_row["anilist_id"], int(weekday))
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
 
 
+
+
+def _owned_entry_or_404(conn, entry_id: int, user_id: int):
+    entry = repo.get_owned_entry_with_title(conn, entry_id, user_id)
+    if not entry:
+        raise StarletteHTTPException(status_code=404, detail="No encontrado")
+    return entry
 
 
 @router.post("/entrada/{entry_id}/volver-a-ver", response_class=HTMLResponse)
@@ -339,8 +402,8 @@ def volver_a_ver(request: Request, entry_id: int):
     """Empieza una ronda de rewatch: en series desmarca los episodios y la serie vuelve
     a "Continuar viendo"; en pelis solo suma un visionado. La nota original no se toca."""
     with get_connection() as conn:
+        entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.start_rewatch(conn, entry_id)
-        entry = repo.get_entry_with_title(conn, entry_id)
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
 
 
@@ -351,8 +414,8 @@ def deshacer_vista(request: Request, entry_id: int):
     """Deshace un "Marcar vista" por error, antes de puntuar: vuelve a pending y
     desmarca todos los episodios (ver repo.undo_mark_watched)."""
     with get_connection() as conn:
+        entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.undo_mark_watched(conn, entry_id)
-        entry = repo.get_entry_with_title(conn, entry_id)
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
 
 
@@ -363,8 +426,8 @@ def quitar_nota(request: Request, entry_id: int):
     """Quita la nota puesta antes de tiempo (p.ej. un 10 a mitad de una serie que
     aun no ha acabado) - sigue marcada como vista, vuelve a la cola de /puntuar."""
     with get_connection() as conn:
+        entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.clear_rating(conn, entry_id)
-        entry = repo.get_entry_with_title(conn, entry_id)
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
 
 
@@ -376,8 +439,8 @@ def corregir_fecha_visionado(request: Request, entry_id: int, fecha: str = Form(
     comentario - para series encontradas con la fecha de hoy en vez de cuando se vieron
     de verdad (Tara: 'mis estadisticas se han disparado en 2026 cuando no es cierto')."""
     with get_connection() as conn:
+        entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.set_watched_at(conn, entry_id, fecha)
-        entry = repo.get_entry_with_title(conn, entry_id)
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
 
 
@@ -387,6 +450,7 @@ def corregir_fecha_visionado(request: Request, entry_id: int, fecha: str = Form(
 def entrada_habito_toggle(request: Request, entry_id: int):
     """Toggle de habito en la ficha (Bloque 3a) - sitio canonico, siempre disponible."""
     with get_connection() as conn:
+        _owned_entry_or_404(conn, entry_id, request.state.user_id)
         is_habit = repo.toggle_habit(conn, entry_id)
     return templates.TemplateResponse(
         request, "partials/habit_button.html", {"entry_id": entry_id, "is_habit": is_habit}
@@ -400,6 +464,7 @@ def entrada_autover_toggle(request: Request, entry_id: int):
     """Toggle de autover en la ficha - series como One Piece, que se autoveen solas
     (ver repo.sync_library) sin pasar por Continuar viendo."""
     with get_connection() as conn:
+        _owned_entry_or_404(conn, entry_id, request.state.user_id)
         auto_watch = repo.toggle_auto_watch(conn, entry_id)
     return templates.TemplateResponse(
         request, "partials/autowatch_button.html", {"entry_id": entry_id, "auto_watch": auto_watch}
@@ -411,6 +476,7 @@ def entrada_autover_toggle(request: Request, entry_id: int):
 @router.post("/personaje/{character_id}/favorito/{entry_id}", response_class=HTMLResponse)
 def personaje_favorito_toggle(request: Request, character_id: int, entry_id: int):
     with get_connection() as conn:
+        _owned_entry_or_404(conn, entry_id, request.state.user_id)
         is_fav = repo.toggle_favorite_character(conn, entry_id, character_id)
         character = conn.execute("SELECT * FROM characters WHERE id = ?", (character_id,)).fetchone()
     return templates.TemplateResponse(
@@ -425,7 +491,8 @@ def personaje_favorito_toggle(request: Request, character_id: int, entry_id: int
 @router.post("/entrada/{entry_id}/favorito", response_class=HTMLResponse)
 def favorito_toggle(request: Request, entry_id: int):
     with get_connection() as conn:
-        default_list = repo.get_default_list(conn)
+        _owned_entry_or_404(conn, entry_id, request.state.user_id)
+        default_list = repo.get_or_create_default_list(conn, request.state.user_id)
         is_fav = repo.toggle_list_item(conn, default_list["id"], entry_id)
     return templates.TemplateResponse(
         request, "partials/favorite_button.html", {"entry_id": entry_id, "is_favorite": is_fav}
@@ -445,18 +512,36 @@ def _episode_watched_now(watched_at, rewatch_started_at) -> bool:
 
 
 
-def _episode_row_response(request: Request, conn, episode_id: int, oob: str = ""):
+def _episode_row_response(request: Request, conn, episode_id: int, oob: str = "", open_debate: bool = False):
     """`oob` (hx-swap-oob del indicador de Puntuar, ver web.render_nav_cola_oob) solo lo
     pasa episodio_toggle - las otras rutas que reusan este helper (rewatch, favorito)
-    no cambian entries.status, no hace falta pagar la query de mas ahi."""
+    no cambian entries.status, no hace falta pagar la query de mas ahi.
+
+    Multiusuario Fase 2 (2026-09-17): "visto"/"cuantas veces"/comentario/favorito son
+    todos POR USUARIO ahora (episode_watches/episode_user_state con user_id) - antes
+    eran columnas compartidas en `episodes`, la misma fila se veia igual para
+    cualquiera que abriera la ficha."""
+    user_id = request.state.user_id
     episode = dict(conn.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,)).fetchone())
     rewatch_started_at = conn.execute(
-        "SELECT rewatch_started_at FROM entries WHERE title_id = ?", (episode["title_id"],)
-    ).fetchone()["rewatch_started_at"]
+        "SELECT rewatch_started_at FROM entries WHERE title_id = ? AND user_id = ?",
+        (episode["title_id"], user_id),
+    ).fetchone()
+    rewatch_started_at = rewatch_started_at["rewatch_started_at"] if rewatch_started_at else None
+    last_watch = conn.execute(
+        "SELECT watched_at FROM episode_watches WHERE episode_id = ? AND user_id = ? ORDER BY watched_at DESC LIMIT 1",
+        (episode_id, user_id),
+    ).fetchone()
+    episode["watched_at"] = last_watch["watched_at"] if last_watch else None
     episode["watched_now"] = _episode_watched_now(episode["watched_at"], rewatch_started_at)
     episode["watch_count"] = conn.execute(
-        "SELECT count(*) FROM episode_watches WHERE episode_id = ?", (episode_id,)
+        "SELECT count(*) FROM episode_watches WHERE episode_id = ? AND user_id = ?", (episode_id, user_id)
     ).fetchone()[0]
+    state = repo.get_episode_user_state(conn, episode_id, user_id)
+    episode["comment"] = state["comment"] if state else None
+    episode["is_favorite"] = state["is_favorite"] if state else 0
+    episode["debate"] = repo.list_episode_comments(conn, episode_id)
+    episode["open_debate"] = open_debate
     html = templates.env.get_template("partials/episode_row.html").render(
         {"request": request, "ep": episode}
     )
@@ -468,9 +553,12 @@ def _episode_row_response(request: Request, conn, episode_id: int, oob: str = ""
 @router.post("/episodio/{episode_id}/toggle", response_class=HTMLResponse)
 def episodio_toggle(request: Request, episode_id: int):
     with get_connection() as conn:
-        repo.toggle_episode(conn, episode_id)
-        oob = web.render_nav_cola_oob(conn)
-        return _episode_row_response(request, conn, episode_id, oob=oob)
+        # Tara, 2026-09-18 ("estilo tvtime"): al marcar visto (no al desmarcar), el
+        # hilo de debate de ESE episodio se abre solo - es el momento en que se te
+        # ocurre el comentario, no una vuelta a por el despues.
+        just_watched = repo.toggle_episode(conn, episode_id, request.state.user_id)
+        oob = web.render_nav_cola_oob(conn, request.state.user_id)
+        return _episode_row_response(request, conn, episode_id, oob=oob, open_debate=just_watched)
 
 
 
@@ -478,14 +566,14 @@ def episodio_toggle(request: Request, episode_id: int):
 @router.post("/episodio/{episode_id}/volver-a-ver", response_class=HTMLResponse)
 def episodio_volver_a_ver(request: Request, episode_id: int):
     with get_connection() as conn:
-        repo.rewatch_episode(conn, episode_id)
+        repo.rewatch_episode(conn, episode_id, request.state.user_id)
         return _episode_row_response(request, conn, episode_id)
 
 
 @router.get("/episodio/{episode_id}/historial", response_class=HTMLResponse)
 def episodio_historial(request: Request, episode_id: int):
     with get_connection() as conn:
-        fechas = repo.list_episode_watch_dates(conn, episode_id)
+        fechas = repo.list_episode_watch_dates(conn, episode_id, request.state.user_id)
         return templates.TemplateResponse(
             request, "partials/episode_watch_history.html", {"fechas": fechas}
         )
@@ -494,7 +582,7 @@ def episodio_historial(request: Request, episode_id: int):
 @router.post("/episodio/{episode_id}/favorito", response_class=HTMLResponse)
 def episodio_favorito(request: Request, episode_id: int):
     with get_connection() as conn:
-        repo.toggle_episode_favorite(conn, episode_id)
+        repo.toggle_episode_favorite(conn, episode_id, request.state.user_id)
         return _episode_row_response(request, conn, episode_id)
 
 
@@ -503,8 +591,46 @@ def episodio_favorito(request: Request, episode_id: int):
 @router.post("/episodio/{episode_id}/comentario", response_class=HTMLResponse)
 def episodio_comentario(request: Request, episode_id: int, comment: str = Form("")):
     with get_connection() as conn:
-        repo.set_episode_comment(conn, episode_id, comment)
+        repo.set_episode_comment(conn, episode_id, request.state.user_id, comment)
         return _episode_row_response(request, conn, episode_id)
+
+
+@router.post("/episodio/{episode_id}/debate", response_class=HTMLResponse)
+def episodio_debate(request: Request, episode_id: int, body: str = Form("")):
+    """Debate por episodio (Fase 4 multiusuario, 2026-09-18: "le interesaria comentar
+    y que pudieramos debatir") - a diferencia de /comentario (privado, uno por
+    usuario), esto es un hilo publico entre todos los usuarios de la instancia. La
+    ficha (partials/episode_row.html) ya lo enseña difuminado hasta que CADA usuario
+    ha marcado ese episodio visto, asi que no hace falta ningun check de spoiler aqui."""
+    with get_connection() as conn:
+        repo.add_episode_comment(conn, episode_id, request.state.user_id, body)
+        return _episode_row_response(request, conn, episode_id, open_debate=True)
+
+
+@router.get("/comentarios/siguiente")
+def comentarios_siguiente(request: Request):
+    """A donde lleva el aviso del nav (Tara, 2026-09-18: "estilo tvtime") - salta al
+    comentario ajeno mas antiguo que aun no has visto y marca todo como visto de
+    golpe (mismo criterio simple que el resto de contadores de la app, un "ponerse al
+    dia", no seguimiento fino comentario a comentario)."""
+    with get_connection() as conn:
+        target = repo.get_oldest_unseen_comment(conn, request.state.user_id)
+        repo.mark_comments_seen(conn, request.state.user_id)
+    if not target:
+        return RedirectResponse("/pendientes", status_code=303)
+    return RedirectResponse(
+        f"/titulo/{target['tmdb_id']}/{target['type']}?comentar={target['episode_id']}#ep-{target['episode_id']}",
+        status_code=303,
+    )
+
+
+@router.post("/episodio/{episode_id}/debate/{comment_id}/borrar", response_class=HTMLResponse)
+def episodio_debate_borrar(request: Request, episode_id: int, comment_id: int):
+    """Fase 5 (Tara, 2026-09-18): cada uno borra su propio comentario de debate;
+    con `is_admin`, tambien el de cualquiera (moderacion basica del hilo)."""
+    with get_connection() as conn:
+        repo.delete_episode_comment(conn, comment_id, request.state.user_id, request.state.is_admin)
+        return _episode_row_response(request, conn, episode_id, open_debate=True)
 
 
 
@@ -541,9 +667,12 @@ def marcar_temporada(request: Request, tmdb_id: int, type: str, season_number: i
     """Marca vista una temporada entera de golpe (los episodios ya emitidos) - para
     tragarse una temporada de una sentada sin ir episodio a episodio."""
     with get_connection() as conn:
-        title_row = repo.get_title(conn, tmdb_id)
-        if title_row:
-            repo.mark_season_watched(conn, title_row["id"], season_number)
+        # Bug real (AGY, 2026-09-18): si el usuario entra directo a la ficha y le da a
+        # "Temp. completa" sin haber pulsado antes "+ Pendientes", esto no encontraba
+        # entry y no marcaba nada, sin avisar. ensure_entry la crea si hace falta, mismo
+        # patron que marcar_vista_rapido.
+        entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
+        repo.mark_season_watched(conn, entry["id"], season_number)
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
 
 
@@ -555,7 +684,10 @@ def puntuar_temporada_form(request: Request, tmdb_id: int, type: str, season_num
     unas temporadas valen mas que otras (una sola nota por serie completa las mezclaba)."""
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
-        entry = conn.execute("SELECT * FROM entries WHERE title_id = ?", (title_row["id"],)).fetchone()
+        entry = conn.execute(
+            "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",
+            (title_row["id"], request.state.user_id),
+        ).fetchone()
         existing = repo.get_season_rating(conn, entry["id"], season_number) if entry else None
     categories = {
         "historia": existing["cat_historia"] if existing else None,
@@ -598,17 +730,26 @@ def puntuar_temporada_submit(
         "historia": cat_historia, "animacion": cat_animacion, "personajes": cat_personajes,
         "musica": cat_musica, "disfrute": cat_disfrute,
     }
-    categories = {}
-    for cat, raw in raw_categories.items():
-        categories[cat] = float(raw.replace(",", ".")) if raw.strip() else None
+    # Bug real (AGY, 2026-09-18): a diferencia de marcar_vista_submit (que si valida
+    # con try/except), esto convertia a float sin red - un valor no numerico
+    # tumbaba la peticion entera con un 500 en vez de simplemente ignorarlo.
+    def _parse_float(raw: str) -> float | None:
+        if not raw.strip():
+            return None
+        try:
+            return float(raw.replace(",", "."))
+        except ValueError:
+            return None
+
+    categories = {cat: _parse_float(raw) for cat, raw in raw_categories.items()}
     usa_categorias = any(v is not None for v in categories.values())
-    rating_value = (
-        repo.compute_weighted_rating(categories) if usa_categorias
-        else (float(rating.replace(",", ".")) if rating.strip() else None)
-    )
+    rating_value = repo.compute_weighted_rating(categories) if usa_categorias else _parse_float(rating)
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
-        entry = conn.execute("SELECT * FROM entries WHERE title_id = ?", (title_row["id"],)).fetchone()
+        entry = conn.execute(
+            "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",
+            (title_row["id"], request.state.user_id),
+        ).fetchone()
         if entry and rating_value is not None:
             repo.set_season_rating(conn, entry["id"], season_number, rating_value, comment.strip(), categories)
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)

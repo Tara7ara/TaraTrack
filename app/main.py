@@ -1,5 +1,4 @@
 import asyncio
-import hmac
 import logging
 import time
 import traceback
@@ -71,10 +70,20 @@ async def unhandled_error(request: Request, exc: Exception):
 
 @app.middleware("http")
 async def static_cache_headers(request: Request, call_next):
-    """Posters/fotos/JS no cambian: cache larga en el navegador = menos viajes al servidor."""
+    """Posters/fotos/JS no cambian: cache larga en el navegador = menos viajes al servidor.
+
+    Todo lo demas (paginas reales, partials de htmx) es justo lo contrario: datos que
+    cambian con cada accion de cualquiera de los usuarios. Sin un Cache-Control
+    explicito, un navegador (sobre todo Safari/iOS, con el back-forward cache mas
+    agresivo) puede enseñar una version vieja de /pendientes o /waifus al volver
+    atras despues de una accion, dando la sensacion de "esto no se ha guardado" hasta
+    recargar a mano (Tara, 2026-09-18: varios "he tenido que recargar la web" seguidos
+    tras quitar un pendiente o añadir un personaje favorito)."""
     response = await call_next(request)
     if request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "public, max-age=604800"
+    else:
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -87,26 +96,55 @@ async def static_cache_headers(request: Request, call_next):
 AUTH_COOKIE = config.AUTH_COOKIE
 AUTH_MAX_AGE = config.AUTH_MAX_AGE
 
-# Freno a fuerza bruta contra /login - global, no por IP: detras de NPM sin
-# X-Forwarded-For de confianza configurado, request.client.host suele ser siempre la
-# misma IP del proxy, asi que un contador por IP no distinguiria nada. Con un solo
-# usuario real, bloquear TODOS los intentos (incluida la contraseña correcta) durante
-# el enfriamiento es aceptable - el objetivo es frenar un ataque automatizado, no dar
-# margen fino por usuario.
+# Freno a fuerza bruta contra /login - antes (monousuario, sin cuentas) era un
+# contador GLOBAL en memoria: con una unica contraseña compartida no habia nada mas
+# fino que hacer. Con cuentas reales (2026-09-17, multiusuario) pasa a ser POR
+# USUARIO INTENTADO - 5 fallos contra "tara" no deben bloquear el login de su
+# hermana/amigo, que no han fallado ni una vez. Sigue sin ser por IP: detras de NPM
+# sin X-Forwarded-For de confianza configurado, request.client.host seria siempre la
+# misma IP del proxy.
 LOGIN_MAX_ATTEMPTS = config.LOGIN_MAX_ATTEMPTS
 LOGIN_WINDOW_SECONDS = config.LOGIN_WINDOW_SECONDS
-_login_failures: list[float] = []
+_login_failures_by_user: dict[str, list[float]] = {}
 
 
-def _login_locked_out() -> bool:
+def _prune(bucket: list[float], window_seconds: float) -> list[float]:
     now = time.time()
-    while _login_failures and now - _login_failures[0] > LOGIN_WINDOW_SECONDS:
-        _login_failures.pop(0)
-    return len(_login_failures) >= LOGIN_MAX_ATTEMPTS
+    while bucket and now - bucket[0] > window_seconds:
+        bucket.pop(0)
+    return bucket
 
 
-def _record_login_failure() -> None:
-    _login_failures.append(time.time())
+def _login_locked_out(username: str) -> bool:
+    bucket = _login_failures_by_user.get(username, [])
+    return len(_prune(bucket, LOGIN_WINDOW_SECONDS)) >= LOGIN_MAX_ATTEMPTS
+
+
+def _record_login_failure(username: str) -> None:
+    _login_failures_by_user.setdefault(username, []).append(time.time())
+
+
+def _clear_login_failures(username: str) -> None:
+    _login_failures_by_user.pop(username, None)
+
+
+# Freno a /registro (gap real, AGY 2026-09-18): /login ya tenia freno de fuerza bruta,
+# /registro no tenia ninguno - un script en bucle podia crear cientos de cuentas.
+# Global (no por username, a diferencia del login) porque aqui lo que hay que frenar
+# es EL RITMO de altas nuevas, no los fallos contra una cuenta concreta - una ventana
+# generosa (no son intentos de acceso, son altas reales de gente de confianza detras
+# del WireGuard) que igualmente para en seco un bucle automatizado.
+REGISTRO_MAX_ATTEMPTS = 20
+REGISTRO_WINDOW_SECONDS = 3600
+_registro_attempts: list[float] = []
+
+
+def _registro_locked_out() -> bool:
+    return len(_prune(_registro_attempts, REGISTRO_WINDOW_SECONDS)) >= REGISTRO_MAX_ATTEMPTS
+
+
+def _record_registro_attempt() -> None:
+    _registro_attempts.append(time.time())
 
 
 def _auth_serializer() -> URLSafeTimedSerializer:
@@ -125,26 +163,44 @@ def _safe_next(next_url: str) -> str:
     return "/"
 
 
-def _is_authenticated(request: Request) -> bool:
+def _current_user_id(request: Request) -> int | None:
+    """Antes (monousuario) la cookie era un candado sin identidad, un simple string
+    "ok" firmado. Ahora (2026-09-17, multiusuario) el payload es el user_id - sigue
+    siendo solo un entero firmado, no hace falta guardar mas en la cookie en si, el
+    resto (username/is_admin) se lee de la BBDD en cada peticion via request.state."""
     token = request.cookies.get(AUTH_COOKIE)
     if not token:
-        return False
+        return None
     try:
-        _auth_serializer().loads(token, max_age=AUTH_MAX_AGE)
-        return True
-    except (BadSignature, SignatureExpired):
-        return False
+        payload = _auth_serializer().loads(token, max_age=AUTH_MAX_AGE)
+        return int(payload)
+    except (BadSignature, SignatureExpired, TypeError, ValueError):
+        return None
 
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    if path == "/login" or path.startswith("/static/"):
+    if path in ("/login", "/registro") or path.startswith("/static/"):
         return await call_next(request)
-    if not _is_authenticated(request):
+    user_id = _current_user_id(request)
+    if user_id is None:
         if request.method == "GET":
             return RedirectResponse(f"/login?next={quote(path)}", status_code=303)
         return RedirectResponse("/login", status_code=303)
+    with get_connection() as conn:
+        user = repo.get_user(conn, user_id)
+    if not user:
+        # Cookie valida (firma correcta) pero el usuario ya no existe - no debería
+        # pasar en uso normal (no hay borrado de cuentas todavía), pero si pasa,
+        # tratarlo como no autenticado en vez de petar en el resto de la ruta.
+        resp = RedirectResponse("/login", status_code=303)
+        resp.delete_cookie(AUTH_COOKIE)
+        return resp
+    request.state.user_id = user["id"]
+    request.state.username = user["username"]
+    request.state.is_admin = bool(user["is_admin"])
+    request.state.avatar_path = user["avatar_path"]
     return await call_next(request)
 
 
@@ -154,26 +210,27 @@ def login_form(request: Request, next: str = "/"):
 
 
 @app.post("/login", response_class=HTMLResponse)
-def login_submit(request: Request, password: str = Form(...), next: str = Form("/")):
-    if _login_locked_out():
+def login_submit(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/")):
+    username_norm = username.strip().lower()
+    if _login_locked_out(username_norm):
         return templates.TemplateResponse(
             request, "login.html",
             {"next": _safe_next(next), "error": "Demasiados intentos. Espera unos minutos e inténtalo de nuevo."},
             status_code=429,
         )
-    expected = config.get_password()
-    # compare_digest tambien evita el timing attack trivial de comparar strings con ==.
-    if expected and hmac.compare_digest(password, expected):
-        _login_failures.clear()
+    with get_connection() as conn:
+        user = repo.get_user_by_username(conn, username_norm)
+    if user and repo.verify_password(password, user["password_hash"], user["password_salt"]):
+        _clear_login_failures(username_norm)
         resp = RedirectResponse(_safe_next(next), status_code=303)
         resp.set_cookie(
-            AUTH_COOKIE, _auth_serializer().dumps("ok"),
+            AUTH_COOKIE, _auth_serializer().dumps(str(user["id"])),
             max_age=AUTH_MAX_AGE, httponly=True, secure=True, samesite="lax",
         )
         return resp
-    _record_login_failure()
+    _record_login_failure(username_norm)
     return templates.TemplateResponse(
-        request, "login.html", {"next": _safe_next(next), "error": "Contraseña incorrecta"}, status_code=401
+        request, "login.html", {"next": _safe_next(next), "error": "Usuario o contraseña incorrectos"}, status_code=401
     )
 
 
@@ -181,6 +238,64 @@ def login_submit(request: Request, password: str = Form(...), next: str = Form("
 def logout():
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(AUTH_COOKIE)
+    return resp
+
+
+# ---------- Registro (Tara, 2026-09-18: "lo tienen que hacer ellos, no quiero saber la
+# pass en ningun momento") - autoregistro publico desde /login, sin invitacion: el acceso
+# a /login ya esta acotado por su red WireGuard, asi que no hace falta un filtro aparte
+# aqui. Cuentas creadas asi siempre is_admin=False - el alta manual de /ajustes (Fase 1)
+# se queda para uso de la propia Tara si algun dia le hace falta, pero deja de ser el
+# camino que usan su hermana/amigo.
+@app.get("/registro", response_class=HTMLResponse)
+def registro_form(request: Request, next: str = "/"):
+    return templates.TemplateResponse(request, "registro.html", {"next": _safe_next(next), "error": None})
+
+
+@app.post("/registro", response_class=HTMLResponse)
+def registro_submit(
+    request: Request, username: str = Form(...), password: str = Form(...),
+    password2: str = Form(""), next: str = Form("/"),
+):
+    if _registro_locked_out():
+        return templates.TemplateResponse(
+            request, "registro.html",
+            {"next": _safe_next(next), "error": "Demasiadas cuentas creadas seguidas. Espera unos minutos e inténtalo de nuevo."},
+            status_code=429,
+        )
+    _record_registro_attempt()
+    # Registro mas exigente (Tara, 2026-09-18: "registro mas fuerte") - contraseña de
+    # al menos 8 y confirmacion para pillar erratas al escribirla (antes no habia
+    # forma de saber si te habias equivocado hasta el primer intento de login
+    # fallido). El nombre de usuario se valida con repo.validate_username, la misma
+    # regla que create_user/set_username (AGY, 2026-09-18: "validacion profesional").
+    error = None
+    try:
+        username_norm = repo.validate_username(username)
+    except ValueError as e:
+        error = str(e)
+        username_norm = None
+    if not error and len(password) < 8:
+        error = "La contraseña debe tener al menos 8 caracteres"
+    elif not error and password != password2:
+        error = "Las contraseñas no coinciden"
+    if error:
+        return templates.TemplateResponse(
+            request, "registro.html", {"next": _safe_next(next), "error": error}, status_code=400,
+        )
+    with get_connection() as conn:
+        if repo.get_user_by_username(conn, username_norm):
+            return templates.TemplateResponse(
+                request, "registro.html",
+                {"next": _safe_next(next), "error": "Ese usuario ya existe"},
+                status_code=409,
+            )
+        user = repo.create_user(conn, username_norm, password)
+    resp = RedirectResponse(_safe_next(next), status_code=303)
+    resp.set_cookie(
+        AUTH_COOKIE, _auth_serializer().dumps(str(user["id"])),
+        max_age=AUTH_MAX_AGE, httponly=True, secure=True, samesite="lax",
+    )
     return resp
 
 

@@ -30,7 +30,7 @@
         <input type="hidden" name="char_id" value="{{ r.id }}">
         <input type="hidden" name="name" value="{{ r.name }}">
         <input type="hidden" name="image_url" value="{{ r.image_url or '' }}">
-        <button class="secondary char-add">Añadir a waifus</button>
+        <button class="secondary char-add">Añadir a {{ waifus_label(request.state.user_id)|lower }}</button>
     </form>
     {% else %}
     <span class="char-show">Su serie no está en tu biblioteca</span>

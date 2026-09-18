@@ -10,3 +10,5 @@ app/static/uploads/*
 !app/static/uploads/.gitkeep
 app/static/profiles/*
 !app/static/profiles/.gitkeep
+app/static/avatars/*
+!app/static/avatars/.gitkeep

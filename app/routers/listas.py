@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import repo, tmdb
 from app.db import get_connection
@@ -10,13 +11,23 @@ from app.web import templates
 router = APIRouter()
 
 
+def _owned_or_404(conn, list_id: int, user_id: int):
+    """Guarda de propiedad para cualquier ruta con list_id en la URL (multiusuario
+    Fase 2, 2026-09-17) - sin esto, un usuario podria renombrar/borrar/votar en la
+    lista de otro adivinando su id."""
+    list_row = repo.get_owned_list(conn, list_id, user_id)
+    if not list_row:
+        raise StarletteHTTPException(status_code=404, detail="Lista no encontrada")
+    return list_row
+
+
 
 
 @router.get("/listas", response_class=HTMLResponse)
 def listas(request: Request):
     with get_connection() as conn:
-        lists = repo.list_lists(conn)
-        waifus_preview = [w["profile_path"] for w in repo.list_waifus(conn)[:10]]
+        lists = repo.list_lists(conn, request.state.user_id)
+        waifus_preview = [w["profile_path"] for w in repo.list_waifus(conn, request.state.user_id)[:10]]
     return templates.TemplateResponse(
         request, "lists.html", {"lists": lists, "waifus_preview": waifus_preview}
     )
@@ -30,7 +41,7 @@ def crear_lista(request: Request, name: str = Form(...)):
     daba pantalla en negro en el movil de Tara - swapear el body es fragil, mejor
     una recarga normal como el resto de altas de la app."""
     with get_connection() as conn:
-        repo.create_list(conn, name)
+        repo.create_list(conn, name, request.state.user_id)
     return RedirectResponse("/listas", status_code=303)
 
 
@@ -39,7 +50,8 @@ def crear_lista(request: Request, name: str = Form(...)):
 @router.post("/lista/{list_id}/renombrar", response_class=HTMLResponse)
 def lista_renombrar(request: Request, list_id: int, name: str = Form(...)):
     with get_connection() as conn:
-        repo.rename_list(conn, list_id, name)
+        _owned_or_404(conn, list_id, request.state.user_id)
+        repo.rename_list(conn, list_id, request.state.user_id, name)
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
 
 
@@ -48,6 +60,7 @@ def lista_renombrar(request: Request, list_id: int, name: str = Form(...)):
 @router.post("/lista/{list_id}/borrar", response_class=HTMLResponse)
 def lista_borrar(request: Request, list_id: int):
     with get_connection() as conn:
+        _owned_or_404(conn, list_id, request.state.user_id)
         repo.delete_list(conn, list_id)
     return RedirectResponse("/listas", status_code=303)
 
@@ -57,6 +70,7 @@ def lista_borrar(request: Request, list_id: int):
 @router.post("/lista/{list_id}/mover/{item_id}/{direction}", response_class=HTMLResponse)
 def lista_mover(request: Request, list_id: int, item_id: int, direction: str):
     with get_connection() as conn:
+        _owned_or_404(conn, list_id, request.state.user_id)
         repo.move_list_item(conn, list_id, item_id, direction)
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
 
@@ -68,6 +82,7 @@ def lista_orden(request: Request, list_id: int, modo: str = Form(...)):
     """Elegir que orden se enseña: manual (flechas) o por duelos (Elo) - los dos se
     guardan siempre, esto solo decide cual se ve (ver repo.record_duel)."""
     with get_connection() as conn:
+        _owned_or_404(conn, list_id, request.state.user_id)
         repo.set_list_order_mode(conn, list_id, modo)
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
 
@@ -81,6 +96,7 @@ def lista_elo_reiniciar(request: Request, list_id: int):
     toca el Elo de otras listas ni de waifus. `elo_reset=1` en el redirect para el
     aviso visible (ver duelo_general_elo_reiniciar)."""
     with get_connection() as conn:
+        _owned_or_404(conn, list_id, request.state.user_id)
         ids = [item["item_id"] for item in repo.list_items_in_list(conn, list_id)]
         repo.reset_elo(conn, "list_items", ids)
     return RedirectResponse(f"/lista/{list_id}?elo_reset=1", status_code=303)
@@ -92,7 +108,7 @@ def lista_elo_reiniciar(request: Request, list_id: int):
 def lista_duelo(request: Request, list_id: int):
     """Ranking por duelos para una lista concreta - mismo mecanismo que /waifus/duelo."""
     with get_connection() as conn:
-        list_row = conn.execute("SELECT * FROM lists WHERE id = ?", (list_id,)).fetchone()
+        list_row = _owned_or_404(conn, list_id, request.state.user_id)
         ids = [item["item_id"] for item in repo.list_items_in_list(conn, list_id)]
         pair_ids = repo.random_duel_pair(conn, "list_items", ids)
         pair = repo.get_list_items_by_ids(conn, list_id, pair_ids) if pair_ids else []
@@ -115,7 +131,8 @@ def lista_duelo_votar(
     request: Request, list_id: int, a_id: int = Form(...), b_id: int = Form(...), resultado: float = Form(1.0)
 ):
     with get_connection() as conn:
-        repo.record_duel(conn, "list_items", a_id, b_id, resultado)
+        _owned_or_404(conn, list_id, request.state.user_id)
+        repo.record_duel(conn, "list_items", a_id, b_id, request.state.user_id, resultado)
     return RedirectResponse(f"/lista/{list_id}/duelo", status_code=303)
 
 
@@ -131,6 +148,7 @@ def lista_buscar(request: Request, list_id: int, q: str = ""):
         except Exception:
             results = []
     with get_connection() as conn:
+        _owned_or_404(conn, list_id, request.state.user_id)
         en_lista = {
             row["tmdb_id"]
             for row in conn.execute(
@@ -153,7 +171,8 @@ def lista_buscar(request: Request, list_id: int, q: str = ""):
 @router.post("/lista/{list_id}/anadir/{tmdb_id}/{type}", response_class=HTMLResponse)
 def lista_anadir(request: Request, list_id: int, tmdb_id: int, type: str):
     with get_connection() as conn:
-        entry = repo.ensure_entry(conn, tmdb_id, type)
+        _owned_or_404(conn, list_id, request.state.user_id)
+        entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         repo.add_entry_to_list(conn, list_id, entry["id"])
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
 
@@ -163,7 +182,7 @@ def lista_anadir(request: Request, list_id: int, tmdb_id: int, type: str):
 @router.get("/lista/{list_id}", response_class=HTMLResponse)
 def lista_detalle(request: Request, list_id: int, elo_reset: str = ""):
     with get_connection() as conn:
-        list_row = conn.execute("SELECT * FROM lists WHERE id = ?", (list_id,)).fetchone()
+        list_row = _owned_or_404(conn, list_id, request.state.user_id)
         entries = repo.list_items_in_list(conn, list_id)
         ids = [e["item_id"] for e in entries]
         elo_deltas = repo.get_elo_deltas(conn, "list_items", ids)

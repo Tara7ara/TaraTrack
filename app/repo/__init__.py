@@ -13,6 +13,7 @@ from app.repo._shared import (  # noqa: F401
     compute_weighted_rating,
     get_setting,
     set_setting,
+    user_has_anime,
 )
 from app.repo.affinity import (  # noqa: F401
     _AFFINITY_CONFIG_DEFAULTS,
@@ -68,6 +69,15 @@ from app.repo.characters import (  # noqa: F401
     sync_characters,
     toggle_favorite_character,
 )
+from app.repo.comments import (  # noqa: F401
+    add_episode_comment,
+    count_episode_comments,
+    count_unseen_comments,
+    delete_episode_comment,
+    get_oldest_unseen_comment,
+    list_episode_comments,
+    mark_comments_seen,
+)
 from app.repo.duels import (  # noqa: F401
     BRIDGE_DUEL_CHANCE,
     GLICKO_Q,
@@ -79,9 +89,11 @@ from app.repo.duels import (  # noqa: F401
     _glicko_g,
     _glicko_update,
     duel_coverage,
+    duel_pool_for_user,
     elo_confidence_label,
     get_elo_deltas,
     get_entries_by_ids,
+    list_all_watched_ids,
     list_watched_ids,
     random_duel_pair,
     record_duel,
@@ -96,6 +108,8 @@ from app.repo.lists import (  # noqa: F401
     delete_list,
     get_default_list,
     get_list_items_by_ids,
+    get_or_create_default_list,
+    get_owned_list,
     is_entry_favorite,
     list_items_in_list,
     list_lists,
@@ -120,9 +134,11 @@ from app.repo.recommendations import (  # noqa: F401
 from app.repo.season_cache import (  # noqa: F401
     clear_weekday_override,
     get_cached_season,
+    get_show_anime_calendar,
     get_weekday_override,
     get_weekday_overrides,
     save_season_cache,
+    set_show_anime_calendar,
     set_weekday_override,
 )
 from app.repo.stats import (  # noqa: F401
@@ -158,7 +174,9 @@ from app.repo.titles import (  # noqa: F401
     ensure_title,
     get_entry_states,
     get_entry_with_title,
+    get_episode_user_state,
     get_home_card,
+    get_owned_entry_with_title,
     get_prediction_calibration,
     get_season_rating,
     get_similar,
@@ -200,6 +218,21 @@ from app.repo.titles import (  # noqa: F401
     toggle_episode_favorite,
     toggle_habit,
     undo_mark_watched,
+)
+from app.repo.users import (  # noqa: F401
+    admin_reset_password,
+    change_password,
+    count_admins,
+    create_user,
+    get_user,
+    get_user_by_username,
+    hash_password,
+    list_users,
+    set_admin,
+    set_avatar_path,
+    set_username,
+    validate_username,
+    verify_password,
 )
 from app.repo.waifus import (  # noqa: F401
     _waifus_by_position,

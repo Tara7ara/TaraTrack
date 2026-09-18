@@ -12,6 +12,11 @@ document.addEventListener("htmx:afterSwap", (e) => {
 
 function setupSwipe(row) {
     const content = row.querySelector(".swipe-content");
+    // Bug real (AGY, 2026-09-18): sin esta guarda, una fila .swipeable sin
+    // .swipe-content dentro (markup distinto en algun render parcial) tiraba un
+    // TypeError aqui - forEach no tiene try/catch propio, asi que abortaba el
+    // resto de filas de la pagina sin dejarles el gesto de swipe montado.
+    if (!content) return;
     const btn = row.querySelector('button[hx-post^="/vista/"]');
     const threshold = 90;
     let startX = 0;
@@ -29,11 +34,22 @@ function setupSwipe(row) {
         setTimeout(() => row.remove(), 260);
     }
 
-    if (btn) {
-        btn.addEventListener("htmx:afterRequest", (e) => {
-            if (e.detail.successful) collapseAndRemove();
-        });
-    }
+    // Bug real (Tara, 2026-09-18: "quito una serie de pendientes, he tenido que
+    // recargar la web"): el boton "Marcar vista" existe desde el primer render y un
+    // listener puesto aqui encima le llega bien, pero "quitar de pendientes" pasa
+    // antes por una confirmacion en dos pasos (ver partials/entry_actions.html,
+    // estado "pending_confirm") - el boton real que hay que escuchar ("¿Quitar? Sí")
+    // ni siquiera existe en el DOM todavia en este momento, lo inserta un swap de
+    // htmx despues. Delegar el listener en la fila entera (en vez de en un boton
+    // concreto) sí capta esos clics futuros, porque el evento de htmx burbujea
+    // hasta aqui pase lo que pase con el swap de mas abajo.
+    row.addEventListener("htmx:afterRequest", (e) => {
+        if (!e.detail.successful) return;
+        const el = e.detail.elt;
+        if (el.matches && (el.matches('button[hx-post^="/vista/"]') || el.matches('button[hx-post^="/pendiente/"]'))) {
+            collapseAndRemove();
+        }
+    });
 
     content.addEventListener("touchstart", (e) => {
         startX = e.touches[0].clientX;

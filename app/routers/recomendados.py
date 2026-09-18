@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get("/recomendados", response_class=HTMLResponse)
 def recomendados(request: Request, tipo: str = ""):
     with get_connection() as conn:
-        recs = repo.list_recommendations(conn, tipo=tipo)
+        recs = repo.list_recommendations(conn, request.state.user_id, tipo=tipo)
     return templates.TemplateResponse(
         request, "recommendations.html", {"recs": recs, "tipo": tipo}
     )
@@ -38,6 +38,7 @@ def recomendados_rechazar(
     Devuelve vacio para que htmx quite la tarjeta."""
     with get_connection() as conn:
         repo.reject_recommendation(
-            conn, tmdb_id, type, title, poster_path.strip() or None, seed_title.strip() or None
+            conn, tmdb_id, type, title, poster_path.strip() or None, request.state.user_id,
+            seed_title.strip() or None,
         )
     return HTMLResponse("")

@@ -25,7 +25,7 @@ def buscar(request: Request, q: str = ""):
     with get_connection() as conn:
         # 6 dejaba una fila corta con hueco muerto grande a la derecha en pantallas
         # anchas (Tara, monitor QHD: "se ve vacía") - 11 a peticion explicita suya.
-        recs = repo.list_recommendations(conn, limit=11)
+        recs = repo.list_recommendations(conn, request.state.user_id, limit=11)
     for r in recs:
         r["state"] = "new"
     return templates.TemplateResponse(request, "search.html", {"recs": recs, "q": q})
@@ -49,7 +49,7 @@ def buscar_resultados(request: Request, q: str = ""):
     # recomendados que ya se ven al entrar en la pagina.
     if not q.strip():
         with get_connection() as conn:
-            recs = repo.list_recommendations(conn, limit=11)
+            recs = repo.list_recommendations(conn, request.state.user_id, limit=11)
         for r in recs:
             r["state"] = "new"
         return templates.TemplateResponse(
@@ -76,7 +76,7 @@ def buscar_resultados(request: Request, q: str = ""):
         except Exception:
             pass
     with get_connection() as conn:
-        states = repo.get_entry_states(conn, [r["tmdb_id"] for r in results])
+        states = repo.get_entry_states(conn, [r["tmdb_id"] for r in results], request.state.user_id)
     for r in results:
         r["state"] = states.get(r["tmdb_id"], "new")
     return templates.TemplateResponse(
@@ -97,6 +97,6 @@ def alta_manual(
     year_value = int(year) if year.strip().isdigit() else None
     with get_connection() as conn:
         title_row = repo.create_manual_entry(
-            conn, type, title.strip(), year_value, poster_url.strip() or None
+            conn, type, title.strip(), year_value, poster_url.strip() or None, request.state.user_id
         )
     return RedirectResponse(f"/titulo/{title_row['tmdb_id']}/{type}", status_code=303)

@@ -17,9 +17,11 @@ services:
       - taratrack-posters:/srv/app/static/posters
       - taratrack-uploads:/srv/app/static/uploads
       - taratrack-profiles:/srv/app/static/profiles
+      - taratrack-avatars:/srv/app/static/avatars
 
 volumes:
   taratrack-data:
   taratrack-posters:
   taratrack-uploads:
   taratrack-profiles:
+  taratrack-avatars:

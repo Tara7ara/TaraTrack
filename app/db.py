@@ -10,6 +10,15 @@ from app import config
 DB_PATH = config.DB_PATH
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    password_salt TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS titles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tmdb_id INTEGER UNIQUE NOT NULL,
@@ -155,9 +164,11 @@ CREATE TABLE IF NOT EXISTS elo_snapshots (
 );
 
 CREATE TABLE IF NOT EXISTS profile_history (
-    date TEXT PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    date TEXT NOT NULL,
     covered INTEGER NOT NULL,
-    total_rated INTEGER NOT NULL
+    total_rated INTEGER NOT NULL,
+    PRIMARY KEY (user_id, date)
 );
 
 CREATE TABLE IF NOT EXISTS season_ratings (
@@ -176,6 +187,7 @@ CREATE TABLE IF NOT EXISTS season_ratings (
 );
 
 CREATE TABLE IF NOT EXISTS taste_profile (
+    user_id INTEGER REFERENCES users(id),
     attr_type TEXT NOT NULL,
     attr_name TEXT NOT NULL,
     sig_volumen REAL,
@@ -197,11 +209,12 @@ CREATE TABLE IF NOT EXISTS taste_profile (
     n_titulos INTEGER NOT NULL,
     n_episodios INTEGER NOT NULL,
     computed_at TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (attr_type, attr_name)
+    PRIMARY KEY (user_id, attr_type, attr_name)
 );
 
 CREATE TABLE IF NOT EXISTS score_distribution (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
     raw_score REAL NOT NULL,
     computed_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -214,7 +227,21 @@ CREATE TABLE IF NOT EXISTS score_distribution (
 CREATE TABLE IF NOT EXISTS episode_watches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     episode_id INTEGER NOT NULL REFERENCES episodes(id),
+    user_id INTEGER REFERENCES users(id),
     watched_at TEXT NOT NULL
+);
+
+-- Comentario/favorito por episodio, POR USUARIO (2026-09-17, multiusuario Fase 2) -
+-- antes vivian como columnas directas en `episodes` (comment/is_favorite), compartidas
+-- por toda la instancia. Esas dos columnas se dejan sin usar en `episodes` (no se
+-- borran - SQLite no deja quitar columnas sin reconstruir la tabla entera, y no hace
+-- falta el riesgo solo por limpieza) pero el codigo ya no las lee ni las escribe.
+CREATE TABLE IF NOT EXISTS episode_user_state (
+    episode_id INTEGER NOT NULL REFERENCES episodes(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    comment TEXT,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (episode_id, user_id)
 );
 
 -- Dia de emision manual por titulo (Tara, notas.txt: "lunes Grand Blue pero en el
@@ -226,6 +253,20 @@ CREATE TABLE IF NOT EXISTS episode_watches (
 CREATE TABLE IF NOT EXISTS weekday_overrides (
     anilist_id INTEGER PRIMARY KEY,
     weekday INTEGER NOT NULL
+);
+
+-- Debate por episodio (2026-09-18, Fase 4 multiusuario) - a diferencia de
+-- episode_user_state (privado, un comentario por usuario), esta es la UNICA tabla
+-- pensada para ser visible ENTRE usuarios: un hilo cronologico por episodio. Se
+-- enseña difuminado en la ficha hasta que el propio usuario marca ese episodio
+-- como visto (ver partials/episode_row.html), con opcion de quitar el spoiler
+-- antes de tiempo - eso es solo de render, aqui no hay nada que filtrar por usuario.
+CREATE TABLE IF NOT EXISTS episode_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    episode_id INTEGER NOT NULL REFERENCES episodes(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -304,6 +345,37 @@ MIGRATIONS = [
        SELECT id, watched_at FROM episodes
        WHERE watched_at IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM episode_watches WHERE episode_watches.episode_id = episodes.id)""",
+    # Multiusuario Fase 2 (2026-09-17): episode_watches necesita saber DE QUIEN es cada
+    # visionado - antes de esto era compartido, cualquier usuario marcando un episodio
+    # lo marcaba "visto" para todos. El backfill real (asignar el admin a las filas ya
+    # existentes) vive en _migrate_multiuser, aqui solo se añade la columna.
+    "ALTER TABLE episode_watches ADD COLUMN user_id INTEGER REFERENCES users(id)",
+    # Multiusuario Fase 3 (2026-09-18): score_distribution necesita saber de quien es
+    # cada score backtesteado - taste_profile/profile_history tambien se vuelven
+    # por-usuario, pero sus PRIMARY KEY cambian (attr_type+attr_name -> +user_id;
+    # date -> user_id+date) asi que necesitan reconstruccion completa, no un ALTER
+    # ADD COLUMN simple - ver _migrate_affinity_multiuser mas abajo.
+    "ALTER TABLE score_distribution ADD COLUMN user_id INTEGER REFERENCES users(id)",
+    # Bug real (2026-09-18, Tara: "recomienda full anime a la cuenta random"):
+    # recommendations_cache era UNA tabla global calculada a partir de TODAS las
+    # entries de la instancia (mayoria de Tara), asi que cualquier cuenta nueva veia
+    # los recomendados de Tara. No es una tabla de datos del usuario (es cache
+    # recalculable), asi que no hace falta reconstruccion: se añade la columna y se
+    # tira lo que hubiera - se recalcula sola por usuario en la siguiente visita/sync
+    # (ver refresh_recommendations_cache). El DELETE es barato (tabla pequeña) e
+    # idempotente, se puede dejar corriendo en cada arranque sin problema.
+    "ALTER TABLE recommendations_cache ADD COLUMN user_id INTEGER REFERENCES users(id)",
+    "DELETE FROM recommendations_cache WHERE user_id IS NULL",
+    # Perfil de cuenta (Tara, 2026-09-18: "como pongo fotos de usr, si quiero cambiar
+    # el nombre") - foto propia (avatar), independiente del username en si.
+    "ALTER TABLE users ADD COLUMN avatar_path TEXT",
+    # Aviso de comentarios nuevos en el nav (Tara, 2026-09-18: "estilo tvtime") -
+    # marca de tiempo de "hasta aqui ya lo he visto", por usuario. Backfill a AHORA
+    # (no NULL) para que una cuenta ya existente no vea de golpe todo su historico de
+    # comentarios como "nuevo" el dia que se despliega esto - solo cuenta lo que pase
+    # DESDE este momento en adelante. Idempotente (solo toca las filas sin fecha).
+    "ALTER TABLE users ADD COLUMN comments_seen_at TEXT",
+    "UPDATE users SET comments_seen_at = datetime('now') WHERE comments_seen_at IS NULL",
 ]
 
 # Indices para que las subqueries de inicio/calendario no barran tablas enteras.
@@ -327,6 +399,7 @@ CREATE INDEX IF NOT EXISTS idx_duels_loser ON duels(table_name, loser_id);
 CREATE INDEX IF NOT EXISTS idx_score_distribution_raw ON score_distribution(raw_score);
 CREATE INDEX IF NOT EXISTS idx_watch_sessions_entry ON watch_sessions(entry_id);
 CREATE INDEX IF NOT EXISTS idx_episode_watches_episode ON episode_watches(episode_id);
+CREATE INDEX IF NOT EXISTS idx_episode_comments_episode ON episode_comments(episode_id);
 """
 
 
@@ -343,6 +416,14 @@ def _migrate_rating_scale_0_10(conn):
     ).fetchone()
     if done:
         return
+    # Bug real encontrado probando esta migracion contra una copia de la BBDD real
+    # de Tara (2026-09-18, antes de desplegar el multiusuario): "PRAGMA foreign_keys"
+    # es un no-op si ya hay una transaccion abierta (documentado en la propia SQLite) -
+    # y la hay, porque SCHEMA/MIGRATIONS ya han escrito antes en esta misma conexion.
+    # Sin este commit, el DROP TABLE de mas abajo revienta con
+    # "FOREIGN KEY constraint failed" en cuanto la tabla tiene filas reales
+    # referenciadas desde otras tablas - invisible en tests con BBDD siempre vacia.
+    conn.commit()
     conn.execute("PRAGMA foreign_keys = OFF")
     # Columnas posteriores a cat_disfrute (elo, is_habit, auto_watch, rd,
     # rewatch_started_at...) tienen que estar aqui tambien - antes de arreglar esto
@@ -402,6 +483,258 @@ def _migrate_rating_scale_0_10(conn):
     )
 
 
+def _migrate_multiuser(conn):
+    """Cuentas de verdad (2026-09-17, Fase 1 del multiusuario - hermana y un amigo
+    de Tara quieren su propio seguimiento). Antes no habia ningun concepto de
+    usuario: entries/lists/rejected_recommendations eran unicos por titulo/nombre
+    en TODA la instancia. Se hace UNA vez (flag en app_settings, mismo patron que
+    _migrate_rating_scale_0_10 de arriba) - SQLite no deja alterar un UNIQUE ya
+    creado, hace falta reconstruir la tabla igual que alli.
+
+    user_id se deja NULLABLE a proposito: los datos ya existentes quedan con el id
+    del admin recien creado, pero dejar la columna nullable evita romper insercion
+    directa por SQL de tests antiguos que no la mencionan - solo los puntos de
+    escritura reales de la app (repo.ensure_entry, repo.create_list,
+    repo.reject_recommendation) tienen la obligacion de rellenarla desde ahora.
+    Los listados (pendientes/vistas/afinidad/duelos...) TODAVIA no filtran por
+    usuario - eso es la Fase 2/3 del plan, deliberadamente fuera de esta migracion."""
+    done = conn.execute("SELECT value FROM app_settings WHERE key = 'multiuser_migrated'").fetchone()
+    if done:
+        return
+    # Bug real encontrado probando esta migracion contra una copia de la BBDD real de
+    # Tara (2026-09-18): "PRAGMA foreign_keys" no tiene efecto con una transaccion ya
+    # abierta (SCHEMA/MIGRATIONS ya escribieron en esta conexion) - sin este commit,
+    # el DROP TABLE de mas abajo revienta con "FOREIGN KEY constraint failed" en
+    # cuanto entries/lists/rejected_recommendations tienen filas reales referenciadas
+    # (list_items, favorite_characters, episode_watches...) - invisible en tests con
+    # BBDD siempre vacia, donde nunca hay nada que viole la referencia.
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+
+    # 1) Admin desde TARATRACK_PASSWORD/TARATRACK_ADMIN_USERNAME - insert directo
+    # (no repo.users.create_user, que ya asume el schema NUEVO de `lists`, que
+    # todavia no existe en este punto de la migracion).
+    admin_row = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+    if not admin_row:
+        from app import config
+        from app.repo.users import hash_password
+
+        password = config.get_password()
+        if password:
+            password_hash, password_salt = hash_password(password)
+            conn.execute(
+                "INSERT INTO users (username, password_hash, password_salt, is_admin) VALUES (?, ?, ?, 1)",
+                (config.get_admin_username(), password_hash, password_salt),
+            )
+            admin_row = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+    admin_id = admin_row["id"] if admin_row else None
+
+    # 2) entries: UNIQUE(title_id) -> UNIQUE(title_id, user_id).
+    conn.execute("""
+        CREATE TABLE entries_mu (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title_id INTEGER NOT NULL REFERENCES titles(id),
+            user_id INTEGER REFERENCES users(id),
+            status TEXT NOT NULL CHECK(status IN ('pending', 'watched')) DEFAULT 'pending',
+            rating REAL CHECK(rating IS NULL OR (rating >= 0 AND rating <= 10)),
+            comment TEXT,
+            added_at TEXT NOT NULL DEFAULT (datetime('now')),
+            watched_at TEXT,
+            cat_historia REAL, cat_animacion REAL, cat_personajes REAL, cat_musica REAL, cat_disfrute REAL,
+            elo REAL NOT NULL DEFAULT 1500,
+            predicted_score INTEGER,
+            is_habit INTEGER,
+            auto_watch INTEGER NOT NULL DEFAULT 0,
+            rd REAL NOT NULL DEFAULT 350,
+            rewatch_started_at TEXT,
+            UNIQUE(title_id, user_id)
+        )
+    """)
+    conn.execute(
+        """INSERT INTO entries_mu
+               (id, title_id, user_id, status, rating, comment, added_at, watched_at,
+                cat_historia, cat_animacion, cat_personajes, cat_musica, cat_disfrute,
+                elo, predicted_score, is_habit, auto_watch, rd, rewatch_started_at)
+           SELECT id, title_id, ?, status, rating, comment, added_at, watched_at,
+                  cat_historia, cat_animacion, cat_personajes, cat_musica, cat_disfrute,
+                  elo, predicted_score, is_habit, auto_watch, rd, rewatch_started_at
+           FROM entries""",
+        (admin_id,),
+    )
+    conn.execute("DROP TABLE entries")
+    conn.execute("ALTER TABLE entries_mu RENAME TO entries")
+
+    # 3) lists: UNIQUE(name) -> UNIQUE(user_id, name). Conserva la fila "Favoritos"
+    # ya existente (con su id/created_at originales) asignandola al admin.
+    conn.execute("""
+        CREATE TABLE lists_mu (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            name TEXT NOT NULL,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            order_mode TEXT NOT NULL DEFAULT 'manual',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, name)
+        )
+    """)
+    conn.execute(
+        """INSERT INTO lists_mu (id, user_id, name, is_default, order_mode, created_at)
+           SELECT id, ?, name, is_default, order_mode, created_at FROM lists""",
+        (admin_id,),
+    )
+    conn.execute("DROP TABLE lists")
+    conn.execute("ALTER TABLE lists_mu RENAME TO lists")
+
+    # 4) rejected_recommendations: UNIQUE(tmdb_id) -> UNIQUE(user_id, tmdb_id).
+    conn.execute("""
+        CREATE TABLE rejected_recommendations_mu (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            tmdb_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            poster_path TEXT,
+            seed_title TEXT,
+            rejected_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, tmdb_id)
+        )
+    """)
+    conn.execute(
+        """INSERT INTO rejected_recommendations_mu
+               (id, user_id, tmdb_id, type, title, poster_path, seed_title, rejected_at)
+           SELECT id, ?, tmdb_id, type, title, poster_path, seed_title, rejected_at
+           FROM rejected_recommendations""",
+        (admin_id,),
+    )
+    conn.execute("DROP TABLE rejected_recommendations")
+    conn.execute("ALTER TABLE rejected_recommendations_mu RENAME TO rejected_recommendations")
+
+    # 5) Instalacion nueva sin ninguna lista previa: el admin necesita su propia
+    # "Favoritos" (antes lo hacia init_db() de forma global, ahora es por-usuario).
+    if admin_id is not None:
+        has_default = conn.execute(
+            "SELECT 1 FROM lists WHERE user_id = ? AND is_default = 1", (admin_id,)
+        ).fetchone()
+        if not has_default:
+            conn.execute(
+                "INSERT INTO lists (user_id, name, is_default) VALUES (?, 'Favoritos', 1)", (admin_id,)
+            )
+
+    # 6) episode_watches: todo lo ya registrado (historial real de visionados, ver el
+    # comentario junto a la tabla) era del admin - backfill directo, sin ambiguedad
+    # posible porque hasta ahora solo existia un usuario real.
+    conn.execute("UPDATE episode_watches SET user_id = ? WHERE user_id IS NULL", (admin_id,))
+
+    # 7) episode_user_state: `episodes.comment`/`is_favorite` (comentario/estrella por
+    # episodio suelto) eran columnas compartidas - se vuelcan aqui como datos del
+    # admin, una unica vez; el codigo deja de leer/escribir esas dos columnas desde
+    # ahora (se quedan en `episodes` sin usar, ver comentario junto a la tabla nueva).
+    if admin_id is not None:
+        conn.execute(
+            """INSERT OR IGNORE INTO episode_user_state (episode_id, user_id, comment, is_favorite)
+               SELECT id, ?, comment, is_favorite FROM episodes
+               WHERE comment IS NOT NULL OR is_favorite = 1""",
+            (admin_id,),
+        )
+
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('multiuser_migrated', '1')"
+    )
+
+
+def _migrate_affinity_multiuser(conn):
+    """Multiusuario Fase 3 (2026-09-18): el indice de afinidad, duelos/Elo y waifus
+    pasan a ser por-usuario. `taste_profile`/`profile_history` cambian de PRIMARY KEY
+    (hace falta reconstruir, SQLite no permite alterar una PK existente);
+    `score_distribution` ya gano su columna `user_id` via MIGRATIONS (ALTER simple,
+    sin PK que tocar). Todo lo ya calculado hasta ahora (el unico usuario real hasta
+    hoy) se asigna al mismo admin que ya tiene todo lo demas desde la Fase 1."""
+    done = conn.execute(
+        "SELECT value FROM app_settings WHERE key = 'affinity_multiuser_migrated'"
+    ).fetchone()
+    if done:
+        return
+    admin_row = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+    admin_id = admin_row["id"] if admin_row else None
+
+    # Mismo bug/fix que _migrate_multiuser: sin este commit, "PRAGMA foreign_keys=OFF"
+    # es un no-op (transaccion ya abierta) y el DROP TABLE de mas abajo revienta en
+    # cuanto taste_profile/profile_history tienen filas reales.
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+
+    conn.execute("""
+        CREATE TABLE taste_profile_mu (
+            user_id INTEGER REFERENCES users(id),
+            attr_type TEXT NOT NULL,
+            attr_name TEXT NOT NULL,
+            sig_volumen REAL, sig_lift REAL, sig_ritmo REAL, sig_dia1 REAL,
+            sig_rewatch REAL, sig_curacion REAL, sig_techo REAL, sig_suelo REAL,
+            sig_disfrute REAL, sig_media REAL, sig_elo REAL,
+            apetito REAL NOT NULL, calidad REAL NOT NULL, inercia REAL NOT NULL,
+            afinidad REAL NOT NULL, confianza REAL NOT NULL,
+            n_titulos INTEGER NOT NULL, n_episodios INTEGER NOT NULL,
+            computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, attr_type, attr_name)
+        )
+    """)
+    conn.execute(
+        """INSERT INTO taste_profile_mu
+               (user_id, attr_type, attr_name, sig_volumen, sig_lift, sig_ritmo, sig_dia1,
+                sig_rewatch, sig_curacion, sig_techo, sig_suelo, sig_disfrute, sig_media,
+                sig_elo, apetito, calidad, inercia, afinidad, confianza, n_titulos,
+                n_episodios, computed_at)
+           SELECT ?, attr_type, attr_name, sig_volumen, sig_lift, sig_ritmo, sig_dia1,
+                  sig_rewatch, sig_curacion, sig_techo, sig_suelo, sig_disfrute, sig_media,
+                  sig_elo, apetito, calidad, inercia, afinidad, confianza, n_titulos,
+                  n_episodios, computed_at
+           FROM taste_profile""",
+        (admin_id,),
+    )
+    conn.execute("DROP TABLE taste_profile")
+    conn.execute("ALTER TABLE taste_profile_mu RENAME TO taste_profile")
+
+    conn.execute("""
+        CREATE TABLE profile_history_mu (
+            user_id INTEGER REFERENCES users(id),
+            date TEXT NOT NULL,
+            covered INTEGER NOT NULL,
+            total_rated INTEGER NOT NULL,
+            PRIMARY KEY (user_id, date)
+        )
+    """)
+    conn.execute(
+        "INSERT INTO profile_history_mu (user_id, date, covered, total_rated) SELECT ?, date, covered, total_rated FROM profile_history",
+        (admin_id,),
+    )
+    conn.execute("DROP TABLE profile_history")
+    conn.execute("ALTER TABLE profile_history_mu RENAME TO profile_history")
+
+    conn.execute("UPDATE score_distribution SET user_id = ? WHERE user_id IS NULL", (admin_id,))
+
+    # app_settings de clave/valor GLOBAL que pasan a namespacarse por usuario
+    # (":<user_id>" al final de la clave) - sin este paso, cualquier ajuste que ya
+    # hubieras guardado (pesos de afinidad, orden de waifus) se habria perdido en
+    # silencio al buscar la clave nueva y no encontrar nada.
+    if admin_id is not None:
+        for old_key, new_key in (
+            ("affinity_config", f"affinity_config:{admin_id}"),
+            ("waifus_order_mode", f"waifus_order_mode:{admin_id}"),
+        ):
+            row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (old_key,)).fetchone()
+            if row is not None:
+                conn.execute(
+                    "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", (new_key, row["value"])
+                )
+                conn.execute("DELETE FROM app_settings WHERE key = ?", (old_key,))
+
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('affinity_multiuser_migrated', '1')"
+    )
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_connection() as conn:
@@ -413,10 +746,9 @@ def init_db():
                 if "duplicate column" not in str(e):
                     raise
         _migrate_rating_scale_0_10(conn)
+        _migrate_multiuser(conn)
+        _migrate_affinity_multiuser(conn)
         conn.executescript(INDEXES)
-        conn.execute(
-            "INSERT OR IGNORE INTO lists (name, is_default) VALUES ('Favoritos', 1)"
-        )
 
 
 @contextmanager

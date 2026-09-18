@@ -1,12 +1,12 @@
 #!/bin/bash
 # Despliegue de TaraTrack: valida en local, saca un snapshot de seguridad del
 # servidor, sincroniza, reconstruye el contenedor y verifica que responde -
-# todo en un solo comando en vez del ritual manual (rsync + build + docker rm -f
-# + up -d), que ya ha fallado una vez de verdad por un rsync mal apuntado que
-# aplano rutas dentro de app/.
+# todo en un solo comando en vez del ritual manual documentado en CLAUDE.md
+# (rsync + build + docker rm -f + up -d), que ya ha fallado una vez de verdad
+# por un rsync mal apuntado que aplano rutas dentro de app/ (ronda 2026-08-21).
 #
-# El despliegue real (servidor casero) va por rsync, no por git push - este
-# script es la unica red de seguridad real que existe hoy: antes de tocar nada,
+# Sin git en el proyecto (decision consciente de Tara), este script es la unica
+# red de seguridad real que existe hoy: antes de tocar nada en el servidor,
 # empaqueta el app/ actual del servidor en un .tar.gz fechado. Si el despliegue
 # sale mal, `scripts/deploy.sh --rollback` restaura ese snapshot y reconstruye.
 #
@@ -104,6 +104,14 @@ ssh "$SERVER" "
 
 echo "-- rsync app/ -> servidor (con --delete: la estructura ya ha cambiado de raiz alguna vez) --"
 rsync -av --delete --exclude "__pycache__/" "$REPO_DIR/app/" "$SERVER:$SERVER_APP_DIR/app/"
+
+# Bug real (AGY, 2026-09-18): docker-compose.yml/Dockerfile viven en la raiz del repo,
+# FUERA de app/, asi que nunca se sincronizaban - un volumen nuevo (p.ej. avatars/,
+# ronda 2026-09-18) se quedaba solo en el repo local sin llegar jamas al servidor, sin
+# ningun aviso. El snapshot de arriba sigue sin cubrir estos dos ficheros (cambian muy
+# poco) - si algun rollback los necesitara, restaurarlos a mano es el unico camino hoy.
+echo "-- Sincronizando docker-compose.yml y Dockerfile --"
+scp "$REPO_DIR/docker-compose.yml" "$REPO_DIR/Dockerfile" "$SERVER:$SERVER_APP_DIR/"
 
 echo "-- Build + recreate del contenedor --"
 # docker-compose v1.29.2 (EOL, version instalada en el servidor) revienta con

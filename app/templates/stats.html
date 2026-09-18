@@ -50,7 +50,7 @@
     <div class="stat-tile"><span class="stat-num">{{ stats.totals.movies_watched }}</span><span class="stat-label">pelis vistas</span></div>
     <div class="stat-tile"><span class="stat-num">{{ stats.totals.pending }}</span><span class="stat-label">pendientes</span></div>
     <div class="stat-tile"><span class="stat-num">{{ stats.totals.avg_rating or "—" }}</span><span class="stat-label">nota media ({{ stats.totals.rated }} con nota)</span></div>
-    <div class="stat-tile"><span class="stat-num">{{ stats.totals.waifus }}</span><span class="stat-label">waifus</span></div>
+    <div class="stat-tile"><span class="stat-num">{{ stats.totals.waifus }}</span><span class="stat-label">{{ waifus_label(request.state.user_id)|lower }}</span></div>
     <a class="stat-tile" href="/estadisticas/episodios-favoritos"><span class="stat-num">{{ stats.totals.fav_episodes }}</span><span class="stat-label">eps favoritos</span></a>
 </div>
 

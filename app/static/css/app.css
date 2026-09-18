@@ -1,4 +1,4 @@
-/* Paleta Warm Dark - negro + naranja, sin azules */
+/* Paleta Tararch - Warm Dark (fuente de verdad: TaraNAS/Taratara/Apuntes/.../Paleta.md) */
 :root {
     --bg: #0f0f0f;
     --bg-dark: #0a0a0a;
@@ -122,6 +122,12 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
 .section-head h2 { margin-bottom: 0; }
 .section-head button { font-size: 0.78rem; padding: 0.3rem 0.7rem; }
+/* Lista de cuentas en /ajustes (multiusuario, 2026-09-17) - texto simple, sin
+   chrome de tarjeta, coherente con listas cortas de solo lectura de la app. */
+.user-list { list-style: none; padding: 0; margin: 0 0 0.8rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.user-list li { color: var(--text); display: flex; align-items: center; gap: 0.5rem; }
+.user-admin-toggle { margin-left: auto; }
+.user-admin-toggle .btn-text { padding: 0.2rem 0.4rem; font-size: 0.78rem; }
 
 /* ---------- /ajustes: jerarquia entre secciones (auditoria visual 2026-08-20) ---------- */
 /* "Tus datos" y "Sesion" bajan a tarjetas compactas en fila - poco frecuentes, una
@@ -196,6 +202,11 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 .topnav a.brand:hover { background: none; color: var(--accent); }
 .topnav a.nav-gear { padding: 0.35rem; line-height: 0; }
 .topnav a.nav-gear svg { width: 17px; height: 17px; }
+/* Chip de cuenta activa (AGY, 2026-09-18) - con varias cuentas en la misma instancia
+   hacia falta saber de un vistazo en cual estas, sin entrar en /ajustes. */
+.nav-user { display: flex; align-items: center; gap: 0.35rem; color: var(--text-dim); font-size: 0.8rem; font-weight: 600; padding: 0.25rem 0.4rem; text-decoration: none; }
+.nav-user:hover { color: var(--text-bright); background: var(--surface-hover); border-radius: 999px; }
+.nav-user-name { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Nav agrupada en 3 bloques (uso diario / exploracion / analisis) en vez de 11
    enlaces sueltos con el mismo peso - Tara: "no me acaba de tragar visualmente". */
@@ -228,6 +239,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 .topnav-more summary svg { width: 16px; height: 16px; }
 .topnav-more summary:hover { color: var(--text-bright); background: var(--surface-hover); }
 .topnav-more summary.active { color: var(--accent); background: rgba(255, 158, 100, 0.12); }
+/* Punto de aviso en el propio boton "Más" (AGY, 2026-09-18): antes el contador de
+   comentarios nuevos solo se veia DENTRO del desplegable, invisible hasta abrirlo
+   a proposito - esto se ve sin tocar nada. */
+.nav-more-dot { position: absolute; top: 0.2rem; right: 0.2rem; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .topnav-more[open] summary { color: var(--text-bright); background: var(--surface-hover); }
 .topnav-more-menu {
     position: absolute;
@@ -294,7 +309,7 @@ input, textarea, button, select {
     color: inherit;
 }
 
-input[type="text"], input[type="number"], input[type="date"], textarea, select {
+input[type="text"], input[type="number"], input[type="date"], input[type="password"], textarea, select {
     width: 100%;
     padding: 0.6rem 0.75rem;
     background: var(--bg-dark);
@@ -803,6 +818,7 @@ button:disabled { opacity: 0.55; cursor: default; }
 /* El "no" de la confirmacion del doble tick (confirmacion server-side, sin window.confirm). */
 .home-card-check.no { color: var(--danger); }
 .home-card-check.no:hover { background: var(--danger); color: var(--text-bright); }
+
 
 .rec-seeds { font-size: 0.75rem; color: var(--text-dim); }
 .rec-dislike { width: 100%; font-size: 0.75rem; }
@@ -1580,6 +1596,129 @@ a.ep-row:hover { border-color: var(--accent); }
 }
 .ep-comment-form input { flex: 1; }
 .ep-comment-form button { font-size: 0.8rem; padding: 0.35rem 0.6rem; }
+
+/* Debate por episodio (Fase 4 multiusuario, 2026-09-18) - mismo lenguaje visual que
+   .ep-comment-form (dropdown flotante bajo el icono), pero con una lista de mensajes
+   encima del formulario y con opcion de tapar spoilers. */
+.ep-comment-count {
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.1rem 0.35rem;
+    border-radius: 999px;
+    margin-left: 0.25rem;
+}
+.ep-debate-form {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 5;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem;
+    width: min(340px, 82vw);
+    box-shadow: var(--shadow);
+}
+.ep-debate-list { list-style: none; margin: 0 0 0.5rem; padding: 0; max-height: 220px; overflow-y: auto; }
+.ep-debate-list li { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+.ep-debate-list li:last-child { border-bottom: none; }
+.ep-debate-list li.empty { color: var(--text-dim); font-style: italic; }
+.ep-debate-msg { flex: 1; min-width: 0; }
+.ep-debate-list strong { color: var(--text-bright); }
+.ep-debate-date { color: var(--text-dim); font-size: 0.7rem; margin-left: 0.4rem; }
+.ep-debate-list p { margin: 0.15rem 0 0; overflow-wrap: break-word; }
+.ep-debate-del {
+    background: none; border: none; color: var(--text-dim); font-size: 1rem;
+    line-height: 1; padding: 0.1rem 0.3rem; flex: 0 0 auto;
+}
+.ep-debate-del:hover { color: var(--danger); background: none; }
+/* Avatar por iniciales (Fase 5, "comentarios con la foto de perfil") - sin subida de
+   fichero de momento, un color estable por usuario (derivado del nombre) basta para
+   distinguir de un vistazo quien comento que en el hilo. */
+.avatar {
+    flex: 0 0 auto; width: 1.6rem; height: 1.6rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 700; color: var(--accent-text);
+}
+.avatar.avatar-img { object-fit: cover; background: var(--surface); }
+.profile-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.8rem; }
+.profile-row .avatar { width: 3.2rem; height: 3.2rem; font-size: 1.3rem; }
+.profile-photo-form { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+/* Bug real (Tara, 2026-09-18: "el boton de examinar no tiene el mismo css") - el
+   input[type=file] nativo pinta su propio boton de sistema (gris, tipografia del SO),
+   imposible de igualar de verdad entre navegadores con solo CSS. En vez de intentarlo,
+   el input real va invisible-pero-accesible (oculto solo visualmente, sigue
+   funcionando con teclado/lector de pantalla) dentro de un <label class="btn"> - el
+   boton que se VE es un boton normal de la app, gratis. Ademas se envia solo al
+   elegir archivo (onchange), sin un segundo clic de "Guardar" (Tara: "el cambio de
+   foto es tosco") - un archivo elegido siempre implica querer subirlo. */
+.file-input-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; white-space: nowrap; border: 0; clip: rect(0, 0, 0, 0);
+}
+/* Sin azul a proposito (Tara odia el azul en cualquier UI) - paleta naranja/morado/
+   verde/rosa/dorado/terracota. */
+.avatar-0 { background: var(--accent); }
+.avatar-1 { background: #7c6cf0; }
+.avatar-2 { background: #4fb87a; }
+.avatar-3 { background: #d9598a; }
+.avatar-4 { background: #d3a24a; }
+.avatar-5 { background: #c96442; }
+.ep-debate-form form { display: flex; gap: 0.4rem; }
+.ep-debate-form form input { flex: 1; }
+.ep-debate-form form button { font-size: 0.8rem; padding: 0.35rem 0.6rem; }
+
+/* Spoiler de comentarios de episodio (difuminado hasta marcarlo visto, con opcion de
+   quitarlo antes de tiempo) - mismo patron sin JS que el aviso +18 de mas abajo
+   (checkbox oculto + label + filter:blur() + :has()), aqui aplicado a texto en vez
+   de a un poster y sin atarlo a ningun contenedor de tarjeta en concreto. */
+.spoiler-frame { position: relative; }
+.spoiler-check { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+/* Bug real (2026-09-18, Tara: "el primer ep de los 100... visto con las 2 cuentas y
+   sale blur"): .spoiler-body sin acotar a ".spoiler-frame" se aplicaba SIEMPRE, tambien
+   cuando ep.watched_now es true y por tanto no hay ningun .spoiler-frame ni checkbox
+   en el HTML (nada que marcar para quitar el blur) - quedaba borroso para siempre, ya
+   visto o no. Acotado al ancestro, igual que el resto del patron +18 de aqui abajo. */
+.spoiler-frame .spoiler-body { filter: blur(5px); user-select: none; transition: filter 150ms var(--ease); }
+.spoiler-label {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0.5rem;
+    background: rgba(10, 10, 10, 0.55);
+    color: var(--text-bright);
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+}
+.spoiler-frame:has(.spoiler-check:checked) .spoiler-body { filter: none; user-select: auto; }
+.spoiler-frame:has(.spoiler-check:checked) .spoiler-label { display: none; }
+
+/* Aviso "¿comentas?" tras marcar un episodio desde Continuar viendo/Pendientes
+   (Tara, 2026-09-18) - flotante, por encima del bottomnav en movil. */
+#comment-toast {
+    position: fixed; left: 0; right: 0; bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    z-index: 30; display: flex; justify-content: center; pointer-events: none;
+}
+.comment-toast {
+    pointer-events: auto;
+    display: flex; align-items: center; gap: 0.6rem;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 0.6rem 0.9rem; margin: 0 1rem; box-shadow: var(--shadow); font-size: 0.85rem;
+}
+.comment-toast a { color: var(--accent); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.comment-toast button { background: none; border: none; color: var(--text-dim); font-size: 1.1rem; line-height: 1; padding: 0 0.2rem; cursor: pointer; }
+@media (max-width: 640px) {
+    #comment-toast { bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px)); }
+}
 
 /* Volver a ver un episodio suelto (2026-08-21) - mismo lenguaje visual que .ep-more
    (icono solo, sin fondo, en gris apagado hasta el hover). */

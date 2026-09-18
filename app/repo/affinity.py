@@ -130,35 +130,37 @@ def backfill_anilist_profile(conn):
 
 
 
-def snapshot_profile_progress(conn):
-    """Foto diaria de cuanto perfil de gustos hay construido (Tara, 2026-08-13:
-    "que me gustaria ver como va evolucionando cada dia que use la herramienta") -
-    INSERT OR IGNORE por fecha, asi que solo se guarda la primera vez que se llama
-    cada dia, no importa cuantas veces se visite la app. Llamado desde /pendientes
-    (la pantalla de siempre) para que quede una foto solo con usar la app con
-    normalidad, sin necesitar un cron aparte."""
+def snapshot_profile_progress(conn, user_id):
+    """Foto diaria de cuanto perfil de gustos de ESTE usuario hay construido (Tara,
+    2026-08-13: "que me gustaria ver como va evolucionando cada dia que use la
+    herramienta") - INSERT OR IGNORE por (usuario, fecha), asi que solo se guarda la
+    primera vez que se llama cada dia, no importa cuantas veces se visite la app.
+    Llamado desde /pendientes (la pantalla de siempre) para que quede una foto solo
+    con usar la app con normalidad, sin necesitar un cron aparte."""
     covered = conn.execute(
         """SELECT count(*) FROM titles JOIN entries ON entries.title_id = titles.id
-           WHERE entries.rating IS NOT NULL AND titles.anilist_id IS NOT NULL"""
+           WHERE entries.rating IS NOT NULL AND entries.user_id = ? AND titles.anilist_id IS NOT NULL""",
+        (user_id,),
     ).fetchone()[0]
     total_rated = conn.execute(
         f"""SELECT count(*) FROM titles JOIN entries ON entries.title_id = titles.id
-           WHERE entries.rating IS NOT NULL AND {_IS_ANIME_SQL}"""
+           WHERE entries.rating IS NOT NULL AND entries.user_id = ? AND {_IS_ANIME_SQL}""",
+        (user_id,),
     ).fetchone()[0]
     today = datetime.now(timezone.utc).date().isoformat()
     conn.execute(
-        "INSERT OR IGNORE INTO profile_history (date, covered, total_rated) VALUES (?, ?, ?)",
-        (today, covered, total_rated),
+        "INSERT OR IGNORE INTO profile_history (user_id, date, covered, total_rated) VALUES (?, ?, ?, ?)",
+        (user_id, today, covered, total_rated),
     )
 
 
 
 
-def get_profile_history(conn, limit: int = 30):
-    """Historial de snapshots, mas reciente primero - para el grafico de barras de
-    /ajustes."""
+def get_profile_history(conn, user_id, limit: int = 30):
+    """Historial de snapshots de ESTE usuario, mas reciente primero - para el grafico
+    de barras de /ajustes."""
     return conn.execute(
-        "SELECT * FROM profile_history ORDER BY date DESC LIMIT ?", (limit,)
+        "SELECT * FROM profile_history WHERE user_id = ? ORDER BY date DESC LIMIT ?", (user_id, limit)
     ).fetchall()
 
 
@@ -262,13 +264,16 @@ _AFFINITY_CONFIG_DEFAULTS = {
 
 
 
-def get_affinity_config(conn):
-    """Pesos del indice de afinidad - constantes con nombre de arriba como default,
-    con override opcional guardado en app_settings (JSON, una sola clave) editable
-    desde /ajustes (Fase 2 del encargo: "deben quedar en constantes con nombre, en un
-    unico sitio, y ser configurables desde /ajustes")."""
+def get_affinity_config(conn, user_id):
+    """Pesos del indice de afinidad de ESTE usuario - constantes con nombre de arriba
+    como default, con override opcional guardado en app_settings (JSON, una clave por
+    usuario - `app_settings` ya era clave/valor generico, namespacing por user_id evita
+    tocar el schema) editable desde /ajustes (Fase 2 del encargo: "deben quedar en
+    constantes con nombre, en un unico sitio, y ser configurables desde /ajustes").
+    Multiusuario Fase 3 (2026-09-18): antes una unica clave global compartida por
+    todos."""
     cfg = {k: (dict(v) if isinstance(v, dict) else v) for k, v in _AFFINITY_CONFIG_DEFAULTS.items()}
-    raw = get_setting(conn, "affinity_config")
+    raw = get_setting(conn, f"affinity_config:{user_id}")
     if not raw:
         return cfg
     try:
@@ -295,14 +300,14 @@ def get_affinity_config(conn):
 
 
 
-def set_affinity_config(conn, cfg: dict):
-    set_setting(conn, "affinity_config", json.dumps(cfg))
+def set_affinity_config(conn, user_id, cfg: dict):
+    set_setting(conn, f"affinity_config:{user_id}", json.dumps(cfg))
 
 
 
 
-def reset_affinity_config(conn):
-    conn.execute("DELETE FROM app_settings WHERE key = 'affinity_config'")
+def reset_affinity_config(conn, user_id):
+    conn.execute("DELETE FROM app_settings WHERE key = ?", (f"affinity_config:{user_id}",))
 
 
 
@@ -393,11 +398,15 @@ def _franchise_roots(known_ids: set, prequel_map: dict) -> dict:
 
 
 
-def _load_affinity_raw(conn):
-    """Toda la materia prima del indice de afinidad en memoria, en una sola pasada de
-    SQL - asi el backtesting de la Fase 4 (recalcular el perfil una vez POR TITULO
-    puntuado, excluyendolo de si mismo) no golpea la base de datos cientos de veces,
-    solo reagrega en Python sobre estos mismos datos."""
+def _load_affinity_raw(conn, user_id):
+    """Toda la materia prima del indice de afinidad de ESTE usuario en memoria, en una
+    sola pasada de SQL - asi el backtesting de la Fase 4 (recalcular el perfil una vez
+    POR TITULO puntuado, excluyendolo de si mismo) no golpea la base de datos cientos
+    de veces, solo reagrega en Python sobre estos mismos datos.
+
+    Multiusuario Fase 3 (2026-09-18): todo filtrado por `entries.user_id = ?` (o via
+    episode_watches.user_id para episodios) - antes mezclaba el consumo de cualquiera
+    que tuviera datos en la instancia."""
     titles = conn.execute(
         """SELECT entries.id AS entry_id, entries.rating, entries.cat_disfrute,
                   entries.elo, entries.status, entries.is_habit,
@@ -405,14 +414,25 @@ def _load_affinity_raw(conn):
                   titles.anilist_id, titles.anilist_genres, titles.anilist_tags,
                   titles.anilist_studio, titles.anilist_prequel_ids, titles.anilist_cross_rec_ids
            FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE titles.anilist_id IS NOT NULL"""
+           WHERE titles.anilist_id IS NOT NULL AND entries.user_id = ?""",
+        (user_id,),
     ).fetchall()
 
+    # episodes.watched_at/is_favorite ya no se actualizan (viven en
+    # episode_watches/episode_user_state, ambas con user_id) - aqui se filtran a los
+    # marcados de ESTE usuario en concreto.
     episodes = conn.execute(
         """SELECT episodes.title_id, episodes.season_number, episodes.episode_number,
-                  episodes.watched_at, episodes.air_date, episodes.is_favorite
+                  (SELECT max(watched_at) FROM episode_watches
+                     WHERE episode_watches.episode_id = episodes.id AND episode_watches.user_id = ?) AS watched_at,
+                  episodes.air_date,
+                  (SELECT max(is_favorite) FROM episode_user_state
+                     WHERE episode_user_state.episode_id = episodes.id AND episode_user_state.user_id = ?) AS is_favorite
            FROM episodes JOIN titles ON titles.id = episodes.title_id
-           WHERE titles.anilist_id IS NOT NULL AND episodes.watched_at IS NOT NULL"""
+           WHERE titles.anilist_id IS NOT NULL
+             AND EXISTS(SELECT 1 FROM episode_watches
+                        WHERE episode_watches.episode_id = episodes.id AND episode_watches.user_id = ?)""",
+        (user_id, user_id, user_id),
     ).fetchall()
 
     rewatched_entries = {
@@ -420,7 +440,8 @@ def _load_affinity_raw(conn):
             """SELECT DISTINCT watch_sessions.entry_id
                FROM watch_sessions JOIN entries ON entries.id = watch_sessions.entry_id
                JOIN titles ON titles.id = entries.title_id
-               WHERE titles.anilist_id IS NOT NULL"""
+               WHERE titles.anilist_id IS NOT NULL AND entries.user_id = ?""",
+            (user_id,),
         )
     }
     listed_entries = {
@@ -428,7 +449,8 @@ def _load_affinity_raw(conn):
             """SELECT DISTINCT list_items.entry_id
                FROM list_items JOIN entries ON entries.id = list_items.entry_id
                JOIN titles ON titles.id = entries.title_id
-               WHERE titles.anilist_id IS NOT NULL"""
+               WHERE titles.anilist_id IS NOT NULL AND entries.user_id = ?""",
+            (user_id,),
         )
     }
     fav_char_counts = {
@@ -436,7 +458,8 @@ def _load_affinity_raw(conn):
             """SELECT favorite_characters.entry_id, count(*) AS c
                FROM favorite_characters JOIN entries ON entries.id = favorite_characters.entry_id
                JOIN titles ON titles.id = entries.title_id
-               WHERE titles.anilist_id IS NOT NULL GROUP BY favorite_characters.entry_id"""
+               WHERE titles.anilist_id IS NOT NULL AND entries.user_id = ? GROUP BY favorite_characters.entry_id""",
+            (user_id,),
         )
     }
 
@@ -445,16 +468,28 @@ def _load_affinity_raw(conn):
         """SELECT season_ratings.entry_id, season_ratings.season_number, season_ratings.rating
            FROM season_ratings JOIN entries ON entries.id = season_ratings.entry_id
            JOIN titles ON titles.id = entries.title_id
-           WHERE titles.anilist_id IS NOT NULL AND season_ratings.rating IS NOT NULL"""
+           WHERE titles.anilist_id IS NOT NULL AND entries.user_id = ? AND season_ratings.rating IS NOT NULL""",
+        (user_id,),
     ):
         prev = last_season_rating.get(r["entry_id"])
         if prev is None or r["season_number"] > prev[0]:
             last_season_rating[r["entry_id"]] = (r["season_number"], r["rating"])
 
+    # Duelos: el pool de /duelo ya se filtra por usuario (list_watched_ids) para las
+    # PAREJAS que se enseñan, pero aqui interesa "cuantos duelos lleva jugados CADA
+    # entry de este usuario" - entries.user_id acota los item_id relevantes sin
+    # necesidad de que la tabla `duels` en si tenga columna de usuario (item_id ya
+    # identifica una entry que pertenece a un unico usuario).
     duel_counts = {}
     for r in conn.execute(
-        "SELECT winner_id AS id FROM duels WHERE table_name = 'entries' "
-        "UNION ALL SELECT loser_id AS id FROM duels WHERE table_name = 'entries'"
+        """SELECT winner_id AS id FROM duels
+             JOIN entries ON entries.id = duels.winner_id
+           WHERE duels.table_name = 'entries' AND entries.user_id = ?
+           UNION ALL
+           SELECT loser_id AS id FROM duels
+             JOIN entries ON entries.id = duels.loser_id
+           WHERE duels.table_name = 'entries' AND entries.user_id = ?""",
+        (user_id, user_id),
     ):
         duel_counts[r["id"]] = duel_counts.get(r["id"], 0) + 1
 
@@ -802,51 +837,54 @@ def _backtest_leave_one_out(raw, cfg) -> list[tuple[float, float]]:
 
 
 
-def get_recompute_status(conn):
-    """Estado del recalculo del indice de afinidad, para el indicador visible en
-    /ajustes y /calendario/anual - lanzarlo (backfill de AniList + recompute_taste_profile,
-    hasta varios minutos) redirigia al instante sin ninguna señal de que estuviera
-    pasando algo (Tara, 2026-08-14: "como se si realmente esta trabajando")."""
+def get_recompute_status(conn, user_id):
+    """Estado del recalculo del indice de afinidad DE ESTE USUARIO, para el indicador
+    visible en /ajustes y /calendario/anual - lanzarlo (backfill de AniList +
+    recompute_taste_profile, hasta varios minutos) redirigia al instante sin ninguna
+    señal de que estuviera pasando algo (Tara, 2026-08-14: "como se si realmente esta
+    trabajando"). Multiusuario Fase 3 (2026-09-18): namespacing por user_id en la
+    clave de app_settings, igual que affinity_config."""
     return {
-        "running": get_setting(conn, "affinity_recompute_running") == "1",
-        "finished_at": get_setting(conn, "affinity_recompute_finished_at"),
+        "running": get_setting(conn, f"affinity_recompute_running:{user_id}") == "1",
+        "finished_at": get_setting(conn, f"affinity_recompute_finished_at:{user_id}"),
     }
 
 
 
 
-def set_recompute_running(conn, running: bool):
-    set_setting(conn, "affinity_recompute_running", "1" if running else "0")
+def set_recompute_running(conn, user_id, running: bool):
+    set_setting(conn, f"affinity_recompute_running:{user_id}", "1" if running else "0")
     if not running:
         set_setting(
-            conn, "affinity_recompute_finished_at",
+            conn, f"affinity_recompute_finished_at:{user_id}",
             datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
 
 
 
 
-def recompute_taste_profile(conn):
-    """Recalculo COMPLETO del indice de afinidad - pesado a proposito (franquicias,
-    ritmo con fechas reales, correccion Elo, backtesting Fase 4), llamado solo desde
-    la sync de fondo (cada 12h, ver sync_loop en main.py) y el boton manual
-    "Actualizar perfil de gustos". Las paginas normales solo leen `taste_profile` via
-    build_taste_profile - nunca disparan este calculo desde una peticion HTTP."""
-    cfg = get_affinity_config(conn)
-    raw = _load_affinity_raw(conn)
+def recompute_taste_profile(conn, user_id):
+    """Recalculo COMPLETO del indice de afinidad DE ESTE USUARIO - pesado a proposito
+    (franquicias, ritmo con fechas reales, correccion Elo, backtesting Fase 4),
+    llamado solo desde la sync de fondo (cada 12h, ver sync_loop en main.py, que ahora
+    itera TODOS los usuarios) y el boton manual "Actualizar perfil de gustos". Las
+    paginas normales solo leen `taste_profile` via build_taste_profile - nunca
+    disparan este calculo desde una peticion HTTP."""
+    cfg = get_affinity_config(conn, user_id)
+    raw = _load_affinity_raw(conn, user_id)
     rows = _aggregate_affinity(raw, cfg)
 
-    conn.execute("DELETE FROM taste_profile")
+    conn.execute("DELETE FROM taste_profile WHERE user_id = ?", (user_id,))
     for (attr_type, attr_name), r in rows.items():
         conn.execute(
             """INSERT INTO taste_profile
-               (attr_type, attr_name, sig_volumen, sig_lift, sig_ritmo, sig_dia1,
+               (user_id, attr_type, attr_name, sig_volumen, sig_lift, sig_ritmo, sig_dia1,
                 sig_rewatch, sig_curacion, sig_techo, sig_suelo, sig_disfrute,
                 sig_media, sig_elo, apetito, calidad, inercia, afinidad, confianza,
                 n_titulos, n_episodios)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                attr_type, attr_name, r["sig_volumen"], r["sig_lift"], r["sig_ritmo"],
+                user_id, attr_type, attr_name, r["sig_volumen"], r["sig_lift"], r["sig_ritmo"],
                 r["sig_dia1"], r["sig_rewatch"], r["sig_curacion"], r["sig_techo"],
                 r["sig_suelo"], r["sig_disfrute"], r["sig_media"], r["sig_elo"],
                 r["apetito"], r["calidad"], r["inercia"], r["afinidad"], r["confianza"],
@@ -863,9 +901,9 @@ def recompute_taste_profile(conn):
     pairs = _backtest_leave_one_out(raw, cfg)
     scores = sorted(s for s, _rating in pairs)
 
-    conn.execute("DELETE FROM score_distribution")
+    conn.execute("DELETE FROM score_distribution WHERE user_id = ?", (user_id,))
     conn.executemany(
-        "INSERT INTO score_distribution (raw_score) VALUES (?)", [(s,) for s in scores]
+        "INSERT INTO score_distribution (user_id, raw_score) VALUES (?, ?)", [(user_id, s) for s in scores]
     )
     conn.commit()
     return len(rows), len(scores)
@@ -873,14 +911,14 @@ def recompute_taste_profile(conn):
 
 
 
-def build_taste_profile(conn):
-    """Lee el indice de afinidad YA PRECALCULADO (tabla taste_profile, ver
-    recompute_taste_profile) - el pipeline completo es demasiado pesado para una
-    peticion HTTP, esto son solo lecturas rapidas. Si la tabla esta vacia (recien
-    desplegado, antes del primer ciclo de sync), devuelve un perfil sin señal:
-    predict_score cae a None en vez de fallar."""
-    cfg = get_affinity_config(conn)
-    rows = conn.execute("SELECT * FROM taste_profile").fetchall()
+def build_taste_profile(conn, user_id):
+    """Lee el indice de afinidad de ESTE usuario YA PRECALCULADO (tabla taste_profile,
+    ver recompute_taste_profile) - el pipeline completo es demasiado pesado para una
+    peticion HTTP, esto son solo lecturas rapidas. Si la tabla esta vacia para este
+    usuario (recien creada la cuenta, antes del primer ciclo de sync), devuelve un
+    perfil sin señal: predict_score cae a None en vez de fallar."""
+    cfg = get_affinity_config(conn, user_id)
+    rows = conn.execute("SELECT * FROM taste_profile WHERE user_id = ?", (user_id,)).fetchall()
     genre_avg, tag_avg, studio_avg = {}, {}, {}
     genre_conf, tag_conf, studio_conf = {}, {}, {}
     targets = {
@@ -896,11 +934,15 @@ def build_taste_profile(conn):
     ratings = conn.execute(
         """SELECT entries.id AS entry_id, titles.anilist_id, entries.rating
            FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.rating IS NOT NULL AND titles.anilist_id IS NOT NULL"""
+           WHERE entries.rating IS NOT NULL AND entries.user_id = ? AND titles.anilist_id IS NOT NULL""",
+        (user_id,),
     ).fetchall()
     last_season = {}
     for r in conn.execute(
-        "SELECT entry_id, season_number, rating FROM season_ratings WHERE rating IS NOT NULL"
+        """SELECT season_ratings.entry_id, season_ratings.season_number, season_ratings.rating
+           FROM season_ratings JOIN entries ON entries.id = season_ratings.entry_id
+           WHERE season_ratings.rating IS NOT NULL AND entries.user_id = ?""",
+        (user_id,),
     ):
         prev = last_season.get(r["entry_id"])
         if prev is None or r["season_number"] > prev[0]:
@@ -913,15 +955,27 @@ def build_taste_profile(conn):
         last_rating_by_id[r["anilist_id"]] = last[1] if last else r["rating"]
         all_ratings.append(r["rating"])
 
+    # IDF de tags sobre el CATALOGO que este usuario trackea (visto o pendiente), no
+    # sobre toda la tabla titles (que incluye lo que cualquier otro usuario cachee) -
+    # mismo criterio que _compute_tag_idf ya usaba sobre raw["titles"].
     tag_counts, tag_total = {}, 0
-    for r in conn.execute("SELECT anilist_tags FROM titles WHERE anilist_id IS NOT NULL"):
+    for r in conn.execute(
+        """SELECT DISTINCT titles.id, titles.anilist_tags FROM titles
+           JOIN entries ON entries.title_id = titles.id
+           WHERE titles.anilist_id IS NOT NULL AND entries.user_id = ?""",
+        (user_id,),
+    ):
         tag_total += 1
         for tag in (r["anilist_tags"] or "").split(","):
             if tag:
                 tag_counts[tag] = tag_counts.get(tag, 0) + 1
     tag_idf = {tag: math.log(tag_total / n) for tag, n in tag_counts.items() if tag_total and n}
 
-    dist = [r["raw_score"] for r in conn.execute("SELECT raw_score FROM score_distribution ORDER BY raw_score")]
+    dist = [
+        r["raw_score"] for r in conn.execute(
+            "SELECT raw_score FROM score_distribution WHERE user_id = ? ORDER BY raw_score", (user_id,)
+        )
+    ]
 
     return {
         "genre_avg": genre_avg, "tag_avg": tag_avg, "studio_avg": studio_avg,
@@ -1039,13 +1093,14 @@ def _cached_predict_item(title_row) -> dict:
 
 
 
-def add_predictions(conn, entries, profile=None):
-    """Añade `predict` (0-100 o None) a cada entry, calculado sobre los campos
-    anilist_* ya cacheados en titles - para poder predecir sobre pendientes, no solo
-    sobre el calendario de temporada (Tara, 2026-08-13: "aplicar la prediccion a mis
-    pendientes"). `entries` debe traer las columnas anilist_* (ver list_pending).
-    Devuelve una lista NUEVA de dicts (sqlite3.Row no admite asignar claves nuevas)."""
-    profile = profile or build_taste_profile(conn)
+def add_predictions(conn, user_id, entries, profile=None):
+    """Añade `predict` (0-100 o None) a cada entry, calculado sobre el perfil de gustos
+    DE ESTE USUARIO y los campos anilist_* ya cacheados en titles - para poder
+    predecir sobre pendientes, no solo sobre el calendario de temporada (Tara,
+    2026-08-13: "aplicar la prediccion a mis pendientes"). `entries` debe traer las
+    columnas anilist_* (ver list_pending). Devuelve una lista NUEVA de dicts
+    (sqlite3.Row no admite asignar claves nuevas)."""
+    profile = profile or build_taste_profile(conn, user_id)
     out = []
     for e in entries:
         d = dict(e)
@@ -1058,15 +1113,16 @@ def add_predictions(conn, entries, profile=None):
 
 
 
-def get_affinity_display(conn, min_titles: int = 3, limit: int = 15):
-    """Desglose del indice de afinidad para /estadisticas (sustituye a la antigua
-    "nota media por genero/tag/estudio" - ver Bloque 2 del encargo 2026-08-14, Fase 7:
-    "ningun numero sin su desglose al lado"). Solo LEE `taste_profile`, ya
-    precalculado por recompute_taste_profile - nunca recalcula en caliente.
-    min_titles filtra el ruido de un atributo con 1-2 titulos sueltos, igual que hacia
-    min_count en el desglose anterior."""
+def get_affinity_display(conn, user_id, min_titles: int = 3, limit: int = 15):
+    """Desglose del indice de afinidad de ESTE usuario para /estadisticas (sustituye a
+    la antigua "nota media por genero/tag/estudio" - ver Bloque 2 del encargo
+    2026-08-14, Fase 7: "ningun numero sin su desglose al lado"). Solo LEE
+    `taste_profile`, ya precalculado por recompute_taste_profile - nunca recalcula en
+    caliente. min_titles filtra el ruido de un atributo con 1-2 titulos sueltos,
+    igual que hacia min_count en el desglose anterior."""
     rows = conn.execute(
-        "SELECT * FROM taste_profile WHERE n_titulos >= ? ORDER BY afinidad DESC", (min_titles,)
+        "SELECT * FROM taste_profile WHERE user_id = ? AND n_titulos >= ? ORDER BY afinidad DESC",
+        (user_id, min_titles),
     ).fetchall()
 
     def _fmt(r):
@@ -1105,7 +1161,8 @@ def get_affinity_display(conn, min_titles: int = 3, limit: int = 15):
 
     covered = conn.execute(
         """SELECT count(*) FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.rating IS NOT NULL AND titles.anilist_id IS NOT NULL"""
+           WHERE entries.rating IS NOT NULL AND entries.user_id = ? AND titles.anilist_id IS NOT NULL""",
+        (user_id,),
     ).fetchone()[0]
 
     # Grafica de un vistazo (Tara, 2026-08-15: "no veo una grafica, le falta algo"):

@@ -45,7 +45,7 @@ def calendario_anadir(
             request, "partials/calendar_add_result.html", {"ok": False, "title": title}
         )
     with get_connection() as conn:
-        entry = repo.ensure_entry(conn, r["tmdb_id"], r["type"])
+        entry = repo.ensure_entry(conn, r["tmdb_id"], r["type"], request.state.user_id)
         if predict.strip().isdigit():
             repo.set_predicted_score(conn, entry["id"], int(predict))
     return templates.TemplateResponse(
@@ -59,13 +59,19 @@ def _calendario_response(request: Request, conn):
     """Hoy y futuro primero (lo que quieres ver al abrir), los dias ya pasados plegados al final."""
     today = date.today().isoformat()
     days, past_days = {}, {}
-    for item in repo.list_calendar(conn):
+    for item in repo.list_calendar(conn, request.state.user_id):
         target = days if item["air_date"] >= today else past_days
         target.setdefault(item["air_date"], []).append(item)
     past_days = dict(sorted(past_days.items(), reverse=True))
+    show_anime_calendar = repo.get_show_anime_calendar(
+        conn, request.state.user_id, default=repo.user_has_anime(conn, request.state.user_id)
+    )
     return templates.TemplateResponse(
         request, "calendar.html",
-        {"days": days, "past_days": past_days, "today": today, "sync_status": repo.get_sync_status(conn)},
+        {
+            "days": days, "past_days": past_days, "today": today, "sync_status": repo.get_sync_status(conn),
+            "show_anime_calendar": show_anime_calendar,
+        },
     )
 
 
@@ -158,7 +164,7 @@ async def calendario_anual(
         await _refresh_season_cache_async(season, year)
 
     with get_connection() as conn:
-        profile = repo.build_taste_profile(conn)
+        profile = repo.build_taste_profile(conn, request.state.user_id)
         pendientes_perfil = repo.count_anilist_backfill_pending(conn)
         weekday_overrides = repo.get_weekday_overrides(conn)
     for item in items:
@@ -228,7 +234,7 @@ async def calendario_anual_perfil(request: Request, year: int = 0, season: str =
     def _backfill():
         with get_connection() as conn:
             repo.backfill_anilist_profile(conn)
-    asyncio.create_task(asyncio.to_thread(_recompute_with_status, _backfill))
+    asyncio.create_task(asyncio.to_thread(_recompute_with_status, request.state.user_id, _backfill))
     return RedirectResponse(f"/calendario/anual?year={year}&season={season}&vista={vista}", status_code=303)
 
 

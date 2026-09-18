@@ -160,78 +160,98 @@ def list_episodes(conn, title_id):
 
 
 
-def toggle_episode(conn, episode_id):
+def toggle_episode(conn, episode_id, user_id):
     """Desmarcar el ultimo episodio visto de una serie dejaba la entry en 'watched'
     sin un solo episodio visto de verdad (Tara: "no esta vista por ningun ep, esto es
     un bug, deberia estar en pendientes") - si al desmarcar no queda ningun episodio
-    visto, la entry vuelve a 'pending'. "Visto ahora" es round-aware (2026-08-20): si
-    hay un rewatch en curso, un episodio con fecha ANTERIOR a esa ronda cuenta como
-    pendiente de re-ver, aunque episodes.watched_at no sea NULL - sin esto, tocar el
-    checkbox de un episodio ya visto en una ronda anterior lo desmarcaria (accion
-    contraria a lo que se ve en pantalla: la casilla aparece vacia = "falta por ver")."""
-    row = conn.execute("SELECT title_id, watched_at FROM episodes WHERE id = ?", (episode_id,)).fetchone()
+    visto POR ESTE USUARIO, su entry vuelve a 'pending'. "Visto ahora" es round-aware
+    (2026-08-20): si hay un rewatch en curso, un marcado ANTERIOR a esa ronda cuenta
+    como pendiente de re-ver otra vez.
+
+    Multiusuario Fase 2 (2026-09-17): todo esto se mira por user_id - antes de este
+    cambio, marcar un episodio lo marcaba "visto" para CUALQUIERA que abriera esa
+    ficha (bug real, encontrado en pruebas antes de desplegar)."""
+    title_id = conn.execute("SELECT title_id FROM episodes WHERE id = ?", (episode_id,)).fetchone()["title_id"]
     rewatch_started_at = conn.execute(
-        "SELECT rewatch_started_at FROM entries WHERE title_id = ?", (row["title_id"],)
-    ).fetchone()["rewatch_started_at"]
-    checked_now = bool(row["watched_at"]) and (
-        not rewatch_started_at or row["watched_at"] >= rewatch_started_at
+        "SELECT rewatch_started_at FROM entries WHERE title_id = ? AND user_id = ?", (title_id, user_id)
+    ).fetchone()
+    rewatch_started_at = rewatch_started_at["rewatch_started_at"] if rewatch_started_at else None
+    last_watch = conn.execute(
+        "SELECT watched_at FROM episode_watches WHERE episode_id = ? AND user_id = ? "
+        "ORDER BY watched_at DESC LIMIT 1",
+        (episode_id, user_id),
+    ).fetchone()
+    checked_now = bool(last_watch) and (
+        not rewatch_started_at or last_watch["watched_at"] >= rewatch_started_at
     )
     if checked_now:
-        _unlog_episode_watch(conn, episode_id)
+        _unlog_episode_watch(conn, episode_id, user_id)
         quedan = conn.execute(
-            "SELECT count(*) AS c FROM episodes WHERE title_id = ? AND watched_at IS NOT NULL",
-            (row["title_id"],),
+            """SELECT count(*) AS c FROM episode_watches ew JOIN episodes e ON e.id = ew.episode_id
+               WHERE e.title_id = ? AND ew.user_id = ?""",
+            (title_id, user_id),
         ).fetchone()["c"]
         if quedan == 0:
             conn.execute(
-                "UPDATE entries SET status = 'pending' WHERE title_id = ? AND status = 'watched'",
-                (row["title_id"],),
+                "UPDATE entries SET status = 'pending' WHERE title_id = ? AND user_id = ? AND status = 'watched'",
+                (title_id, user_id),
             )
-    else:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        _log_episode_watch(conn, episode_id, now)
-        _promote_if_first_watch(conn, row["title_id"])
+        return False
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _log_episode_watch(conn, episode_id, user_id, now)
+    _promote_if_first_watch(conn, title_id, user_id)
+    # True = "esto acaba de marcarse visto ahora" (no un desmarcado) - señal para la
+    # ficha/el aviso de "¿comentas?" (Tara, 2026-09-18: "quiero comentar por episodio,
+    # como tvtime" - el momento natural para ofrecerlo es justo al marcarlo, no una
+    # vuelta a buscarlo despues).
+    return True
 
 
 
 
-def rewatch_episode(conn, episode_id):
+def rewatch_episode(conn, episode_id, user_id):
     """Volver a ver UN episodio suelto (2026-08-21, Tara: "puedo mirar violet ep 7 por
     x motivo y no quiero ver todo") - a diferencia de toggle_episode, nunca desmarca:
     siempre añade una fila nueva a episode_watches, sin tocar entries.status ni
     rewatch_started_at. Pensado para episodios YA vistos (watched_now=True) - si el
     episodio no estaba visto, toggle_episode ya sirve para marcarlo la primera vez."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    _log_episode_watch(conn, episode_id, now)
+    _log_episode_watch(conn, episode_id, user_id, now)
 
 
-def list_episode_watch_dates(conn, episode_id) -> list[str]:
-    """Todas las fechas en que se ha marcado visto este episodio, mas recientes primero -
-    para el historial plegable junto al boton "Volver a ver este episodio"."""
+def list_episode_watch_dates(conn, episode_id, user_id) -> list[str]:
+    """Todas las fechas en que ESTE usuario ha marcado visto este episodio, mas
+    recientes primero - para el historial plegable junto a "Volver a ver este episodio"."""
     rows = conn.execute(
-        "SELECT watched_at FROM episode_watches WHERE episode_id = ? ORDER BY watched_at DESC",
-        (episode_id,),
+        "SELECT watched_at FROM episode_watches WHERE episode_id = ? AND user_id = ? ORDER BY watched_at DESC",
+        (episode_id, user_id),
     ).fetchall()
     return [r["watched_at"] for r in rows]
 
 
-def mark_all_aired_watched(conn, title_id):
+def mark_all_aired_watched(conn, entry_id):
     """El doble tick de la tarjeta de inicio: marca vistos todos los emitidos de golpe
-    - round-aware (ver _pending_clause), asi que durante un rewatch en curso vuelve a
-    tragarse tambien lo visto en rondas anteriores, no solo lo nunca visto."""
+    (para el usuario dueño de esta entry) - round-aware (ver _pending_clause), asi que
+    durante un rewatch en curso vuelve a tragarse tambien lo visto en rondas
+    anteriores, no solo lo nunca visto.
+
+    Multiusuario Fase 2 (2026-09-17): recibe `entry_id` (no `title_id` suelto) para
+    no tener que recibir ademas un user_id aparte - title_id/user_id/rewatch_started_at
+    salen todos de la propia entry, que ya identifica sin ambiguedad de quien es."""
+    entry = conn.execute(
+        "SELECT title_id, user_id, rewatch_started_at FROM entries WHERE id = ?", (entry_id,)
+    ).fetchone()
+    title_id, user_id, rewatch_started_at = entry["title_id"], entry["user_id"], entry["rewatch_started_at"]
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    rewatch_started_at = conn.execute(
-        "SELECT rewatch_started_at FROM entries WHERE title_id = ?", (title_id,)
-    ).fetchone()["rewatch_started_at"]
-    clause, params = _pending_clause(rewatch_started_at)
+    clause, params = _pending_clause(rewatch_started_at, user_id)
     rows = conn.execute(
         f"""SELECT id FROM episodes WHERE title_id = ? AND {clause}
            AND air_date IS NOT NULL AND date(air_date) <= date('now')""",
         (title_id, *params),
     ).fetchall()
     for r in rows:
-        _log_episode_watch(conn, r["id"], now)
-    _promote_if_first_watch(conn, title_id)
+        _log_episode_watch(conn, r["id"], user_id, now)
+    _promote_if_first_watch(conn, title_id, user_id)
 
 
 
@@ -280,69 +300,104 @@ def set_season_rating(conn, entry_id: int, season_number: int, rating: float, co
 
 
 
-def mark_season_watched(conn, title_id, season_number: int):
-    """Traga una temporada entera de una sentada: marca vistos los episodios ya
-    emitidos de ESA temporada en concreto, sin ir episodio a episodio ni marcar
-    la serie entera (eso ya lo hace el doble tick de la tarjeta de inicio).
-    Round-aware, igual que mark_all_aired_watched."""
+def mark_season_watched(conn, entry_id, season_number: int):
+    """Traga una temporada entera de una sentada (para el usuario dueño de esta
+    entry): marca vistos los episodios ya emitidos de ESA temporada en concreto,
+    sin ir episodio a episodio ni marcar la serie entera (eso ya lo hace el doble
+    tick). Round-aware, igual que mark_all_aired_watched. Multiusuario Fase 2
+    (2026-09-17): recibe `entry_id` en vez de `title_id`, mismo motivo que arriba."""
+    entry = conn.execute(
+        "SELECT title_id, user_id, rewatch_started_at FROM entries WHERE id = ?", (entry_id,)
+    ).fetchone()
+    title_id, user_id, rewatch_started_at = entry["title_id"], entry["user_id"], entry["rewatch_started_at"]
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    rewatch_started_at = conn.execute(
-        "SELECT rewatch_started_at FROM entries WHERE title_id = ?", (title_id,)
-    ).fetchone()["rewatch_started_at"]
-    clause, params = _pending_clause(rewatch_started_at)
+    clause, params = _pending_clause(rewatch_started_at, user_id)
     rows = conn.execute(
         f"""SELECT id FROM episodes WHERE title_id = ? AND season_number = ? AND {clause}
            AND air_date IS NOT NULL AND date(air_date) <= date('now')""",
         (title_id, season_number, *params),
     ).fetchall()
     for r in rows:
-        _log_episode_watch(conn, r["id"], now)
-    _promote_if_first_watch(conn, title_id)
+        _log_episode_watch(conn, r["id"], user_id, now)
+    _promote_if_first_watch(conn, title_id, user_id)
 
 
 
 
-def toggle_episode_favorite(conn, episode_id) -> bool:
-    row = conn.execute("SELECT is_favorite FROM episodes WHERE id = ?", (episode_id,)).fetchone()
-    new_value = 0 if row["is_favorite"] else 1
-    conn.execute("UPDATE episodes SET is_favorite = ? WHERE id = ?", (new_value, episode_id))
+def toggle_episode_favorite(conn, episode_id, user_id) -> bool:
+    """Multiusuario Fase 2 (2026-09-17): el favorito por episodio vive en
+    episode_user_state (episode_id, user_id), ya no en episodes.is_favorite
+    (compartido) - cada usuario marca sus propios episodios favoritos."""
+    row = conn.execute(
+        "SELECT is_favorite FROM episode_user_state WHERE episode_id = ? AND user_id = ?",
+        (episode_id, user_id),
+    ).fetchone()
+    new_value = 0 if (row and row["is_favorite"]) else 1
+    conn.execute(
+        """INSERT INTO episode_user_state (episode_id, user_id, is_favorite) VALUES (?, ?, ?)
+           ON CONFLICT(episode_id, user_id) DO UPDATE SET is_favorite = excluded.is_favorite""",
+        (episode_id, user_id, new_value),
+    )
     return bool(new_value)
 
 
 
 
-def set_episode_comment(conn, episode_id, comment: str):
-    conn.execute("UPDATE episodes SET comment = ? WHERE id = ?", (comment.strip() or None, episode_id))
+def get_episode_user_state(conn, episode_id, user_id):
+    return conn.execute(
+        "SELECT * FROM episode_user_state WHERE episode_id = ? AND user_id = ?", (episode_id, user_id)
+    ).fetchone()
 
 
 
 
-def list_history(conn, limit=300):
-    """Cronologico unificado, lo mas reciente primero: episodios vistos, titulos marcados
-    vistos y rewatches. 'detail' es la etiqueta corta de la fila (T1E6, Vista entera, Rewatch).
+def set_episode_comment(conn, episode_id, user_id, comment: str):
+    """Multiusuario Fase 2 (2026-09-17): el comentario por episodio (mini-diario) vive
+    en episode_user_state - privado de cada usuario, no un hilo compartido (eso seria
+    una funcion de debate distinta, no pedida todavia)."""
+    comment = comment.strip() or None
+    conn.execute(
+        """INSERT INTO episode_user_state (episode_id, user_id, comment) VALUES (?, ?, ?)
+           ON CONFLICT(episode_id, user_id) DO UPDATE SET comment = excluded.comment""",
+        (episode_id, user_id, comment),
+    )
+
+
+
+
+def list_history(conn, user_id, limit=300):
+    """Cronologico unificado de ESTE usuario, lo mas reciente primero: episodios
+    vistos, titulos marcados vistos y rewatches. 'detail' es la etiqueta corta de la
+    fila (T1E6, Vista entera, Rewatch).
 
     Cada subconsulta se ordena y corta a `limit` ANTES del UNION ALL: el top-`limit`
     final nunca puede necesitar mas de `limit` filas de una sola fuente, asi que cortar
-    cada una por separado (usando el indice de watched_at) evita materializar y ordenar
-    TODO el historial (miles de episodios en una biblioteca grande) solo para quedarse
-    con los primeros 300. SQLite exige envolver cada rama en su propia subconsulta para
-    poder llevar ORDER BY/LIMIT propios dentro de un UNION ALL."""
+    cada una por separado evita materializar y ordenar TODO el historial (miles de
+    episodios en una biblioteca grande) solo para quedarse con los primeros 300.
+    SQLite exige envolver cada rama en su propia subconsulta para poder llevar
+    ORDER BY/LIMIT propios dentro de un UNION ALL.
+
+    Multiusuario Fase 2 (2026-09-17): la rama de episodios ya no lee episodes.watched_at
+    (compartido, ya no se actualiza) sino episode_watches filtrado por user_id; las
+    otras dos ramas cuelgan de `entries`, que ya trae su propio user_id."""
     return conn.execute(
         """SELECT * FROM (
              SELECT * FROM (
-               SELECT episodes.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
+               SELECT episode_watches.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
                       titles.poster_path,
                       'T' || episodes.season_number || 'E' || episodes.episode_number AS detail
-               FROM episodes JOIN titles ON titles.id = episodes.title_id
-               WHERE episodes.watched_at IS NOT NULL
-               ORDER BY episodes.watched_at DESC LIMIT ?
+               FROM episode_watches
+               JOIN episodes ON episodes.id = episode_watches.episode_id
+               JOIN titles ON titles.id = episodes.title_id
+               WHERE episode_watches.user_id = ?
+               ORDER BY episode_watches.watched_at DESC LIMIT ?
              )
              UNION ALL
              SELECT * FROM (
                SELECT entries.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
                       titles.poster_path, 'Vista entera' AS detail
                FROM entries JOIN titles ON titles.id = entries.title_id
-               WHERE entries.watched_at IS NOT NULL
+               WHERE entries.watched_at IS NOT NULL AND entries.user_id = ?
                ORDER BY entries.watched_at DESC LIMIT ?
              )
              UNION ALL
@@ -352,11 +407,12 @@ def list_history(conn, limit=300):
                FROM watch_sessions
                JOIN entries ON entries.id = watch_sessions.entry_id
                JOIN titles ON titles.id = entries.title_id
+               WHERE entries.user_id = ?
                ORDER BY watch_sessions.watched_at DESC LIMIT ?
              )
            )
            ORDER BY at DESC LIMIT ?""",
-        (limit, limit, limit, limit),
+        (user_id, limit, user_id, limit, user_id, limit, limit),
     ).fetchall()
 
 
@@ -390,22 +446,30 @@ def get_similar(conn, title_row, limit=10):
 
 
 
-def list_calendar(conn, days_before=7, days_after=30):
-    """Episodios (de la tabla episodes, no solo el proximo) que caen en la ventana.
-    Solo de series EMPEZADAS (>=1 episodio visto) - las que aun no ha tocado solo meten ruido."""
+def list_calendar(conn, user_id, days_before=7, days_after=30):
+    """Episodios (de la tabla episodes, no solo el proximo) que caen en la ventana,
+    para lo que ESTE usuario tiene entre manos - solo de series EMPEZADAS POR EL
+    (>=1 episodio visto) - las que aun no ha tocado solo meten ruido.
+
+    Multiusuario Fase 2 (2026-09-17): `entries` se filtra por user_id (antes cualquier
+    entry de cualquier usuario colaba la serie en el calendario de todos) y "visto"
+    se calcula contra episode_watches de ESE usuario (antes era episodes.watched_at
+    compartido) - de ahi `watched_now` en vez de `watched_at` en el resultado."""
     return conn.execute(
         """SELECT titles.tmdb_id, titles.title, titles.poster_path,
                   episodes.season_number, episodes.episode_number, episodes.name AS ep_name,
-                  episodes.air_date, episodes.watched_at, entries.auto_watch
+                  episodes.air_date, entries.auto_watch,
+                  EXISTS(SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
+                         AND ew.user_id = ?) AS watched_now
            FROM episodes
            JOIN titles ON titles.id = episodes.title_id
-           JOIN entries ON entries.title_id = titles.id
+           JOIN entries ON entries.title_id = titles.id AND entries.user_id = ?
            WHERE episodes.air_date IS NOT NULL
              AND date(episodes.air_date) BETWEEN date('now', ?) AND date('now', ?)
-             AND EXISTS(SELECT 1 FROM episodes started
-                        WHERE started.title_id = titles.id AND started.watched_at IS NOT NULL)
+             AND EXISTS(SELECT 1 FROM episode_watches ew2 JOIN episodes started ON started.id = ew2.episode_id
+                        WHERE started.title_id = titles.id AND ew2.user_id = ?)
            ORDER BY episodes.air_date, titles.title, episodes.episode_number""",
-        (f"-{days_before} days", f"+{days_after} days"),
+        (user_id, user_id, f"-{days_before} days", f"+{days_after} days", user_id),
     ).fetchall()
 
 
@@ -414,23 +478,31 @@ def list_calendar(conn, days_before=7, days_after=30):
 # Series pendientes con sus contadores de episodios, para la pantalla de inicio estilo Trakt.
 # "in_season" = tiene algun episodio emitido/programado a +-21 dias de hoy; el
 # show_status = 'Returning Series' de TMDB NO vale de filtro (sigue activo entre temporadas).
+# Multiusuario Fase 2 (2026-09-17): "WHERE entries.user_id = ?" filtra la biblioteca a
+# la del usuario de la sesion (antes mostraba las entries de TODOS mezcladas); los
+# contadores de episodios ahora consultan episode_watches filtrado por ese MISMO
+# user_id via la correlacion "entries.user_id" (no hace falta un segundo parametro,
+# la fila de entries en curso ya sabe de quien es). El primer "?" de la query es el
+# user_id de la sesion, para el WHERE final.
 _HOME_SHOWS_SQL = """
     SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type,
            titles.tmdb_id, titles.runtime_minutes, titles.release_date,
-           (SELECT count(*) FROM episodes WHERE episodes.title_id = titles.id
-              AND episodes.watched_at IS NOT NULL) AS watched_eps,
-           -- "Falta por ver AHORA": nunca visto, o la unica vez que se vio fue ANTES de
-           -- que empezara la ronda de rewatch activa (entries.rewatch_started_at, ver
-           -- start_rewatch - ya NO borra episodes.watched_at, asi que sin esta comparacion
-           -- todo parece "visto para siempre" y la serie nunca volveria a Continuar viendo).
-           (SELECT count(*) FROM episodes WHERE episodes.title_id = titles.id
-              AND (episodes.watched_at IS NULL
-                   OR (entries.rewatch_started_at IS NOT NULL
-                       AND episodes.watched_at < entries.rewatch_started_at))
-              AND episodes.air_date IS NOT NULL
-              AND date(episodes.air_date) <= date('now')) AS missing_eps,
-           (SELECT max(episodes.watched_at) FROM episodes
-              WHERE episodes.title_id = titles.id) AS last_watched_at,
+           (SELECT count(*) FROM episodes
+              WHERE episodes.title_id = titles.id
+                AND EXISTS(SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
+                           AND ew.user_id = entries.user_id)) AS watched_eps,
+           -- "Falta por ver AHORA": nunca visto POR ESTE USUARIO, o la unica vez que lo
+           -- vio fue ANTES de que empezara SU ronda de rewatch activa.
+           (SELECT count(*) FROM episodes
+              WHERE episodes.title_id = titles.id
+                AND NOT EXISTS(
+                    SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
+                      AND ew.user_id = entries.user_id
+                      AND (entries.rewatch_started_at IS NULL OR ew.watched_at >= entries.rewatch_started_at))
+                AND episodes.air_date IS NOT NULL
+                AND date(episodes.air_date) <= date('now')) AS missing_eps,
+           (SELECT max(ew.watched_at) FROM episode_watches ew JOIN episodes e2 ON e2.id = ew.episode_id
+              WHERE e2.title_id = titles.id AND ew.user_id = entries.user_id) AS last_watched_at,
            (SELECT max(watch_sessions.watched_at) FROM watch_sessions
               WHERE watch_sessions.entry_id = entries.id) AS last_rewatch_at,
            EXISTS(SELECT 1 FROM episodes WHERE episodes.title_id = titles.id
@@ -438,17 +510,17 @@ _HOME_SHOWS_SQL = """
               AND date(episodes.air_date) BETWEEN date('now', '-21 days')
                                               AND date('now', '+21 days')) AS in_season
     FROM entries JOIN titles ON titles.id = entries.title_id
-    WHERE titles.type = 'show'"""
+    WHERE titles.type = 'show' AND entries.user_id = ?"""
 
 
 
 
-def next_unwatched_episode(conn, title_id: int, rewatch_started_at: str | None = None):
-    """El siguiente episodio ya emitido que falta por ver (el 'T1E6' de la tarjeta).
-    Round-aware (ver _pending_clause): con un rewatch en curso, el primer episodio con
-    fecha anterior a esa ronda cuenta otra vez como "el siguiente", sin que haga falta
-    borrar su fecha vieja."""
-    clause, params = _pending_clause(rewatch_started_at)
+def next_unwatched_episode(conn, title_id: int, rewatch_started_at: str | None, user_id: int):
+    """El siguiente episodio ya emitido que falta por ver POR ESTE USUARIO (el 'T1E6'
+    de la tarjeta). Round-aware (ver _pending_clause): con un rewatch en curso, el
+    primer episodio con marcado anterior a esa ronda cuenta otra vez como "el
+    siguiente", sin que haga falta borrar nada."""
+    clause, params = _pending_clause(rewatch_started_at, user_id)
     return conn.execute(
         f"""SELECT * FROM episodes
            WHERE title_id = ? AND {clause} AND air_date IS NOT NULL
@@ -462,20 +534,20 @@ def next_unwatched_episode(conn, title_id: int, rewatch_started_at: str | None =
 
 def _with_next_episode(conn, row):
     data = dict(row)
-    data["next_ep"] = next_unwatched_episode(conn, row["title_id"], row["rewatch_started_at"])
+    data["next_ep"] = next_unwatched_episode(conn, row["title_id"], row["rewatch_started_at"], row["user_id"])
     return data
 
 
 
 
-def list_continue_watching(conn):
-    """Estilo Trakt: cualquier serie con al menos un episodio visto y emitidos por ver,
-    lo mas reciente primero - da igual el status de la entry (The Boys a medias cuenta
-    aunque este marcada vista y no emita ahora). Las no empezadas NO salen aqui.
-    "missing_eps" es round-aware (ver _HOME_SHOWS_SQL): una serie recien puesta en
-    "Volver a ver" vuelve a tener episodios "pendientes" desde el principio sin que se
-    le haya borrado ninguna fecha vieja de episodes.watched_at."""
-    rows = conn.execute(_HOME_SHOWS_SQL).fetchall()
+def list_continue_watching(conn, user_id):
+    """Estilo Trakt: cualquier serie con al menos un episodio visto (por ESTE usuario)
+    y emitidos por ver, lo mas reciente primero - da igual el status de la entry (The
+    Boys a medias cuenta aunque este marcada vista y no emita ahora). Las no empezadas
+    NO salen aqui. "missing_eps" es round-aware (ver _HOME_SHOWS_SQL): una serie recien
+    puesta en "Volver a ver" vuelve a tener episodios "pendientes" desde el principio
+    sin que se le haya borrado ningun marcado viejo."""
+    rows = conn.execute(_HOME_SHOWS_SQL, (user_id,)).fetchall()
     continuar = sorted(
         (r for r in rows if (r["watched_eps"] or r["last_rewatch_at"]) and r["missing_eps"]),
         key=lambda r: max(r["last_watched_at"] or "", r["last_rewatch_at"] or ""),
@@ -505,7 +577,7 @@ def _current_anime_season_start() -> str:
 
 
 
-def list_new_airing(conn):
+def list_new_airing(conn, user_id):
     """Series recien añadidas (pendientes, 0 episodios vistos) que YA tienen algun
     episodio emitido esperando Y son de la temporada actual (release_date dentro de la
     temporada en curso) - complementario a list_continue_watching (esa exige >=1
@@ -513,7 +585,7 @@ def list_new_airing(conn):
     primer episodio fuera porque el resto aun no ha salido, quiere que se lo recuerde
     "arriba" en vez de perderse entre pendientes - pero solo lo de esta temporada, no
     cualquier pendiente atrasado de hace tiempo con un episodio suelto sin ver."""
-    rows = conn.execute(_HOME_SHOWS_SQL).fetchall()
+    rows = conn.execute(_HOME_SHOWS_SQL, (user_id,)).fetchall()
     season_start = _current_anime_season_start()
     nuevas = sorted(
         (
@@ -529,14 +601,18 @@ def list_new_airing(conn):
 
 
 
-def get_home_card(conn, entry_id: int):
+def get_home_card(conn, entry_id: int, user_id: int):
     """Re-render de una tarjeta tras marcar un episodio (check individual o doble tick).
     Aplica el MISMO filtro que list_continue_watching (empezada Y quedan emitidos por
     ver) - sin esto, marcar el ultimo episodio que faltaba devolvia la fila igual
     (missing_eps=0) y la tarjeta se quedaba en pantalla con el badge "Al dia" en vez de
     desaparecer del carrusel, obligando a recargar para que se fuera de verdad. Bug
-    real, Tara: "si marco visto deberia salir, no quedarse ahi con 'esta visto y ya'"."""
-    row = conn.execute(_HOME_SHOWS_SQL + " AND entries.id = ?", (entry_id,)).fetchone()
+    real, Tara: "si marco visto deberia salir, no quedarse ahi con 'esta visto y ya'".
+
+    Multiusuario Fase 2 (2026-09-17): `user_id` es ademas una comprobacion de
+    propiedad - si `entry_id` no es de ESE usuario, `entries.user_id = ?` no encuentra
+    fila y esto devuelve None en vez de operar sobre la tarjeta de otra cuenta."""
+    row = conn.execute(_HOME_SHOWS_SQL + " AND entries.id = ?", (user_id, entry_id)).fetchone()
     if not row or not ((row["watched_eps"] or row["last_rewatch_at"]) and row["missing_eps"]):
         return None
     return _with_next_episode(conn, row)
@@ -575,7 +651,7 @@ def ensure_manual_title(conn, media_type: str, title: str, year: int | None, imd
 
 
 
-def create_manual_entry(conn, media_type: str, title: str, year: int | None, poster_url: str | None):
+def create_manual_entry(conn, media_type: str, title: str, year: int | None, poster_url: str | None, user_id: int):
     """Alta manual desde /buscar cuando TMDB no encuentra el titulo.
     Sin poster_url pegado a mano, intenta completar portada/año/episodios desde
     MyAnimeList/AniList (ver anime.py)."""
@@ -606,41 +682,51 @@ def create_manual_entry(conn, media_type: str, title: str, year: int | None, pos
         sets = ", ".join(f"{col} = ?" for col in extra)
         conn.execute(f"UPDATE titles SET {sets} WHERE id = ?", (*extra.values(), title_row["id"]))
 
-    entry = conn.execute("SELECT * FROM entries WHERE title_id = ?", (title_row["id"],)).fetchone()
-    if not entry:
-        conn.execute("INSERT INTO entries (title_id, status) VALUES (?, 'pending')", (title_row["id"],))
+    ensure_entry(conn, title_row["tmdb_id"], media_type, user_id)
     return get_title(conn, title_row["tmdb_id"])
 
 
 
 
-def get_entry_states(conn, tmdb_ids: list[int]) -> dict[int, str]:
-    """Estado real (pending/watched) de una tanda de tmdb_ids ya en la biblioteca -
+def get_entry_states(conn, tmdb_ids: list[int], user_id: int) -> dict[int, str]:
+    """Estado real (pending/watched) de ESTE usuario para una tanda de tmdb_ids -
     para que resultados de busqueda/similares no ofrezcan '+ Pendientes' en algo que
     ya esta visto y en Favoritos (Black Clover: ya lo tenia, el buscador lo trataba
-    como nuevo). Los que no aparecen en el dict son 'new'."""
+    como nuevo). Los que no aparecen en el dict son 'new'. Multiusuario Fase 2
+    (2026-09-17): filtrado por user_id - antes mostraba el estado de CUALQUIER
+    usuario que tuviera el titulo, no el tuyo."""
     if not tmdb_ids:
         return {}
     placeholders = ",".join("?" * len(tmdb_ids))
     rows = conn.execute(
         f"""SELECT titles.tmdb_id, entries.status FROM titles
            JOIN entries ON entries.title_id = titles.id
-           WHERE titles.tmdb_id IN ({placeholders})""",
-        tmdb_ids,
+           WHERE titles.tmdb_id IN ({placeholders}) AND entries.user_id = ?""",
+        (*tmdb_ids, user_id),
     ).fetchall()
     return {row["tmdb_id"]: row["status"] for row in rows}
 
 
 
 
-def ensure_entry(conn, tmdb_id: int, media_type: str):
-    """Devuelve la fila de entries para ese titulo, creandola como 'pending' si no existe."""
+def ensure_entry(conn, tmdb_id: int, media_type: str, user_id: int):
+    """Devuelve la fila de entries de ESE usuario para ese titulo, creandola como
+    'pending' si no existe. `user_id` es obligatorio desde el multiusuario
+    (2026-09-17, Fase 1): antes `entries.title_id` era UNIQUE en toda la instancia,
+    así que sin filtrar por usuario esto devolvería/reutilizaría la entry de
+    OTRO usuario para el mismo título en vez de crear la suya propia."""
     title = ensure_title(conn, tmdb_id, media_type)
-    entry = conn.execute("SELECT * FROM entries WHERE title_id = ?", (title["id"],)).fetchone()
+    entry = conn.execute(
+        "SELECT * FROM entries WHERE title_id = ? AND user_id = ?", (title["id"], user_id)
+    ).fetchone()
     if entry:
         return entry
-    conn.execute("INSERT INTO entries (title_id, status) VALUES (?, 'pending')", (title["id"],))
-    return conn.execute("SELECT * FROM entries WHERE title_id = ?", (title["id"],)).fetchone()
+    conn.execute(
+        "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'pending')", (title["id"], user_id)
+    )
+    return conn.execute(
+        "SELECT * FROM entries WHERE title_id = ? AND user_id = ?", (title["id"], user_id)
+    ).fetchone()
 
 
 
@@ -653,6 +739,17 @@ def get_entry_with_title(conn, entry_id: int):
            WHERE entries.id = ?""",
         (entry_id,),
     ).fetchone()
+
+
+def get_owned_entry_with_title(conn, entry_id: int, user_id: int):
+    """Igual que get_entry_with_title, pero devuelve None si la entry no es de ESTE
+    usuario - guarda de propiedad (multiusuario Fase 2, 2026-09-17) para cualquier
+    ruta que reciba un entry_id directo en la URL: sin esto, un usuario podria actuar
+    sobre la entry de otro adivinando/probando un id."""
+    entry = get_entry_with_title(conn, entry_id)
+    if entry and entry["user_id"] == user_id:
+        return entry
+    return None
 
 
 
@@ -721,7 +818,8 @@ def mark_watched(conn, entry_id: int, rating: float, comment: str, categories: d
            WHERE id = ?""",
         params,
     )
-    reseed_undueled_entries_elo(conn)
+    user_id = conn.execute("SELECT user_id FROM entries WHERE id = ?", (entry_id,)).fetchone()["user_id"]
+    reseed_undueled_entries_elo(conn, user_id)
 
 
 
@@ -749,8 +847,12 @@ def set_watched_at(conn, entry_id: int, date_str: str):
     fila, columna izquierda) en vez de la fecha unica del formulario - as calza con
     el patron real de ver una serie semana a semana segun emite, no de un tiron el
     mismo dia. El valor escrito en el formulario se queda como fallback solo para
-    episodios sin air_date cacheado (altas manuales, episodios sin fecha de TMDB)."""
-    entry = conn.execute("SELECT title_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    episodios sin air_date cacheado (altas manuales, episodios sin fecha de TMDB).
+
+    Multiusuario Fase 2 (2026-09-17): el ultimo marcado a corregir es el de ESTE
+    usuario (dueño de `entry_id`) - episode_watches ya lleva user_id, episodes ya no
+    guarda ninguna fecha cacheada que corregir aparte."""
+    entry = conn.execute("SELECT title_id, user_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
     new_value = f"{date_str}T12:00:00Z"
     conn.execute(
         "UPDATE entries SET watched_at = ? WHERE id = ? AND status = 'watched'",
@@ -759,18 +861,19 @@ def set_watched_at(conn, entry_id: int, date_str: str):
     if entry is None:
         return
     episodes = conn.execute(
-        "SELECT id, air_date FROM episodes WHERE title_id = ? AND watched_at IS NOT NULL",
-        (entry["title_id"],),
+        """SELECT id, air_date FROM episodes WHERE title_id = ?
+           AND EXISTS(SELECT 1 FROM episode_watches WHERE episode_watches.episode_id = episodes.id
+                      AND episode_watches.user_id = ?)""",
+        (entry["title_id"], entry["user_id"]),
     ).fetchall()
     for ep in episodes:
         ep_value = f"{ep['air_date']}T12:00:00Z" if ep["air_date"] else new_value
         last_watch = conn.execute(
-            "SELECT id FROM episode_watches WHERE episode_id = ? ORDER BY watched_at DESC, id DESC LIMIT 1",
-            (ep["id"],),
+            "SELECT id FROM episode_watches WHERE episode_id = ? AND user_id = ? ORDER BY watched_at DESC, id DESC LIMIT 1",
+            (ep["id"], entry["user_id"]),
         ).fetchone()
         if last_watch:
             conn.execute("UPDATE episode_watches SET watched_at = ? WHERE id = ?", (ep_value, last_watch["id"]))
-        conn.execute("UPDATE episodes SET watched_at = ? WHERE id = ?", (ep_value, ep["id"]))
 
 
 
@@ -787,16 +890,22 @@ def undo_mark_watched(conn, entry_id: int):
     aplica. 2026-08-20: ya NO desmarca TODOS los episodios del titulo a ciegas - solo
     los que comparten el mismo watched_at que puso mark_watched_quick en la entry (asi
     no se pierden episodios ya vistos de verdad de antes, si el titulo ya tenia
-    historial parcial cuando se hizo el marcado por error)."""
-    row = conn.execute("SELECT title_id, watched_at FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    historial parcial cuando se hizo el marcado por error).
+
+    Multiusuario Fase 2 (2026-09-17): "lo marcado en ESE mismo instante" se busca en
+    episode_watches filtrado por el user_id de esta entry, no en episodes.watched_at
+    (ya no existe como fecha compartida)."""
+    row = conn.execute("SELECT title_id, user_id, watched_at FROM entries WHERE id = ?", (entry_id,)).fetchone()
     conn.execute("UPDATE entries SET status = 'pending', watched_at = NULL WHERE id = ?", (entry_id,))
     if row["watched_at"]:
         eps = conn.execute(
-            "SELECT id FROM episodes WHERE title_id = ? AND watched_at = ?",
-            (row["title_id"], row["watched_at"]),
+            """SELECT episodes.id FROM episodes
+               JOIN episode_watches ON episode_watches.episode_id = episodes.id
+               WHERE episodes.title_id = ? AND episode_watches.user_id = ? AND episode_watches.watched_at = ?""",
+            (row["title_id"], row["user_id"], row["watched_at"]),
         ).fetchall()
         for ep in eps:
-            _unlog_episode_watch(conn, ep["id"])
+            _unlog_episode_watch(conn, ep["id"], row["user_id"])
 
 
 
@@ -847,16 +956,16 @@ def mark_watched_quick(conn, entry_id: int, title_row=None):
     mismo next_unwatched_episode que usa el check de la tarjeta de inicio) - un solo
     episodio, no la serie entera. Si ya se ha visto todo, para eso esta el doble tick."""
     row = conn.execute(
-        "SELECT status, title_id, rewatch_started_at FROM entries WHERE id = ?", (entry_id,)
+        "SELECT status, title_id, user_id, rewatch_started_at FROM entries WHERE id = ?", (entry_id,)
     ).fetchone()
     if row["status"] == "watched":
         return
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn.execute("UPDATE entries SET status = 'watched', watched_at = ? WHERE id = ?", (now, entry_id))
     if title_row and title_row["type"] == "show":
-        first_ep = next_unwatched_episode(conn, row["title_id"], row["rewatch_started_at"])
+        first_ep = next_unwatched_episode(conn, row["title_id"], row["rewatch_started_at"], row["user_id"])
         if first_ep:
-            _log_episode_watch(conn, first_ep["id"], now)
+            _log_episode_watch(conn, first_ep["id"], row["user_id"], now)
 
 
 
@@ -905,9 +1014,9 @@ def _orden_sql(columnas: dict, defaults: dict, orden: str, direccion: str) -> st
 
 
 
-def list_pending(conn, tipo="", orden="anadido", q="", genero="", direccion=""):
+def list_pending(conn, user_id, tipo="", orden="anadido", q="", genero="", direccion=""):
     order_sql = _orden_sql(ORDENES_PENDIENTES, ORDENES_PENDIENTES_DEFAULT_DIR, orden, direccion)
-    params: list = []
+    params: list = [user_id]
     filtro_q = ""
     if q.strip():
         filtro_q = " AND titles.title LIKE ?"
@@ -920,7 +1029,7 @@ def list_pending(conn, tipo="", orden="anadido", q="", genero="", direccion=""):
                    titles.anilist_studio, titles.anilist_tags, titles.anilist_prequel_ids,
                    titles.anilist_cross_rec_ids
            FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.status = 'pending'{_tipo_sql(tipo)}{filtro_q}{filtro_genero}
+           WHERE entries.status = 'pending' AND entries.user_id = ?{_tipo_sql(tipo)}{filtro_q}{filtro_genero}
            ORDER BY {order_sql}""",
         params,
     ).fetchall()
@@ -928,10 +1037,11 @@ def list_pending(conn, tipo="", orden="anadido", q="", genero="", direccion=""):
 
 
 
-def random_pending(conn, tipo="", excluir: int | None = None):
-    """Un pendiente al azar para el boton "Sorprendeme". excluir descarta el que
-    se acaba de enseñar, para que "Otro" no repita el mismo dos veces seguidas."""
-    params: list = []
+def random_pending(conn, user_id, tipo="", excluir: int | None = None):
+    """Un pendiente al azar de ESTE usuario para el boton "Sorprendeme". excluir
+    descarta el que se acaba de enseñar, para que "Otro" no repita el mismo dos
+    veces seguidas."""
+    params: list = [user_id]
     filtro_excluir = ""
     if excluir:
         filtro_excluir = " AND titles.tmdb_id != ?"
@@ -941,7 +1051,7 @@ def random_pending(conn, tipo="", excluir: int | None = None):
                    titles.poster_path, titles.overview, titles.vote_average,
                    titles.runtime_minutes, titles.episode_count, titles.is_adult
            FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.status = 'pending'{_tipo_sql(tipo)}{filtro_excluir}
+           WHERE entries.status = 'pending' AND entries.user_id = ?{_tipo_sql(tipo)}{filtro_excluir}
            ORDER BY RANDOM() LIMIT 1""",
         params,
     ).fetchone()
@@ -977,10 +1087,10 @@ ORDENES_VISTAS_DEFAULT_DIR = {
 
 
 
-def list_watched(conn, orden="recientes", tipo="", q="", genero="", direccion=""):
+def list_watched(conn, user_id: int, orden="recientes", tipo="", q="", genero="", direccion=""):
     order_sql = _orden_sql(ORDENES_VISTAS, ORDENES_VISTAS_DEFAULT_DIR, orden, direccion)
-    default_list = get_default_list(conn)
-    params: list = [default_list["id"]]
+    default_list = get_default_list(conn, user_id)
+    params: list = [default_list["id"] if default_list else 0, user_id]
     filtro = ""
     if q.strip():
         filtro = " AND titles.title LIKE ?"
@@ -994,7 +1104,7 @@ def list_watched(conn, orden="recientes", tipo="", q="", genero="", direccion=""
                           AND list_items.list_id = ?) AS is_favorite,
                    {_IS_ANIME_SQL} AS is_anime
            FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.status = 'watched'{_tipo_sql(tipo)}{filtro}{filtro_genero}
+           WHERE entries.status = 'watched' AND entries.user_id = ?{_tipo_sql(tipo)}{filtro}{filtro_genero}
            ORDER BY {order_sql}""",
         params,
     ).fetchall()
@@ -1079,18 +1189,19 @@ def predicted_outcome_label(predicted: int, rating: float) -> str | None:
 
 
 
-def get_prediction_calibration(conn, n_surprises: int = 10):
-    """Fase 6 del indice de afinidad (encargo 2026-08-14): error medio absoluto entre
-    lo predicho al añadir (`entries.predicted_score`, guardado UNA vez, sin pisar) y
-    la nota real puesta despues - en que franjas de predicción el sistema se pasa o se
-    queda corto, y las mayores sorpresas en ambos sentidos. Solo sobre pares reales
-    (predicho Y puntuado), nada estimado."""
+def get_prediction_calibration(conn, user_id, n_surprises: int = 10):
+    """Fase 6 del indice de afinidad (encargo 2026-08-14): error medio absoluto de
+    ESTE usuario entre lo predicho al añadir (`entries.predicted_score`, guardado UNA
+    vez, sin pisar) y la nota real puesta despues - en que franjas de predicción el
+    sistema se pasa o se queda corto, y las mayores sorpresas en ambos sentidos. Solo
+    sobre pares reales (predicho Y puntuado), nada estimado."""
     rows = conn.execute(
         """SELECT titles.title, titles.poster_path, titles.tmdb_id, titles.type,
                   entries.predicted_score, entries.rating,
                   (entries.rating * 10 - entries.predicted_score) AS diff
            FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.predicted_score IS NOT NULL AND entries.rating IS NOT NULL"""
+           WHERE entries.predicted_score IS NOT NULL AND entries.rating IS NOT NULL AND entries.user_id = ?""",
+        (user_id,),
     ).fetchall()
     if not rows:
         return {"n": 0}
@@ -1151,20 +1262,25 @@ _NO_EN_EMISION_SQL = "titles.next_episode_air_date IS NULL"
 
 # Bug real (Tara, 2026-08-21): Dorohedoro entro en /puntuar con solo 4 de 23
 # episodios emitidos vistos - entries.status pasa a 'watched' con solo marcar el
-# PRIMER episodio (decision de diseño de siempre), asi que sin
+# PRIMER episodio (decision de diseño de siempre, ver CLAUDE.md), asi que sin
 # esta condicion cualquier serie "empezada y abandonada" (o simplemente a medio
 # ver) que ademas no este emitiendo AHORA MISMO (_NO_EN_EMISION_SQL) cae en la
 # cola de puntuar antes de que Tara la haya terminado de verdad. Mismo criterio
 # de "falta por ver" que ya usa _HOME_SHOWS_SQL (missing_eps) - si es un show y
 # le queda algun episodio ya emitido sin ver, no esta lista para puntuar todavia.
+# Multiusuario Fase 2 (2026-09-17): "falta por ver" se mira contra episode_watches de
+# ESTE usuario (entries.user_id, correlacionado - entries debe estar en la query que
+# use esta constante), no contra episodes.watched_at (compartido, ya no se actualiza).
 _SIN_PENDIENTES_SQL = """(
     titles.type != 'show'
     OR NOT EXISTS (
         SELECT 1 FROM episodes
         WHERE episodes.title_id = titles.id
-          AND (episodes.watched_at IS NULL
-               OR (entries.rewatch_started_at IS NOT NULL
-                   AND episodes.watched_at < entries.rewatch_started_at))
+          AND NOT EXISTS (
+              SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
+                AND ew.user_id = entries.user_id
+                AND (entries.rewatch_started_at IS NULL OR ew.watched_at >= entries.rewatch_started_at)
+          )
           AND episodes.air_date IS NOT NULL
           AND date(episodes.air_date) <= date('now')
     )
@@ -1173,28 +1289,29 @@ _SIN_PENDIENTES_SQL = """(
 
 
 
-def count_review_queue(conn) -> int:
-    """Vistas importadas sin nota todavia - la 'deuda de datos' de la Fase 2.
-    No cuenta series que siguen en emision (ver _NO_EN_EMISION_SQL) ni series a
+def count_review_queue(conn, user_id: int) -> int:
+    """Vistas importadas de ESTE usuario sin nota todavia - la 'deuda de datos' de la
+    Fase 2. No cuenta series que siguen en emision (ver _NO_EN_EMISION_SQL) ni series a
     medio ver con episodios emitidos pendientes (ver _SIN_PENDIENTES_SQL)."""
     return conn.execute(
         f"""SELECT count(*) AS c FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.status = 'watched' AND entries.rating IS NULL
-             AND {_NO_EN_EMISION_SQL} AND {_SIN_PENDIENTES_SQL}"""
+           WHERE entries.status = 'watched' AND entries.rating IS NULL AND entries.user_id = ?
+             AND {_NO_EN_EMISION_SQL} AND {_SIN_PENDIENTES_SQL}""",
+        (user_id,),
     ).fetchone()["c"]
 
 
 
 
-def next_review_item(conn, excluir_ids: list[int]):
-    """Una entrada al azar sin nota, excluyendo las ya pasadas en esta ronda de /puntuar,
-    las series que siguen en emision (ver _NO_EN_EMISION_SQL) y las que aun tienen
-    episodios emitidos sin ver (ver _SIN_PENDIENTES_SQL)."""
+def next_review_item(conn, user_id: int, excluir_ids: list[int]):
+    """Una entrada al azar de ESTE usuario sin nota, excluyendo las ya pasadas en esta
+    ronda de /puntuar, las series que siguen en emision (ver _NO_EN_EMISION_SQL) y las
+    que aun tienen episodios emitidos sin ver (ver _SIN_PENDIENTES_SQL)."""
     query = f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id
                FROM entries JOIN titles ON titles.id = entries.title_id
-               WHERE entries.status = 'watched' AND entries.rating IS NULL
+               WHERE entries.status = 'watched' AND entries.rating IS NULL AND entries.user_id = ?
                  AND {_NO_EN_EMISION_SQL} AND {_SIN_PENDIENTES_SQL}"""
-    params: list = []
+    params: list = [user_id]
     if excluir_ids:
         placeholders = ",".join("?" * len(excluir_ids))
         query += f" AND entries.id NOT IN ({placeholders})"
@@ -1211,10 +1328,11 @@ def remove_pending_entry(conn, entry_id: int):
     cuelgue de ella (listas, personajes favoritos, rewatches). Solo tiene sentido en
     pending - lo visto no se borra asi, se gestiona desde su ficha.
 
-    Como entries es 1:1 con titles, al borrar la (unica) entry el titulo se queda
-    huerfano sin remedio - si no se borra tambien, list_recommendations lo sigue
-    tratando como "ya conocido" para siempre y una recomendacion mirada por curiosidad
-    desaparecia de recomendados sin haberla baneado y sin que Tara se enterase."""
+    Multiusuario Fase 2 (2026-09-17): `titles`/`episodes`/`characters` son ahora
+    CATALOGO COMPARTIDO entre usuarios (ya no 1:1 con una unica entry) - antes de
+    borrarlos hay que comprobar que NINGUN otro usuario tiene todavia una entry sobre
+    ese mismo titulo (bug real que se habria colado: borrar tu pendiente de algo que
+    tu hermana tambien sigue le habria roto la ficha a ella)."""
     row = conn.execute(
         "SELECT title_id FROM entries WHERE id = ? AND status = 'pending'", (entry_id,)
     ).fetchone()
@@ -1227,11 +1345,32 @@ def remove_pending_entry(conn, entry_id: int):
     conn.execute("DELETE FROM rating_history WHERE entry_id = ?", (entry_id,))
     conn.execute("DELETE FROM season_ratings WHERE entry_id = ?", (entry_id,))
     conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+    still_tracked = conn.execute(
+        "SELECT EXISTS(SELECT 1 FROM entries WHERE title_id = ?)", (title_id,)
+    ).fetchone()[0]
+    if still_tracked:
+        return
     conn.execute(
         "DELETE FROM favorite_characters WHERE character_id IN (SELECT id FROM characters WHERE title_id = ?)",
         (title_id,),
     )
     conn.execute("DELETE FROM characters WHERE title_id = ?", (title_id,))
+    conn.execute(
+        "DELETE FROM episode_user_state WHERE episode_id IN (SELECT id FROM episodes WHERE title_id = ?)",
+        (title_id,),
+    )
+    conn.execute(
+        "DELETE FROM episode_watches WHERE episode_id IN (SELECT id FROM episodes WHERE title_id = ?)",
+        (title_id,),
+    )
+    # Bug real (Fase 4, episode_comments es posterior a este cascade y se quedo fuera):
+    # sin este DELETE, el de abajo (episodes) revienta con FOREIGN KEY constraint
+    # failed en cuanto alguien hubiera comentado un episodio de un titulo que luego
+    # deja de seguir nadie.
+    conn.execute(
+        "DELETE FROM episode_comments WHERE episode_id IN (SELECT id FROM episodes WHERE title_id = ?)",
+        (title_id,),
+    )
     conn.execute("DELETE FROM episodes WHERE title_id = ?", (title_id,))
     conn.execute("DELETE FROM titles WHERE id = ?", (title_id,))
 

@@ -34,19 +34,20 @@ def pendientes(
             # de fondo, cada 12h) puede toparse con "database is locked" - sin este
             # try/except, ESO tumbaba /pendientes entera con un 500 (bug real, Tara:
             # "a veces tarda mucho en cargar" - en realidad a veces fallaba del todo).
-            repo.snapshot_profile_progress(conn)
+            repo.snapshot_profile_progress(conn, request.state.user_id)
         except Exception:
             logging.warning("snapshot_profile_progress: fallo, se salta esta vez", exc_info=True)
-        continuar = repo.list_continue_watching(conn)
-        nuevas = repo.list_new_airing(conn)
+        continuar = repo.list_continue_watching(conn, request.state.user_id)
+        nuevas = repo.list_new_airing(conn, request.state.user_id)
         shown = {c["id"] for c in continuar} | {n["id"] for n in nuevas}
         # "prediccion" no es una columna SQL - se pide con el orden por defecto y se
         # reordena en Python despues de calcular el % de cada entry.
         sql_orden = orden if orden != "prediccion" else "anadido"
         pendientes = [
-            e for e in repo.list_pending(conn, tipo, sql_orden, q, genero, direccion) if e["id"] not in shown
+            e for e in repo.list_pending(conn, request.state.user_id, tipo, sql_orden, q, genero, direccion)
+            if e["id"] not in shown
         ]
-        entries = repo.add_predictions(conn, pendientes)
+        entries = repo.add_predictions(conn, request.state.user_id, pendientes)
         if orden == "prediccion":
             entries.sort(
                 key=lambda e: e["predict"] if e["predict"] is not None else -1,
@@ -82,9 +83,12 @@ def pendientes(
 def _home_card_response(request: Request, entry_id: int, confirm_all=False, oob: str = ""):
     """`oob` (hx-swap-oob del indicador de Puntuar, ver web.render_nav_cola_oob) solo lo
     pasan las dos rutas que de verdad pueden cambiar la cola - el resto de callers
-    (re-render tras cancelar, "no" de la confirmacion) no pagan la query de mas."""
+    (re-render tras cancelar, "no" de la confirmacion) no pagan la query de mas.
+    `get_home_card` ya comprueba que la entry es del usuario de la sesion - si no lo
+    es (o ya no existe), simplemente no devuelve tarjeta, sin dar pistas de que la
+    entry existe pero es ajena."""
     with get_connection() as conn:
-        card = repo.get_home_card(conn, entry_id)
+        card = repo.get_home_card(conn, entry_id, request.state.user_id)
     html = templates.env.get_template("partials/home_card.html").render(
         {"request": request, "c": card, "confirm_all": confirm_all}
     )
@@ -115,9 +119,11 @@ def confirmar_todos_episodios(request: Request, entry_id: int):
 def marcar_todos_episodios(request: Request, entry_id: int):
     """El doble tick (ya confirmado): marca vistos TODOS los episodios emitidos."""
     with get_connection() as conn:
-        entry = repo.get_entry_with_title(conn, entry_id)
-        repo.mark_all_aired_watched(conn, entry["title_id"])
-        oob = web.render_nav_cola_oob(conn)
+        entry = repo.get_owned_entry_with_title(conn, entry_id, request.state.user_id)
+        oob = ""
+        if entry:
+            repo.mark_all_aired_watched(conn, entry_id)
+            oob = web.render_nav_cola_oob(conn, request.state.user_id)
     return _home_card_response(request, entry_id, oob=oob)
 
 
@@ -125,14 +131,26 @@ def marcar_todos_episodios(request: Request, entry_id: int):
 
 @router.post("/entrada/{entry_id}/siguiente", response_class=HTMLResponse)
 def marcar_siguiente_episodio(request: Request, entry_id: int):
-    """El check de la tarjeta de inicio: marca visto el siguiente episodio emitido."""
+    """El check de la tarjeta de inicio: marca visto el siguiente episodio emitido.
+
+    Tara, 2026-09-18 ("para comentar tengo que entrar a la ficha... es tosco"): este
+    es EL sitio donde de verdad se marcan episodios dia a dia (Continuar viendo en
+    /pendientes), asi que aqui va el aviso "¿comentas?" en vez de obligar a
+    navegar a la ficha despues - mismo hilo de siempre (episode_comments), solo que
+    el enlace para abrirlo aparece justo donde ya estabas."""
     with get_connection() as conn:
-        entry = repo.get_entry_with_title(conn, entry_id)
-        ep = repo.next_unwatched_episode(conn, entry["title_id"], entry["rewatch_started_at"])
+        entry = repo.get_owned_entry_with_title(conn, entry_id, request.state.user_id)
         oob = ""
-        if ep:
-            repo.toggle_episode(conn, ep["id"])
-            oob = web.render_nav_cola_oob(conn)
+        if entry:
+            ep = repo.next_unwatched_episode(conn, entry["title_id"], entry["rewatch_started_at"], entry["user_id"])
+            if ep:
+                just_watched = repo.toggle_episode(conn, ep["id"], entry["user_id"])
+                oob = web.render_nav_cola_oob(conn, request.state.user_id)
+                if just_watched:
+                    oob += templates.env.get_template("partials/comment_toast.html").render({
+                        "tmdb_id": entry["tmdb_id"], "type": entry["type"], "episode_id": ep["id"],
+                        "season_number": ep["season_number"], "episode_number": ep["episode_number"],
+                    })
     return _home_card_response(request, entry_id, oob=oob)
 
 
@@ -144,7 +162,7 @@ def sorprendeme(request: Request, tipo: str = "", excluir: int = 0):
     vez de ir directo a la ficha, para poder decidir "ahora no" con 'Otro' sin
     perder tiempo entrando y saliendo de fichas."""
     with get_connection() as conn:
-        entry = repo.random_pending(conn, tipo, excluir=excluir or None)
+        entry = repo.random_pending(conn, request.state.user_id, tipo, excluir=excluir or None)
     return templates.TemplateResponse(request, "surprise.html", {"entry": entry, "tipo": tipo})
 
 
@@ -156,15 +174,23 @@ def anadir_pendiente(request: Request, tmdb_id: int, type: str):
     querer desde una lista); si no, lo anade."""
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
+        # Bug real encontrado en pruebas (multiusuario, 2026-09-17): sin filtrar por
+        # user_id, un segundo usuario tocando "+Pendientes" en un titulo que OTRO
+        # usuario ya tenia pendiente encontraba la entry AJENA y la BORRABA
+        # (repo.remove_pending_entry) en vez de crear la suya propia - no solo una
+        # vista compartida, un borrado activo de datos de otra cuenta.
         existing = (
-            conn.execute("SELECT * FROM entries WHERE title_id = ?", (title_row["id"],)).fetchone()
+            conn.execute(
+                "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",
+                (title_row["id"], request.state.user_id),
+            ).fetchone()
             if title_row else None
         )
         if existing and existing["status"] == "pending":
             repo.remove_pending_entry(conn, existing["id"])
             state = "new"
         else:
-            repo.ensure_entry(conn, tmdb_id, type)
+            repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
             state = "pending"
     return templates.TemplateResponse(
         request, "partials/entry_actions.html", {"tmdb_id": tmdb_id, "type": type, "state": state}
@@ -177,7 +203,7 @@ def anadir_pendiente(request: Request, tmdb_id: int, type: str):
 def pendiente_estado(request: Request, tmdb_id: int, type: str):
     """El 'No' de la confirmacion: vuelve al estado real (sin asumir que sigue pending)."""
     with get_connection() as conn:
-        state = _entry_state(conn, tmdb_id)
+        state = _entry_state(conn, tmdb_id, request.state.user_id)
     return templates.TemplateResponse(
         request, "partials/entry_actions.html", {"tmdb_id": tmdb_id, "type": type, "state": state}
     )
@@ -196,10 +222,12 @@ def quitar_pendiente_confirmar(request: Request, tmdb_id: int, type: str):
 
 
 
-def _entry_state(conn, tmdb_id: int) -> str:
+def _entry_state(conn, tmdb_id: int, user_id: int) -> str:
     title_row = repo.get_title(conn, tmdb_id)
     existing = (
-        conn.execute("SELECT status FROM entries WHERE title_id = ?", (title_row["id"],)).fetchone()
+        conn.execute(
+            "SELECT status FROM entries WHERE title_id = ? AND user_id = ?", (title_row["id"], user_id)
+        ).fetchone()
         if title_row else None
     )
     return existing["status"] if existing else "new"

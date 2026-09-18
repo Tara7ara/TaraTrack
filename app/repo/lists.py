@@ -7,14 +7,35 @@ exactamente igual que antes, este split es puramente interno."""
 
 
 
-def get_default_list(conn):
-    return conn.execute("SELECT * FROM lists WHERE is_default = 1").fetchone()
+def get_default_list(conn, user_id: int):
+    """`user_id` obligatorio desde el multiusuario (2026-09-17): cada usuario tiene
+    su propia lista "Favoritos" (creada en repo.users.create_user) - sin filtrar,
+    "WHERE is_default=1" sin más sería ambiguo en cuanto exista más de una cuenta."""
+    return conn.execute(
+        "SELECT * FROM lists WHERE user_id = ? AND is_default = 1", (user_id,)
+    ).fetchone()
 
 
 
 
-def is_entry_favorite(conn, entry_id: int) -> bool:
-    default_list = get_default_list(conn)
+def get_or_create_default_list(conn, user_id: int):
+    """Bug real (AGY, 2026-09-18): marcar un favorito asumia que la lista "Favoritos"
+    siempre existe (normalmente si, la crea create_user) - una cuenta que llegara a
+    tenerla borrada, o creada fuera de ese flujo, revienta con un 500 al primer
+    intento de marcar algo favorito en vez de arreglarse sola."""
+    default_list = get_default_list(conn, user_id)
+    if default_list:
+        return default_list
+    conn.execute("INSERT INTO lists (user_id, name, is_default) VALUES (?, 'Favoritos', 1)", (user_id,))
+    return get_default_list(conn, user_id)
+
+
+
+
+def is_entry_favorite(conn, entry_id: int, user_id: int) -> bool:
+    default_list = get_default_list(conn, user_id)
+    if not default_list:
+        return False
     return bool(conn.execute(
         "SELECT 1 FROM list_items WHERE list_id = ? AND entry_id = ?", (default_list["id"], entry_id)
     ).fetchone())
@@ -22,11 +43,20 @@ def is_entry_favorite(conn, entry_id: int) -> bool:
 
 
 
-def list_lists(conn, preview_count=10):
-    """Listas con sus primeras portadas (en su orden manual) para la vista previa."""
+def get_owned_list(conn, list_id: int, user_id: int):
+    """Devuelve la lista solo si es de ESTE usuario - guarda de propiedad (multiusuario
+    Fase 2, 2026-09-17) para cualquier ruta que reciba un list_id directo en la URL."""
+    row = conn.execute("SELECT * FROM lists WHERE id = ? AND user_id = ?", (list_id, user_id)).fetchone()
+    return row
+
+
+def list_lists(conn, user_id, preview_count=10):
+    """Listas de ESTE usuario con sus primeras portadas (en su orden manual) para la
+    vista previa."""
     lists = conn.execute(
         """SELECT lists.*, (SELECT count(*) FROM list_items WHERE list_items.list_id = lists.id) AS total
-           FROM lists ORDER BY is_default DESC, name"""
+           FROM lists WHERE user_id = ? ORDER BY is_default DESC, name""",
+        (user_id,),
     ).fetchall()
     return [
         {
@@ -39,13 +69,21 @@ def list_lists(conn, preview_count=10):
 
 
 
-def create_list(conn, name: str):
+def create_list(conn, name: str, user_id: int):
+    """`user_id` obligatorio desde el multiusuario (2026-09-17): `lists.name` era
+    UNIQUE en toda la instancia - sin filtrar, dos usuarios no podrían tener cada
+    uno una lista con el mismo nombre (p.ej. "Top 10"), y el segundo en crearla
+    se habría quedado silenciosamente enganchado a la lista del primero."""
     name = name.strip()
-    existing = conn.execute("SELECT * FROM lists WHERE name = ?", (name,)).fetchone()
+    existing = conn.execute(
+        "SELECT * FROM lists WHERE name = ? AND user_id = ?", (name, user_id)
+    ).fetchone()
     if existing:
         return existing
-    conn.execute("INSERT INTO lists (name) VALUES (?)", (name,))
-    return conn.execute("SELECT * FROM lists WHERE name = ?", (name,)).fetchone()
+    conn.execute("INSERT INTO lists (name, user_id) VALUES (?, ?)", (name, user_id))
+    return conn.execute(
+        "SELECT * FROM lists WHERE name = ? AND user_id = ?", (name, user_id)
+    ).fetchone()
 
 
 
@@ -152,10 +190,21 @@ def get_list_items_by_ids(conn, list_id: int, ids: list[int]):
 
 
 
-def rename_list(conn, list_id: int, name: str):
+def rename_list(conn, list_id: int, user_id: int, name: str):
+    """Bug real (AGY, 2026-09-18): lists tiene UNIQUE(user_id, name) - renombrar a un
+    nombre que ya usa OTRA lista tuya reventaba con sqlite3.IntegrityError (500) sin
+    capturar. Si ya existe, no hace nada (se queda con el nombre de antes) en vez de
+    dar un error - mismo criterio "fallar en silencio antes que rebentar" que el resto
+    de altas duplicadas de la app (create_user, create_list)."""
     name = name.strip()
-    if name:
-        conn.execute("UPDATE lists SET name = ? WHERE id = ? AND is_default = 0", (name, list_id))
+    if not name:
+        return
+    existing = conn.execute(
+        "SELECT id FROM lists WHERE user_id = ? AND name = ? AND id != ?", (user_id, name, list_id)
+    ).fetchone()
+    if existing:
+        return
+    conn.execute("UPDATE lists SET name = ? WHERE id = ? AND user_id = ? AND is_default = 0", (name, list_id, user_id))
 
 
 

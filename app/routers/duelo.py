@@ -14,13 +14,15 @@ router = APIRouter()
 
 @router.get("/duelo", response_class=HTMLResponse)
 def duelo_general(request: Request):
-    """Duelo A/B contra todo el ANIME visto, series y pelis juntas (Tara: "el duelo es
-    solo de animes", 2026-08-13, corrigiendo mi primera version que cogia toda la
-    biblioteca) - mismo mecanismo que /waifus/duelo y /lista/{id}/duelo pero sobre
-    entries.elo, con el pool filtrado por repo.list_watched_ids. El ranking resultante
+    """Duelo A/B (Tara: "el duelo es solo de animes", 2026-08-13) - pero para quien
+    no ve anime (2026-09-18: "para las otras personas no se como adaptarlo") ese
+    pool sale vacio y la pantalla no serviria de nada. repo.duel_pool_for_user cae a
+    TODO lo visto cuando el de anime no llega a 2 titulos, sin tocar el
+    comportamiento de quien si tiene anime de sobra (Tara). Mismo mecanismo que
+    /waifus/duelo y /lista/{id}/duelo pero sobre entries.elo. El ranking resultante
     se ve ordenando /vistas por "Elo", no hay una pagina de ranking aparte para esto."""
     with get_connection() as conn:
-        ids = repo.list_watched_ids(conn)
+        ids, es_anime = repo.duel_pool_for_user(conn, request.state.user_id)
         pair_ids = repo.random_duel_pair(conn, "entries", ids)
         pair = repo.get_entries_by_ids(conn, pair_ids) if pair_ids else []
         coverage = repo.duel_coverage(conn, "entries", ids)
@@ -28,8 +30,10 @@ def duelo_general(request: Request):
         request,
         "duel.html",
         {
-            "pair": pair, "coverage": coverage, "duelo_titulo": "Duelo: Anime",
-            "duelo_url": "/duelo", "duelo_volver": "/vistas?orden=elo", "duelo_ambito": "el anime visto",
+            "pair": pair, "coverage": coverage,
+            "duelo_titulo": "Duelo: Anime" if es_anime else "Duelo",
+            "duelo_url": "/duelo", "duelo_volver": "/vistas?orden=elo",
+            "duelo_ambito": "el anime visto" if es_anime else "lo que has visto",
         },
     )
 
@@ -39,7 +43,7 @@ def duelo_general(request: Request):
 @router.post("/duelo", response_class=HTMLResponse)
 def duelo_general_votar(request: Request, a_id: int = Form(...), b_id: int = Form(...), resultado: float = Form(1.0)):
     with get_connection() as conn:
-        repo.record_duel(conn, "entries", a_id, b_id, resultado)
+        repo.record_duel(conn, "entries", a_id, b_id, request.state.user_id, resultado)
     return RedirectResponse("/duelo", status_code=303)
 
 
@@ -54,5 +58,6 @@ def duelo_general_elo_reiniciar(request: Request):
     Elo por si solo, sin la señal de haber cambiado de pantalla, pasaba desapercibido
     (Tara, 2026-08-14: "en las listas no se nota... pero si que reinicia")."""
     with get_connection() as conn:
-        repo.reset_elo(conn, "entries", repo.list_watched_ids(conn))
+        ids, _ = repo.duel_pool_for_user(conn, request.state.user_id)
+        repo.reset_elo(conn, "entries", ids, request.state.user_id)
     return RedirectResponse("/vistas?elo_reset=1", status_code=303)

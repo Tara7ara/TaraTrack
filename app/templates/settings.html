@@ -2,6 +2,54 @@
 {% block content %}
 <h1>Ajustes</h1>
 
+{# Perfil propio (Tara, 2026-09-18: "como pongo fotos de usr, si quiero cambiar el
+   nombre") - cada cuenta gestiona su propia foto/nombre, no hace falta ser admin. #}
+<div class="settings-section">
+    <h2>Tu perfil</h2>
+    {% if perfil_error %}<p class="empty" style="color:var(--danger)">{{ perfil_error }}</p>{% endif %}
+    {% if perfil_ok %}<p class="confirm-banner">{{ perfil_ok }}</p>{% endif %}
+    <div class="profile-row">
+        {{ request.state.username|avatar(request.state.avatar_path) }}
+        <form method="post" action="/ajustes/perfil/foto" enctype="multipart/form-data" class="profile-photo-form">
+            <label class="btn secondary">
+                Cambiar foto
+                <input type="file" name="imagen" accept="image/png, image/jpeg, image/webp"
+                       class="file-input-hidden" onchange="this.form.submit()">
+            </label>
+        </form>
+    </div>
+    <form method="post" action="/ajustes/perfil/nombre" class="page-actions">
+        <input type="text" name="username" placeholder="Nuevo nombre de usuario" value="{{ request.state.username }}" minlength="3" required>
+        <button class="btn secondary">Cambiar nombre</button>
+    </form>
+    <details class="ep-more" style="margin-top:0.6rem" onclick="event.stopPropagation()">
+        <summary title="Cambiar contraseña" style="display:inline-flex; gap:0.3rem; cursor:pointer; color:var(--text-dim)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            Cambiar contraseña
+        </summary>
+        <form method="post" action="/ajustes/perfil/password" class="page-actions tight">
+            <input type="password" name="password_actual" placeholder="Contraseña actual" autocomplete="current-password" required>
+            <input type="password" name="password_nueva" placeholder="Contraseña nueva" autocomplete="new-password" minlength="8" required>
+            <input type="password" name="password_nueva2" placeholder="Repite la nueva" autocomplete="new-password" minlength="8" required>
+            <button class="btn secondary">Guardar</button>
+        </form>
+    </details>
+</div>
+
+{# Tara, 2026-09-18: "deberia de haber una etiqueta en conf que permita ver todo
+   esto" - el "Calendario de temporada" (TODO el anime de la temporada, no solo lo
+   que sigues) se detecta solo por defecto (repo.user_has_anime), pero cada uno
+   puede forzarlo a mano aqui, tenga o no anime ya en su biblioteca. #}
+<div class="settings-section">
+    <h2>Preferencias</h2>
+    <form method="post" action="/ajustes/perfil/calendario-anime">
+        <label class="filter-checkbox">
+            <input type="checkbox" name="mostrar" value="1" {{ "checked" if show_anime_calendar }} onchange="this.form.submit()">
+            Calendario de temporada (anime)
+        </label>
+    </form>
+</div>
+
 {# Jerarquia entre secciones (auditoria visual 2026-08-20): "Tus datos" y
    "Sesion" son acciones simples y poco frecuentes, bajan a tarjetas compactas
    en fila en vez de ocupar el mismo peso que el resto. #}
@@ -11,7 +59,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             <div>
                 <div class="settings-compact-title">Tus datos</div>
-                <div class="settings-compact-hint">Notas, listas y waifus en JSON</div>
+                <div class="settings-compact-hint">Notas, listas y {{ waifus_label(request.state.user_id)|lower }} en JSON</div>
             </div>
         </div>
         <a class="btn secondary" href="/ajustes/exportar">Exportar</a>
@@ -21,7 +69,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
             <div>
                 <div class="settings-compact-title">Sesión</div>
-                <div class="settings-compact-hint">Este dispositivo</div>
+                <div class="settings-compact-hint">Conectado como {{ request.state.username }}</div>
             </div>
         </div>
         <form method="post" action="/logout">
@@ -29,6 +77,48 @@
         </form>
     </div>
 </div>
+
+{# Cuentas (2026-09-17, multiusuario Fase 1) - solo la/s admin la ven. De momento
+   solo alta (usuario+contraseña); borrar/desactivar cuentas queda para mas
+   adelante, no hace falta todavia con 2-3 personas de confianza. #}
+{% if request.state.is_admin %}
+<div class="settings-section">
+    <h2>Usuarios</h2>
+    <p class="page-hint">Cada cuenta tiene su propio seguimiento (pendientes, notas, listas).</p>
+    {% if usuario_creado %}<p class="confirm-banner">Cuenta «{{ usuario_creado }}» creada.</p>{% endif %}
+    {% if usuario_ok %}<p class="confirm-banner">{{ usuario_ok }}</p>{% endif %}
+    {% if usuario_error %}<p class="empty" style="color:var(--danger)">{{ usuario_error }}</p>{% endif %}
+    <ul class="user-list">
+        {% for u in usuarios %}
+        <li>
+            {{ u.username|avatar(u.avatar_path) }}
+            {{ u.username }}{% if u.is_admin %} <span class="badge">admin</span>{% endif %}
+            {% if u.id != request.state.user_id %}
+            <form method="post" action="/ajustes/usuarios/{{ u.id }}/admin" class="user-admin-toggle">
+                <input type="hidden" name="valor" value="{{ 0 if u.is_admin else 1 }}">
+                <button class="btn-text">{{ "Quitar admin" if u.is_admin else "Hacer admin" }}</button>
+            </form>
+            {% endif %}
+            {# Tara, 2026-09-18: "si pierdo la pass como lo recupero, un fallo para
+               el usr final" - sin email en este self-host, tu (admin) le pones una
+               contraseña nueva a quien se quede fuera. #}
+            <details class="ep-more" onclick="event.stopPropagation()">
+                <summary class="btn-text" title="Resetear contraseña" style="cursor:pointer">Resetear pass</summary>
+                <form method="post" action="/ajustes/usuarios/{{ u.id }}/password" class="ep-comment-form">
+                    <input type="password" name="password" placeholder="Contraseña nueva" minlength="8" required>
+                    <button class="btn secondary">Guardar</button>
+                </form>
+            </details>
+        </li>
+        {% endfor %}
+    </ul>
+    <form method="post" action="/ajustes/usuarios" class="page-actions">
+        <input type="text" name="username" placeholder="Usuario" autocomplete="off" required>
+        <input type="password" name="password" placeholder="Contraseña" required>
+        <button class="btn">Crear cuenta</button>
+    </form>
+</div>
+{% endif %}
 
 <div class="settings-section">
     <h2>Perfil de gustos</h2>

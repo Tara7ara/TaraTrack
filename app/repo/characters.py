@@ -92,16 +92,20 @@ def add_character_manual(conn, title_row, char_id: int, name: str, image_url: st
 
 
 
-def match_library_title(conn, names: list[str]):
+def match_library_title(conn, names: list[str], user_id: int):
     """Casa los nombres de anime de un personaje externo (romaji/ingles) contra los
-    titulos de la biblioteca. Exacto primero; si no, por prefijo (los subtitulos de
-    temporada tipo 'Black Clover: ...' siguen casando con 'Black Clover')."""
+    titulos de la biblioteca DE ESTE USUARIO. Exacto primero; si no, por prefijo (los
+    subtitulos de temporada tipo 'Black Clover: ...' siguen casando con 'Black Clover').
+
+    Bug real (AGY, 2026-09-18): sin filtrar por user_id, el JOIN contra entries podia
+    devolver el entry_id de OTRO usuario que si tuviera el titulo - el boton "Añadir a
+    waifus" salia aunque el titulo no estuviera en TU biblioteca."""
     for name in names:
         row = conn.execute(
             """SELECT titles.id AS title_id, titles.title, entries.id AS entry_id
                FROM titles JOIN entries ON entries.title_id = titles.id
-               WHERE lower(titles.title) = lower(?)""",
-            (name,),
+               WHERE lower(titles.title) = lower(?) AND entries.user_id = ?""",
+            (name, user_id),
         ).fetchone()
         if row:
             return row
@@ -109,10 +113,10 @@ def match_library_title(conn, names: list[str]):
         row = conn.execute(
             """SELECT titles.id AS title_id, titles.title, entries.id AS entry_id
                FROM titles JOIN entries ON entries.title_id = titles.id
-               WHERE lower(?) LIKE lower(titles.title) || '%'
-                  OR lower(titles.title) LIKE lower(?) || '%'
+               WHERE (lower(?) LIKE lower(titles.title) || '%'
+                  OR lower(titles.title) LIKE lower(?) || '%') AND entries.user_id = ?
                ORDER BY length(titles.title) DESC LIMIT 1""",
-            (name, name),
+            (name, name, user_id),
         ).fetchone()
         if row:
             return row
@@ -121,9 +125,14 @@ def match_library_title(conn, names: list[str]):
 
 
 
-def search_characters_local(conn, query: str, limit=24):
-    """Personajes ya cacheados (de cualquier titulo) que casen con el nombre - para
-    marcar estrellas en bloque desde /waifus sin ir ficha por ficha."""
+def search_characters_local(conn, query: str, user_id: int, limit=24):
+    """Personajes ya cacheados de titulos EN TU biblioteca que casen con el nombre -
+    para marcar estrellas en bloque desde /waifus sin ir ficha por ficha.
+
+    Bug real (AGY, 2026-09-18): sin filtrar por user_id, el JOIN contra entries podia
+    devolver el entry_id de OTRO usuario - pulsar la estrella entonces fallaba con 404
+    (el toggle si comprueba propiedad) en vez de encontrar tu propia entry, o
+    directamente no encontrarla si tu no tenias el titulo."""
     like = f"%{query.strip()}%"
     return conn.execute(
         """SELECT characters.*, entries.id AS entry_id, titles.title AS show_title,
@@ -133,9 +142,9 @@ def search_characters_local(conn, query: str, limit=24):
            FROM characters
            JOIN titles ON titles.id = characters.title_id
            JOIN entries ON entries.title_id = titles.id
-           WHERE characters.name LIKE ? OR characters.character_name LIKE ?
+           WHERE (characters.name LIKE ? OR characters.character_name LIKE ?) AND entries.user_id = ?
            ORDER BY characters.name LIMIT ?""",
-        (like, like, limit),
+        (like, like, user_id, limit),
     ).fetchall()
 
 

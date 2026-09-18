@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Waifus</h1>
+<h1>{{ waifus_label(request.state.user_id) }}</h1>
 {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todas.</p>{% endif %}
 {# Buscador + Jugar duelos agrupados en una fila a partes iguales (Tara,
    2026-08-21: "en línea en vez de paralelo" - antes cada uno en su propio

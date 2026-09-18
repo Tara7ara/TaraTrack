@@ -13,6 +13,7 @@ from app.repo._shared import (
 )
 from app.repo.affinity import recompute_taste_profile
 from app.repo.titles import get_title, list_trackable_titles, mark_all_aired_watched, refresh_metadata, sync_episodes
+from app.repo.users import list_users
 
 
 def get_sync_status(conn):
@@ -97,34 +98,61 @@ def _sync_library_body(titles) -> int:
                     # Series empezadas (historial importado) pero sin fechas de emision
                     # cacheadas: una sincronizacion unica para que "Continuar viendo"
                     # sepa cuantos episodios faltan. Las terminadas no cambian, no se repite.
+                    # Multiusuario Fase 2 (2026-09-17): "empezada" ya no mira
+                    # episodes.watched_at (columna compartida, ya no se actualiza) -
+                    # mira si ALGUIEN (cualquier usuario) tiene algun marcado real via
+                    # episode_watches, que es lo que de verdad indica "esto se sigue".
                     started_without_dates = conn.execute(
-                        """SELECT EXISTS(SELECT 1 FROM episodes WHERE title_id = ?
-                                         AND watched_at IS NOT NULL)
+                        """SELECT EXISTS(SELECT 1 FROM episode_watches
+                                         JOIN episodes ON episodes.id = episode_watches.episode_id
+                                         WHERE episodes.title_id = ?)
                                   AND NOT EXISTS(SELECT 1 FROM episodes WHERE title_id = ?
                                                  AND air_date IS NOT NULL)""",
                         (fresh["id"], fresh["id"]),
                     ).fetchone()[0]
                     if airing or started_without_dates:
                         sync_episodes(conn, fresh)
-                        entry = conn.execute(
-                            "SELECT id, auto_watch FROM entries WHERE title_id = ?", (fresh["id"],)
-                        ).fetchone()
                         # Autover: episodios recien sincronizados que ya emitieron se
                         # marcan vistos solos, reusando el mismo "doble tick" manual -
                         # asi nunca se acumulan esperando un click en Continuar viendo.
-                        if entry and entry["auto_watch"]:
-                            mark_all_aired_watched(conn, fresh["id"])
+                        # Es un flag POR USUARIO (entries.auto_watch) - se aplica a cada
+                        # entry que lo tenga activado, no solo a "la" entry del titulo
+                        # (bug real de la primera version multiusuario: solo cogia una
+                        # entry cualquiera, sin mirar de quien era ni si habia mas).
+                        auto_entries = conn.execute(
+                            "SELECT id FROM entries WHERE title_id = ? AND auto_watch = 1", (fresh["id"],)
+                        ).fetchall()
+                        for auto_entry in auto_entries:
+                            mark_all_aired_watched(conn, auto_entry["id"])
         except Exception:
             errors += 1
             logging.warning("sync_library: fallo en %s (tmdb_id=%s)", title_row["title"], title_row["tmdb_id"])
             continue
     logging.info("sync_library: %d titulos, %d fallos", len(titles), errors)
 
-    try:
-        with get_connection() as conn:
-            n_attrs, n_scores = recompute_taste_profile(conn)
-        logging.info("recompute_taste_profile: %d atributos, %d titulos en el backtesting", n_attrs, n_scores)
-    except Exception:
-        logging.warning("recompute_taste_profile: fallo, se conserva el perfil anterior", exc_info=True)
+    # Multiusuario Fase 3 (2026-09-18): el indice de afinidad es por-usuario - la sync
+    # de fondo recalcula el de CADA usuario con al menos una nota puesta (saltarse a
+    # los que no tienen ninguna evita un recalculo vacio inutil). Un fallo en el
+    # perfil de un usuario no debe impedir que se recalculen los demas.
+    with get_connection() as conn:
+        user_ids = [u["id"] for u in list_users(conn)]
+    for user_id in user_ids:
+        try:
+            with get_connection() as conn:
+                has_ratings = conn.execute(
+                    "SELECT EXISTS(SELECT 1 FROM entries WHERE user_id = ? AND rating IS NOT NULL)", (user_id,)
+                ).fetchone()[0]
+                if not has_ratings:
+                    continue
+                n_attrs, n_scores = recompute_taste_profile(conn, user_id)
+            logging.info(
+                "recompute_taste_profile: usuario %d, %d atributos, %d titulos en el backtesting",
+                user_id, n_attrs, n_scores,
+            )
+        except Exception:
+            logging.warning(
+                "recompute_taste_profile: fallo para el usuario %d, se conserva el perfil anterior",
+                user_id, exc_info=True,
+            )
 
     return errors

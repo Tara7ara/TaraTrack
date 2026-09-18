@@ -13,11 +13,11 @@ def test_compute_weighted_rating_all_unset_returns_none():
     assert repo.compute_weighted_rating({"historia": None, "disfrute": None}) is None
 
 
-def test_next_unwatched_episode_skips_specials_and_future(conn):
+def test_next_unwatched_episode_skips_specials_and_future(conn, user_id):
     """El 'T1E6' de la tarjeta de inicio no debe ofrecer especiales (temporada 0) ni
     episodios que aun no han emitido, aunque esten antes en el orden de insercion."""
     title = repo.ensure_manual_title(conn, "show", "Test Show", 2020)
-    conn.execute("INSERT INTO entries (title_id, status) VALUES (?, 'pending')", (title["id"],))
+    conn.execute("INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'pending')", (title["id"], user_id))
     conn.execute(
         "INSERT INTO episodes (title_id, season_number, episode_number, air_date) VALUES (?, 0, 1, '2020-01-01')",
         (title["id"],),
@@ -30,15 +30,15 @@ def test_next_unwatched_episode_skips_specials_and_future(conn):
         "INSERT INTO episodes (title_id, season_number, episode_number, air_date) VALUES (?, 1, 1, '2020-01-02')",
         (title["id"],),
     )
-    result = repo.next_unwatched_episode(conn, title["id"])
+    result = repo.next_unwatched_episode(conn, title["id"], None, user_id)
     assert result is not None
     assert (result["season_number"], result["episode_number"]) == (1, 1)
 
 
-def test_move_in_ranking_swaps_neighbours(conn):
+def test_move_in_ranking_swaps_neighbours(conn, user_id):
     """_move_in_ranking la comparten listas y waifus - subir el segundo elemento debe
     intercambiarlo con el primero, no reordenar todo lo demas."""
-    list_row = repo.create_list(conn, "Test list")
+    list_row = repo.create_list(conn, "Test list", user_id)
     title1 = repo.ensure_manual_title(conn, "movie", "Uno", 2020)
     title2 = repo.ensure_manual_title(conn, "movie", "Dos", 2021)
     conn.execute("INSERT INTO entries (title_id, status) VALUES (?, 'pending')", (title1["id"],))
@@ -71,32 +71,37 @@ def test_remove_pending_entry_deletes_orphan_title(conn):
     assert conn.execute("SELECT 1 FROM titles WHERE id = ?", (title["id"],)).fetchone() is None
 
 
-def test_start_rewatch_unmarks_episodes_but_keeps_rating(conn):
-    """start_rewatch estilo Trakt (2026-08-20): ya NO pone watched_at = NULL en
-    episodios (esa fecha vieja no se pierde nunca) - en vez de eso, guarda CUANDO
-    empezo la ronda nueva (entries.rewatch_started_at) y next_unwatched_episode trata
-    como pendiente lo visto ANTES de esa fecha. Confirma que la fecha del episodio
-    sigue intacta, que se guarda la fecha de la ronda, y que no toca nota ni comentario."""
+def test_start_rewatch_unmarks_episodes_but_keeps_rating(conn, user_id):
+    """start_rewatch estilo Trakt (2026-08-20): ya NO borra el historial de
+    episode_watches (esa fecha vieja no se pierde nunca) - en vez de eso, guarda
+    CUANDO empezo la ronda nueva (entries.rewatch_started_at) y next_unwatched_episode
+    trata como pendiente lo visto ANTES de esa fecha. Confirma que el marcado viejo
+    sigue intacto, que se guarda la fecha de la ronda, y que no toca nota ni comentario."""
     title = repo.ensure_manual_title(conn, "show", "Rewatch Show", 2020)
     conn.execute(
-        """INSERT INTO entries (title_id, status, rating, watched_at)
-           VALUES (?, 'watched', 9.0, '2020-01-01T00:00:00Z')""",
-        (title["id"],),
+        """INSERT INTO entries (title_id, user_id, status, rating, watched_at)
+           VALUES (?, ?, 'watched', 9.0, '2020-01-01T00:00:00Z')""",
+        (title["id"], user_id),
     )
-    entry_id = conn.execute("SELECT id FROM entries WHERE title_id = ?", (title["id"],)).fetchone()["id"]
+    entry_id = conn.execute(
+        "SELECT id FROM entries WHERE title_id = ? AND user_id = ?", (title["id"], user_id)
+    ).fetchone()["id"]
     conn.execute(
-        """INSERT INTO episodes (title_id, season_number, episode_number, air_date, watched_at)
-           VALUES (?, 1, 1, '2020-01-01', '2020-01-01T00:00:00Z')""",
+        "INSERT INTO episodes (title_id, season_number, episode_number, air_date) VALUES (?, 1, 1, '2020-01-01')",
         (title["id"],),
     )
+    episode_id = conn.execute("SELECT id FROM episodes WHERE title_id = ?", (title["id"],)).fetchone()["id"]
+    repo._log_episode_watch(conn, episode_id, user_id, "2020-01-01T00:00:00Z")
 
     repo.start_rewatch(conn, entry_id)
 
-    episode = conn.execute("SELECT watched_at FROM episodes WHERE title_id = ?", (title["id"],)).fetchone()
+    watched_at = conn.execute(
+        "SELECT watched_at FROM episode_watches WHERE episode_id = ? AND user_id = ?", (episode_id, user_id)
+    ).fetchone()["watched_at"]
     entry = conn.execute("SELECT rating, rewatch_started_at FROM entries WHERE id = ?", (entry_id,)).fetchone()
-    assert episode["watched_at"] == "2020-01-01T00:00:00Z"
+    assert watched_at == "2020-01-01T00:00:00Z"
     assert entry["rewatch_started_at"] is not None
-    next_ep = repo.next_unwatched_episode(conn, title["id"], entry["rewatch_started_at"])
+    next_ep = repo.next_unwatched_episode(conn, title["id"], entry["rewatch_started_at"], user_id)
     assert next_ep is not None and next_ep["season_number"] == 1 and next_ep["episode_number"] == 1
     assert entry["rating"] == 9.0
     assert repo.count_plays(conn, entry_id) == 2

@@ -16,8 +16,8 @@ router = APIRouter()
 @router.get("/estadisticas", response_class=HTMLResponse)
 def estadisticas(request: Request):
     with get_connection() as conn:
-        stats = repo.get_stats(conn)
-        taste = repo.get_affinity_display(conn)
+        stats = repo.get_stats(conn, request.state.user_id)
+        taste = repo.get_affinity_display(conn, request.state.user_id)
     return templates.TemplateResponse(request, "stats.html", {"stats": stats, "taste": taste})
 
 
@@ -26,7 +26,7 @@ def estadisticas(request: Request):
 @router.get("/estadisticas/episodios-favoritos", response_class=HTMLResponse)
 def episodios_favoritos(request: Request):
     with get_connection() as conn:
-        episodios = repo.list_favorite_episodes(conn)
+        episodios = repo.list_favorite_episodes(conn, request.state.user_id)
     return templates.TemplateResponse(request, "favorite_episodes.html", {"episodios": episodios})
 
 
@@ -44,7 +44,7 @@ def mosaico(request: Request):
 @router.get("/discrepancias", response_class=HTMLResponse)
 def discrepancias(request: Request):
     with get_connection() as conn:
-        te_gusta_mas, te_gusta_menos = repo.get_rating_discrepancies(conn)
+        te_gusta_mas, te_gusta_menos = repo.get_rating_discrepancies(conn, request.state.user_id)
     return templates.TemplateResponse(
         request, "discrepancies.html", {"te_gusta_mas": te_gusta_mas, "te_gusta_menos": te_gusta_menos}
     )
@@ -55,9 +55,9 @@ def discrepancias(request: Request):
 @router.get("/resumen", response_class=HTMLResponse)
 def resumen_anual(request: Request, anio: int = 0):
     with get_connection() as conn:
-        years = repo.get_available_years(conn)
+        years = repo.get_available_years(conn, request.state.user_id)
         year = anio if anio in years else (years[0] if years else date.today().year)
-        year_stats = repo.get_year_stats(conn, year) if years else None
+        year_stats = repo.get_year_stats(conn, request.state.user_id, year) if years else None
     return templates.TemplateResponse(
         request, "yearly.html", {"years": years, "year": year, "stats": year_stats}
     )

@@ -4,6 +4,8 @@ el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
 exactamente igual que antes, este split es puramente interno."""
 import json
 
+from app.repo._shared import get_setting, set_setting
+
 
 def get_cached_season(conn, season: str, year: int):
     """Datos cacheados de una temporada/año del calendario (AniList), y cuantas horas
@@ -63,3 +65,20 @@ def set_weekday_override(conn, anilist_id: int, weekday: int):
 
 def clear_weekday_override(conn, anilist_id: int):
     conn.execute("DELETE FROM weekday_overrides WHERE anilist_id = ?", (anilist_id,))
+
+
+def get_show_anime_calendar(conn, user_id: int, default: bool) -> bool:
+    """Ajuste explicito en /ajustes (Tara, 2026-09-18: "deberia de haber una etiqueta
+    en conf que permita ver todo esto") - controla si el enlace "Calendario de
+    temporada" (TODO el anime de la temporada, no solo lo que sigues) aparece en
+    /calendario. `default` (normalmente repo.user_has_anime) solo se usa la primera
+    vez, antes de que el usuario lo toque a mano - despues manda lo que haya elegido,
+    tenga o no anime en su biblioteca."""
+    value = get_setting(conn, f"show_anime_calendar:{user_id}")
+    if value is None:
+        return default
+    return value == "1"
+
+
+def set_show_anime_calendar(conn, user_id: int, show: bool):
+    set_setting(conn, f"show_anime_calendar:{user_id}", "1" if show else "0")
