@@ -38,6 +38,28 @@ def fmt_rating(value, decimals=2):
 
 
 
+_SHOW_STATUS_ES = {
+    # "Returning Series" de TMDB NO significa "en emision ahora mismo" (sigue
+    # activo entre temporadas, ver _NO_EN_EMISION_SQL en repo) - "Continua" es
+    # la traduccion que no promete un proximo episodio inminente que puede no
+    # existir todavia. Tara, 2026-09-20: "algo para saber si hay mas temporada,
+    # si esta finalizada cancelada" - el dato ya se guardaba pero se enseñaba
+    # en ingles crudo, facil de pasar por alto en una ficha en español.
+    "Returning Series": "Continúa",
+    "In Production": "En producción",
+    "Planned": "Anunciada",
+    "Pilot": "Piloto",
+    "Ended": "Finalizada",
+    "Canceled": "Cancelada",
+}
+
+
+def fmt_show_status(value):
+    return _SHOW_STATUS_ES.get(value, value or "")
+
+
+
+
 def fmt_duration(minutes):
     """112 -> '1 h 52 min', 45 -> '45 min'."""
     if not minutes:
@@ -152,6 +174,7 @@ def poster_size(url, size):
 
 
 templates.env.filters["fmt_rating"] = fmt_rating
+templates.env.filters["fmt_show_status"] = fmt_show_status
 templates.env.filters["fmt_duration"] = fmt_duration
 templates.env.filters["fmt_day"] = fmt_day
 templates.env.filters["fmt_month"] = fmt_month

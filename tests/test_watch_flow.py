@@ -46,9 +46,9 @@ def test_toggle_episode_returns_true_only_when_marking_watched(conn, user_id):
 
 
 def test_marking_episode_directly_promotes_pending_to_watched(conn, user_id):
-    """Bug real (CLAUDE.md, entry 913/tmdb_id 325052): marcar un episodio suelto sin
-    pasar por el boton 'Marcar vista' dejaba la entry en pending para siempre, aunque
-    la serie estuviera vista entera. _promote_if_first_watch debe pasarla a watched."""
+    """Bug real: marcar un episodio suelto sin pasar por el boton 'Marcar vista'
+    dejaba la entry en pending para siempre, aunque la serie estuviera vista
+    entera. _promote_if_first_watch debe pasarla a watched."""
     title, entry, episode = _make_show_with_episode(conn, user_id)
     repo.toggle_episode(conn, episode["id"], user_id)
     assert _entry(conn, entry["id"])["status"] == "watched"

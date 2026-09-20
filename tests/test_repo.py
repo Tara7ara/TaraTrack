@@ -105,3 +105,100 @@ def test_start_rewatch_unmarks_episodes_but_keeps_rating(conn, user_id):
     assert next_ep is not None and next_ep["season_number"] == 1 and next_ep["episode_number"] == 1
     assert entry["rating"] == 9.0
     assert repo.count_plays(conn, entry_id) == 2
+
+
+def test_set_season_rating_updates_entry_average(conn, user_id):
+    """Bug real (Tara, 2026-09-20): puntuar por temporada nunca tocaba entries.rating,
+    asi que una serie puntuada solo asi se quedaba sin nota general (y atascada en
+    /puntuar para siempre, ver el test de abajo). La nota general debe ser la media
+    simple de las temporadas puntuadas, actualizada en cada guardado."""
+    title = repo.ensure_manual_title(conn, "show", "Serie por temporadas", 2020)
+    conn.execute(
+        "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')",
+        (title["id"], user_id),
+    )
+    entry_id = conn.execute("SELECT id FROM entries WHERE title_id = ?", (title["id"],)).fetchone()["id"]
+
+    repo.set_season_rating(conn, entry_id, 1, 8.0, "")
+    assert conn.execute("SELECT rating FROM entries WHERE id = ?", (entry_id,)).fetchone()["rating"] == 8.0
+
+    repo.set_season_rating(conn, entry_id, 2, 6.0, "")
+    assert conn.execute("SELECT rating FROM entries WHERE id = ?", (entry_id,)).fetchone()["rating"] == 7.0
+
+    # Reeditar una temporada ya puntuada recalcula, no acumula una tercera nota.
+    repo.set_season_rating(conn, entry_id, 1, 10.0, "")
+    assert conn.execute("SELECT rating FROM entries WHERE id = ?", (entry_id,)).fetchone()["rating"] == 8.0
+
+
+def test_next_review_item_ignores_stale_next_episode_date_already_past(conn, user_id):
+    """Bug real (Tara, 2026-09-20): 'he acabado un par de series de estos semanales,
+    no me han salido a puntuar'. next_episode_air_date es un cache que solo se
+    refresca con la sync de 12h - si ese campo sigue apuntando a la fecha de HOY (el
+    episodio que Tara acaba de ver) porque el sync todavia no ha corrido, el criterio
+    viejo (solo IS NULL) excluia la serie de /puntuar aunque no quedara nada
+    pendiente de verdad. Una fecha de 'proximo episodio' ya pasada no debe bloquear."""
+    title = repo.ensure_manual_title(conn, "show", "Serie semanal", 2020)
+    conn.execute("UPDATE titles SET next_episode_air_date = date('now') WHERE id = ?", (title["id"],))
+    conn.execute(
+        "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')",
+        (title["id"], user_id),
+    )
+    entry_id = conn.execute("SELECT id FROM entries WHERE title_id = ?", (title["id"],)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO episodes (title_id, season_number, episode_number, air_date) VALUES (?, 1, 1, '2020-01-01')",
+        (title["id"],),
+    )
+    episode_id = conn.execute("SELECT id FROM episodes WHERE title_id = ?", (title["id"],)).fetchone()["id"]
+    repo._log_episode_watch(conn, episode_id, user_id, "2020-01-01T00:00:00Z")
+
+    item = repo.next_review_item(conn, user_id, [])
+    assert item is not None and item["id"] == entry_id
+    assert repo.count_review_queue(conn, user_id) == 1
+
+
+def test_new_completed_season_resurfaces_in_review_queue(conn, user_id):
+    """Bug real (Tara, 2026-09-20): 'solo ha sido Hell Mode, si sale una tercera
+    temporada no puedo puntuar, hay que dar una vuelta a la tuerca'. Una vez
+    set_season_rating rellena entries.rating con la media (test de arriba), la
+    entry deja de tener rating NULL - sin este mecanismo, una temporada nueva que
+    se complete despues no volveria a avisar nunca en /puntuar. Debe resurgir con
+    `season_number` puesto al numero de la temporada nueva, no la vieja ya puntuada."""
+    title = repo.ensure_manual_title(conn, "show", "Serie con temporada nueva", 2020)
+    conn.execute(
+        "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')",
+        (title["id"], user_id),
+    )
+    entry_id = conn.execute("SELECT id FROM entries WHERE title_id = ?", (title["id"],)).fetchone()["id"]
+
+    conn.execute(
+        "INSERT INTO episodes (title_id, season_number, episode_number, air_date) VALUES (?, 1, 1, '2020-01-01')",
+        (title["id"],),
+    )
+    s1e1 = conn.execute("SELECT id FROM episodes WHERE title_id = ? AND season_number = 1", (title["id"],)).fetchone()["id"]
+    repo._log_episode_watch(conn, s1e1, user_id, "2020-01-02T00:00:00Z")
+    repo.set_season_rating(conn, entry_id, 1, 8.0, "")
+
+    # Solo hay una temporada, ya puntuada - no deberia salir nada en la cola.
+    assert repo.count_review_queue(conn, user_id) == 0
+    assert repo.next_review_item(conn, user_id, []) is None
+    assert conn.execute("SELECT rating FROM entries WHERE id = ?", (entry_id,)).fetchone()["rating"] == 8.0
+
+    # Sale (y se ve entera) una temporada 2 nueva, todavia sin puntuar.
+    conn.execute(
+        "INSERT INTO episodes (title_id, season_number, episode_number, air_date) VALUES (?, 2, 1, '2026-01-01')",
+        (title["id"],),
+    )
+    s2e1 = conn.execute("SELECT id FROM episodes WHERE title_id = ? AND season_number = 2", (title["id"],)).fetchone()["id"]
+    repo._log_episode_watch(conn, s2e1, user_id, "2026-01-02T00:00:00Z")
+
+    assert repo.count_review_queue(conn, user_id) == 1
+    item = repo.next_review_item(conn, user_id, [])
+    assert item is not None
+    assert item["id"] == entry_id
+    assert item["season_number"] == 2
+
+    # Puntuarla la saca de la cola otra vez y la nota general pasa a ser la media de las 2.
+    repo.set_season_rating(conn, entry_id, 2, 6.0, "")
+    assert repo.count_review_queue(conn, user_id) == 0
+    assert repo.next_review_item(conn, user_id, []) is None
+    assert conn.execute("SELECT rating FROM entries WHERE id = ?", (entry_id,)).fetchone()["rating"] == 7.0

@@ -3,7 +3,11 @@ __pycache__/
 .venv/
 data/
 *.db
+*.db-shm
+*.db-wal
 .env
+Backup/
+deploy-snapshots/
 app/static/posters/*
 !app/static/posters/.gitkeep
 app/static/uploads/*

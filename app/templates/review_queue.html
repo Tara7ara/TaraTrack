@@ -19,13 +19,23 @@
     </a>
     <div class="review-info">
         <h2>{{ entry.title }}</h2>
-        <div class="year">{{ entry.year or "—" }} · {{ "Serie" if entry.type == "show" else "Película" }}</div>
+        <div class="year">
+            {{ entry.year or "—" }} · {{ "Serie" if entry.type == "show" else "Película" }}
+            {%- if entry.season_number %} · Temporada {{ entry.season_number }} nueva{% endif %}
+        </div>
     </div>
     <div class="review-actions">
+        {% if entry.season_number %}
+        <a class="btn" href="/titulo/{{ entry.tmdb_id }}/{{ entry.type }}/temporada/{{ entry.season_number }}/puntuar">Puntuar esta temporada</a>
+        {% else %}
         <a class="btn" href="/marcar-vista/{{ entry.tmdb_id }}/{{ entry.type }}?volver=puntuar">Puntuar esta</a>
+        {% endif %}
         <a class="btn secondary" href="/puntuar?excluir={{ excluir_siguiente }}">Paso, no me acuerdo</a>
     </div>
     <form method="post" action="/puntuar/{{ entry.id }}/no-recuerdo" class="review-actions" style="margin-top:0.5rem">
+        {% if entry.season_number %}
+        <input type="hidden" name="season_number" value="{{ entry.season_number }}">
+        {% endif %}
         <button class="secondary">No me acuerdo de nada, 5 y ya</button>
     </form>
 </div>

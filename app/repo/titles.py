@@ -296,6 +296,17 @@ def set_season_rating(conn, entry_id: int, season_number: int, rating: float, co
             categories.get("musica"), categories.get("disfrute"),
         ),
     )
+    # Bug real (Tara, 2026-09-20: "he decidido puntuar por temporada y no ha hecho
+    # un promedio"): puntuar por temporada nunca tocaba entries.rating (la nota
+    # general), asi que una serie puntuada solo por temporadas se quedaba con
+    # rating NULL para siempre - sin nota general que enseñar junto a "Internet: X"
+    # y, peor, seguia cayendo en /puntuar sin fin (next_review_item exige
+    # entries.rating IS NULL). La nota general de una serie puntuada por temporada
+    # pasa a ser la media simple de sus season_ratings, recalculada en cada guardado.
+    avg = conn.execute(
+        "SELECT AVG(rating) AS avg FROM season_ratings WHERE entry_id = ?", (entry_id,)
+    ).fetchone()["avg"]
+    conn.execute("UPDATE entries SET rating = ? WHERE id = ?", (round(avg, 2), entry_id))
 
 
 
@@ -1258,11 +1269,21 @@ def list_all_posters(conn):
 # bug real, Tara: "me parecen demasiadas". Ahora excluye solo si HAY un proximo
 # episodio con fecha real - eso si es "en emision de verdad", coincide con el mismo
 # criterio que ya usa in_season en _HOME_SHOWS_SQL.
-_NO_EN_EMISION_SQL = "titles.next_episode_air_date IS NULL"
+# Bug real (Tara, 2026-09-20: "he acabado un par de series de estos semanales, no
+# me han salido a puntuar"): next_episode_air_date es un cache de TMDB que solo se
+# refresca con sync_library (cada 12h o al pulsar "Sincronizar") - si Tara ve y
+# puntua el episodio el mismo dia que emite, ese campo sigue apuntando a la fecha
+# de HOY (o una ya pasada) hasta el proximo sync, y "IS NULL" da falso aunque ya
+# no quede ningun episodio pendiente de verdad. Una fecha de "proximo episodio"
+# que ya paso no es un proximo episodio real - _SIN_PENDIENTES_SQL ya se encarga
+# de no dejar pasar la serie si ese episodio de hoy todavia no esta visto.
+_NO_EN_EMISION_SQL = (
+    "(titles.next_episode_air_date IS NULL OR date(titles.next_episode_air_date) <= date('now'))"
+)
 
 # Bug real (Tara, 2026-08-21): Dorohedoro entro en /puntuar con solo 4 de 23
 # episodios emitidos vistos - entries.status pasa a 'watched' con solo marcar el
-# PRIMER episodio (decision de diseño de siempre, ver CLAUDE.md), asi que sin
+# PRIMER episodio (decision de diseño de siempre), asi que sin
 # esta condicion cualquier serie "empezada y abandonada" (o simplemente a medio
 # ver) que ademas no este emitiendo AHORA MISMO (_NO_EN_EMISION_SQL) cae en la
 # cola de puntuar antes de que Tara la haya terminado de verdad. Mismo criterio
@@ -1289,16 +1310,77 @@ _SIN_PENDIENTES_SQL = """(
 
 
 
+def _entry_unrated_season(conn, entry_id: int, title_id: int, user_id: int, rewatch_started_at) -> int | None:
+    """Para una entry que YA usa puntuacion por temporada (tiene >=1 fila en
+    season_ratings - set_season_rating, ronda 2026-09-18): la temporada mas baja
+    con TODOS sus episodios cacheados vistos pero sin nota de temporada todavia,
+    o None si no hay ninguna (o si esta entry no usa puntuacion por temporada).
+    Mismo criterio de "temporada completa" que ya usa la barra de progreso de
+    title_detail.html (vistos == episodios|length de esa temporada), no exige
+    que la temporada haya "terminado de emitir" del todo - una serie puede
+    puntuarse temporada a temporada segun se pone al dia, igual que ya deja
+    el boton "Puntuar temp." de la ficha."""
+    rated = {
+        r["season_number"]
+        for r in conn.execute("SELECT season_number FROM season_ratings WHERE entry_id = ?", (entry_id,)).fetchall()
+    }
+    if not rated:
+        return None
+    seasons: dict[int, list[int]] = {}
+    for row in conn.execute(
+        "SELECT id, season_number FROM episodes WHERE title_id = ? AND season_number > 0", (title_id,)
+    ).fetchall():
+        seasons.setdefault(row["season_number"], []).append(row["id"])
+    for season_number in sorted(s for s in seasons if s not in rated):
+        ep_ids = seasons[season_number]
+        placeholders = ",".join("?" * len(ep_ids))
+        query = f"""SELECT COUNT(DISTINCT episode_id) AS c FROM episode_watches
+                    WHERE user_id = ? AND episode_id IN ({placeholders})"""
+        params = [user_id, *ep_ids]
+        if rewatch_started_at is not None:
+            query += " AND watched_at >= ?"
+            params.append(rewatch_started_at)
+        watched = conn.execute(query, params).fetchone()["c"]
+        if watched == len(ep_ids):
+            return season_number
+    return None
+
+
+def _season_review_candidates(conn, user_id: int):
+    """Entries de ESTE usuario que ya usan puntuacion por temporada - candidatas a
+    tener una temporada nueva completa sin puntuar todavia (ver _entry_unrated_season)."""
+    return conn.execute(
+        """SELECT DISTINCT entries.id, entries.title_id, entries.rewatch_started_at,
+                  titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id
+           FROM entries
+           JOIN season_ratings ON season_ratings.entry_id = entries.id
+           JOIN titles ON titles.id = entries.title_id
+           WHERE entries.user_id = ? AND entries.status = 'watched'""",
+        (user_id,),
+    ).fetchall()
+
+
 def count_review_queue(conn, user_id: int) -> int:
     """Vistas importadas de ESTE usuario sin nota todavia - la 'deuda de datos' de la
     Fase 2. No cuenta series que siguen en emision (ver _NO_EN_EMISION_SQL) ni series a
-    medio ver con episodios emitidos pendientes (ver _SIN_PENDIENTES_SQL)."""
-    return conn.execute(
+    medio ver con episodios emitidos pendientes (ver _SIN_PENDIENTES_SQL). Suma tambien
+    las series que YA tienen nota general (puntuadas por temporada, ver
+    set_season_rating) pero a las que les ha salido una temporada nueva completa sin
+    puntuar todavia - Tara, 2026-09-20: "si sale una tercera temporada no puedo
+    puntuar" - sin esto, una vez la media de temporadas rellena entries.rating, la
+    serie sale de esta cola para siempre y nada avisa de que hay una temporada nueva."""
+    base = conn.execute(
         f"""SELECT count(*) AS c FROM entries JOIN titles ON titles.id = entries.title_id
            WHERE entries.status = 'watched' AND entries.rating IS NULL AND entries.user_id = ?
              AND {_NO_EN_EMISION_SQL} AND {_SIN_PENDIENTES_SQL}""",
         (user_id,),
     ).fetchone()["c"]
+    extra = sum(
+        1
+        for row in _season_review_candidates(conn, user_id)
+        if _entry_unrated_season(conn, row["id"], row["title_id"], user_id, row["rewatch_started_at"]) is not None
+    )
+    return base + extra
 
 
 
@@ -1306,7 +1388,11 @@ def count_review_queue(conn, user_id: int) -> int:
 def next_review_item(conn, user_id: int, excluir_ids: list[int]):
     """Una entrada al azar de ESTE usuario sin nota, excluyendo las ya pasadas en esta
     ronda de /puntuar, las series que siguen en emision (ver _NO_EN_EMISION_SQL) y las
-    que aun tienen episodios emitidos sin ver (ver _SIN_PENDIENTES_SQL)."""
+    que aun tienen episodios emitidos sin ver (ver _SIN_PENDIENTES_SQL). Si no hay
+    ninguna de esas, cae a una serie puntuada por temporada con una temporada nueva
+    completa sin puntuar (ver count_review_queue) - el dict resultante lleva
+    `season_number` (None en el caso normal) para que la plantilla sepa si debe
+    enlazar al examen general o a /temporada/{n}/puntuar."""
     query = f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id
                FROM entries JOIN titles ON titles.id = entries.title_id
                WHERE entries.status = 'watched' AND entries.rating IS NULL AND entries.user_id = ?
@@ -1317,7 +1403,23 @@ def next_review_item(conn, user_id: int, excluir_ids: list[int]):
         query += f" AND entries.id NOT IN ({placeholders})"
         params.extend(excluir_ids)
     query += " ORDER BY RANDOM() LIMIT 1"
-    return conn.execute(query, params).fetchone()
+    row = conn.execute(query, params).fetchone()
+    if row is not None:
+        result = dict(row)
+        result["season_number"] = None
+        return result
+
+    for candidate in _season_review_candidates(conn, user_id):
+        if candidate["id"] in excluir_ids:
+            continue
+        season_number = _entry_unrated_season(
+            conn, candidate["id"], candidate["title_id"], user_id, candidate["rewatch_started_at"]
+        )
+        if season_number is not None:
+            result = dict(candidate)
+            result["season_number"] = season_number
+            return result
+    return None
 
 
 

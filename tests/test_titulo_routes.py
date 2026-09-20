@@ -106,7 +106,7 @@ def test_marcar_siguiente_muestra_aviso_de_comentar(client):
     r = client.post(f"/entrada/{entry['id']}/siguiente")
     assert r.status_code == 200
     assert 'id="comment-toast"' in r.text
-    assert "💬 Comentar" in r.text
+    assert ">Comentar<" in r.text
 
 
 def _user_id(conn):

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Despliegue de TaraTrack: valida en local, saca un snapshot de seguridad del
 # servidor, sincroniza, reconstruye el contenedor y verifica que responde -
-# todo en un solo comando en vez del ritual manual documentado en CLAUDE.md
+# todo en un solo comando en vez del ritual manual de siempre
 # (rsync + build + docker rm -f + up -d), que ya ha fallado una vez de verdad
 # por un rsync mal apuntado que aplano rutas dentro de app/ (ronda 2026-08-21).
 #

@@ -25,7 +25,7 @@
         <div class="alt-title">{{ alt_candidates|join(" // ") }}</div>
         {% endif %}
         <div class="meta-row">
-            <span class="meta-chip">{{ title_row.year or "—" }}{% if title_row.show_status %} · {{ title_row.show_status }}{% endif %}</span>
+            <span class="meta-chip">{{ title_row.year or "—" }}{% if title_row.show_status %} · {{ title_row.show_status|fmt_show_status }}{% endif %}</span>
             {% if entry and entry.rating is not none %}
             {# Tara, 2026-08-21: "si tienen mi nota poner mi nota en la ficha
                tecnica... similar como el de internet" - mismo chip que "Internet: X",
@@ -215,7 +215,7 @@
    unica pagina dedicada por completo al titulo, recortar la sinopsis no ahorra
    nada (Tara, 2026-08-21: "no tiene sentido y menos que solo ocupe 1/3 de la
    pantalla") - se enseña siempre entera aqui. max-width:70ch de .overview se
-   mantiene (regla de legibilidad de texto continuo, ver CLAUDE.md diseño visual). #}
+   mantiene (regla de legibilidad de texto continuo). #}
 <div class="synopsis-block">
     <p class="overview">{{ title_row.overview }}</p>
 </div>

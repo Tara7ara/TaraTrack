@@ -7,7 +7,7 @@
 <div id="comment-toast" hx-swap-oob="innerHTML">
     <div class="comment-toast" data-autoclose>
         <span>T{{ season_number }}E{{ episode_number }} marcado</span>
-        <a href="/titulo/{{ tmdb_id }}/{{ type }}?comentar={{ episode_id }}#ep-{{ episode_id }}">💬 Comentar</a>
+        <a href="/titulo/{{ tmdb_id }}/{{ type }}?comentar={{ episode_id }}#ep-{{ episode_id }}">Comentar</a>
         <button type="button" onclick="this.closest('.comment-toast').remove()" aria-label="Cerrar">×</button>
     </div>
     <script>
