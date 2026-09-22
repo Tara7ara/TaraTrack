@@ -34,7 +34,7 @@ docker cp "taratrack:/srv/app/static/avatars/." "$BACKUP_DIR/avatars-${STAMP}/"
 
 find "$BACKUP_DIR" -maxdepth 1 -mtime +${KEEP_DAYS} \( -name 'taratrack-*.db' -o -name 'posters-*' -o -name 'uploads-*' -o -name 'profiles-*' -o -name 'avatars-*' \) -exec rm -rf {} +
 
-# NOTA: el servidor no tiene montado el NAS (solo el PC de Tara lo tiene).
+# NOTA: el servidor no tiene montado el NAS (solo el PC del usuario lo tiene).
 # Este directorio debe estar cubierto por la rutina de Synology Active Backup
 # for Business del servidor (ver Apuntes/Cosas_de_casa/NAS/Copias de Seguridad.md) —
 # si esa rutina hace backup bare-metal completo del servidor, ya incluye esta carpeta

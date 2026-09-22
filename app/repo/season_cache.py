@@ -13,7 +13,7 @@ def get_cached_season(conn, season: str, year: int):
     JSON de golpe (no una tabla relacional por item) porque es cache desechable, no
     algo sobre lo que hacer SQL - y los tags llevan tuplas (nombre, rank) que JSON ya
     serializa bien como listas de 2, sin necesitar columnas propias.
-    Pedido por Tara (2026-08-13): "el calendario de anilist se cae mucho" - antes cada
+    Pedido por el usuario (2026-08-13): "el calendario de anilist se cae mucho" - antes cada
     visita hacia 2-3 peticiones en vivo a AniList, un solo hipo tumbaba la pagina
     entera. Con esto la pagina no depende de que AniList responda AHORA MISMO."""
     row = conn.execute(
@@ -68,7 +68,7 @@ def clear_weekday_override(conn, anilist_id: int):
 
 
 def get_show_anime_calendar(conn, user_id: int, default: bool) -> bool:
-    """Ajuste explicito en /ajustes (Tara, 2026-09-18: "deberia de haber una etiqueta
+    """Ajuste explicito en /ajustes (El usuario, 2026-09-18: "deberia de haber una etiqueta
     en conf que permita ver todo esto") - controla si el enlace "Calendario de
     temporada" (TODO el anime de la temporada, no solo lo que sigues) aparece en
     /calendario. `default` (normalmente repo.user_has_anime) solo se usa la primera

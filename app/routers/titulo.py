@@ -35,7 +35,7 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
                 except Exception:
                     continue
         repo.mark_watched_quick(conn, entry["id"], title_row)
-        # Bug real (2026-09-17, Tara: "marco vista y no se pone en continuar viendo,
+        # Bug real (2026-09-17, el usuario: "marco vista y no se pone en continuar viendo,
         # tengo que refrescar"): marcar el primer episodio desde /pendientes quita la
         # fila de ahi (swipe.js, via htmx:afterRequest) pero nunca inyectaba la
         # tarjeta nueva en el carrusel de "Continuar viendo" - solo un reload la traia.
@@ -45,7 +45,7 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
         # el hx-swap-oob simplemente no encuentra "#continuar-carousel" y no hace nada.
         #
         # Bug real encontrado en pruebas ANTES de desplegar a produccion (pillado con
-        # una captura de Tara: la tarjeta salia "hiper mega grande", portada y titulo
+        # una captura del usuario: la tarjeta salia "hiper mega grande", portada y titulo
         # sueltos en vez de dentro de la tarjeta): con estilos de swap distintos de
         # "outerHTML" (aqui "afterbegin"), htmx DESCARTA el propio elemento que lleva
         # hx-swap-oob y solo inserta sus HIJOS (confirmado leyendo htmx.min.js: la
@@ -197,7 +197,7 @@ def marcar_vista_submit(
 
 
 @router.get("/titulo/{tmdb_id}/{type}", response_class=HTMLResponse)
-def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0):
+def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0, apunte: int = 0):
     """Unica ruta que llamaba a TMDB sin ningun try/except: abrir por primera vez la
     ficha de algo (ensure_entry pide get_details) daba un 500 en la cara si TMDB iba
     lento o daba un hipo, mismo problema ya resuelto en /buscar y /vista pero que
@@ -285,6 +285,13 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0)
             # pendientes.py) - abre solo el hilo de ESE episodio, con el enlace
             # llevando ademas a "#ep-{id}" para que el navegador haga scroll solo.
             ep["open_debate"] = comentar == ep["id"]
+            # "Comentar" del aviso "¿comentas?" (Continuar viendo/Pendientes) - El usuario,
+            # 2026-09-22: prefiere que abra el comentario PRIVADO primero, no el debate
+            # publico (comparten la ficha pero son cosas distintas, ver episode_row.html).
+            # Parametro separado de "comentar" a proposito: ese lo usa tambien
+            # /comentarios/siguiente (aviso de comentarios AJENOS sin leer), que si debe
+            # seguir abriendo el debate.
+            ep["open_note"] = apunte == ep["id"]
         is_favorite = repo.is_entry_favorite(conn, entry["id"], request.state.user_id) if entry else False
 
         try:
@@ -346,7 +353,7 @@ POSTER_CONTENT_TYPES = config.POSTER_CONTENT_TYPES
 
 @router.post("/titulo/{tmdb_id}/{type}/portada", response_class=HTMLResponse)
 async def cambiar_portada(request: Request, tmdb_id: int, type: str, imagen: UploadFile = File(...)):
-    """Portada propia subida a mano (Tara: TMDB no siempre tiene la que quiere, o
+    """Portada propia subida a mano (El usuario: TMDB no siempre tiene la que quiere, o
     ninguna) - sobrescribe el fichero en disco con el mismo convenio de nombre que ya
     usan ensure_title/create_manual_entry, para que el resto del codigo no necesite
     saber que esta portada es manual."""
@@ -371,7 +378,7 @@ async def cambiar_portada(request: Request, tmdb_id: int, type: str, imagen: Upl
 @router.post("/titulo/{tmdb_id}/{type}/dia-emision", response_class=HTMLResponse)
 def corregir_dia_emision(request: Request, tmdb_id: int, type: str, weekday: str = Form("")):
     """Pisa a mano el dia de la semana que enseña /calendario/anual para este titulo
-    (Tara, notas.txt: "lunes Grand Blue pero en el calendario sale los martes") - el
+    (El usuario, notas.txt: "lunes Grand Blue pero en el calendario sale los martes") - el
     calculo automatico (app/anime.py) usa UTC, que puede desplazar un dia respecto al
     dia de emision real en Japon para animes de madrugada. weekday vacio = quitar la
     correccion y volver al calculo automatico."""
@@ -385,6 +392,32 @@ def corregir_dia_emision(request: Request, tmdb_id: int, type: str, weekday: str
             # <select> real solo manda 0-6, pero eso no protege el endpoint en si).
             elif weekday.strip().lstrip("-").isdigit():
                 repo.set_weekday_override(conn, title_row["anilist_id"], int(weekday))
+    return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
+
+
+@router.post("/titulo/{tmdb_id}/{type}/desfase-emision", response_class=HTMLResponse)
+def corregir_desfase_emision(request: Request, tmdb_id: int, type: str, dias: str = Form("0")):
+    """Corrige a mano el desfase entre la fecha de emision que cachea TMDB y la fecha
+    real (El usuario, 2026-09-22: "queria que saliera en pendiente de forma normal los
+    lunes en vez de los martes" - Grand Blue emite el lunes en Japon pero TMDB lo
+    guarda con fecha de martes). Distinto de "Corregir dia de emision" de arriba, que
+    solo pisa el TEXTO del calendario de temporada por AniList (una pagina aparte);
+    esto corrige la fecha real que usan /pendientes, Continuar viendo y el resto de
+    la app para decidir cuando algo "ya emitio". Resync inmediato tras guardar, para
+    no esperar hasta 12h a que la sync de fondo recalcule con la fecha corregida."""
+    dias_str = dias.strip()
+    if not dias_str.lstrip("-").isdigit():
+        return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
+    with get_connection() as conn:
+        title_row = repo.get_title(conn, tmdb_id)
+        if title_row:
+            repo.set_air_date_offset(conn, title_row["id"], int(dias_str))
+            fresh = repo.get_title(conn, tmdb_id)
+            try:
+                repo.refresh_metadata(conn, fresh)
+                repo.sync_episodes(conn, repo.get_title(conn, tmdb_id))
+            except Exception:
+                pass
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
 
 
@@ -437,7 +470,7 @@ def quitar_nota(request: Request, entry_id: int):
 def corregir_fecha_visionado(request: Request, entry_id: int, fecha: str = Form(...)):
     """Corrige la fecha de visionado de algo YA marcado como vista, sin tocar nota ni
     comentario - para series encontradas con la fecha de hoy en vez de cuando se vieron
-    de verdad (Tara: 'mis estadisticas se han disparado en 2026 cuando no es cierto')."""
+    de verdad (El usuario: 'mis estadisticas se han disparado en 2026 cuando no es cierto')."""
     with get_connection() as conn:
         entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.set_watched_at(conn, entry_id, fecha)
@@ -553,7 +586,7 @@ def _episode_row_response(request: Request, conn, episode_id: int, oob: str = ""
 @router.post("/episodio/{episode_id}/toggle", response_class=HTMLResponse)
 def episodio_toggle(request: Request, episode_id: int):
     with get_connection() as conn:
-        # Tara, 2026-09-18 ("estilo tvtime"): al marcar visto (no al desmarcar), el
+        # El usuario, 2026-09-18 ("estilo tvtime"): al marcar visto (no al desmarcar), el
         # hilo de debate de ESE episodio se abre solo - es el momento en que se te
         # ocurre el comentario, no una vuelta a por el despues.
         just_watched = repo.toggle_episode(conn, episode_id, request.state.user_id)
@@ -609,7 +642,7 @@ def episodio_debate(request: Request, episode_id: int, body: str = Form("")):
 
 @router.get("/comentarios/siguiente")
 def comentarios_siguiente(request: Request):
-    """A donde lleva el aviso del nav (Tara, 2026-09-18: "estilo tvtime") - salta al
+    """A donde lleva el aviso del nav (El usuario, 2026-09-18: "estilo tvtime") - salta al
     comentario ajeno mas antiguo que aun no has visto y marca todo como visto de
     golpe (mismo criterio simple que el resto de contadores de la app, un "ponerse al
     dia", no seguimiento fino comentario a comentario)."""
@@ -626,7 +659,7 @@ def comentarios_siguiente(request: Request):
 
 @router.post("/episodio/{episode_id}/debate/{comment_id}/borrar", response_class=HTMLResponse)
 def episodio_debate_borrar(request: Request, episode_id: int, comment_id: int):
-    """Fase 5 (Tara, 2026-09-18): cada uno borra su propio comentario de debate;
+    """Fase 5 (El usuario, 2026-09-18): cada uno borra su propio comentario de debate;
     con `is_admin`, tambien el de cualquiera (moderacion basica del hilo)."""
     with get_connection() as conn:
         repo.delete_episode_comment(conn, comment_id, request.state.user_id, request.state.is_admin)

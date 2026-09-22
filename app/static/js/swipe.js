@@ -34,7 +34,7 @@ function setupSwipe(row) {
         setTimeout(() => row.remove(), 260);
     }
 
-    // Bug real (Tara, 2026-09-18: "quito una serie de pendientes, he tenido que
+    // Bug real (El usuario, 2026-09-18: "quito una serie de pendientes, he tenido que
     // recargar la web"): el boton "Marcar vista" existe desde el primer render y un
     // listener puesto aqui encima le llega bien, pero "quitar de pendientes" pasa
     // antes por una confirmacion en dos pasos (ver partials/entry_actions.html,

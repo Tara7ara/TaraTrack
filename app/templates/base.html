@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
     <meta name="theme-color" content="#0f0f0f">
-    {# Tipografia de titulares (segundo analisis, punto 5) - elegida por Tara entre
+    {# Tipografia de titulares (segundo analisis, punto 5) - elegida por el usuario entre
        3 opciones mostradas en un comparador aparte. Solo h1/h2/marca la usan, el
        resto de la app sigue en system-ui. #}
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -53,7 +53,7 @@
                 {% if _comentarios_nuevos %}<span class="nav-more-dot" title="Hay comentarios nuevos"></span>{% endif %}
             </summary>
             <div class="topnav-more-menu">
-                {# Tara, 2026-09-18: "¿por qué está si te lleva a pendientes? no metas
+                {# El usuario, 2026-09-18: "¿por qué está si te lleva a pendientes? no metas
                    trabajo al usuario final" - sin comentarios nuevos, el enlace no
                    llevaba a ningun sitio util (caia en /pendientes) - mejor no
                    enseñarlo cuando no hay nada que ver, en vez de un clic muerto. #}
@@ -76,7 +76,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </a>
     </nav>
-    {# Contenedor fijo para el aviso "¿comentas?" (Tara, 2026-09-18) - vacio salvo
+    {# Contenedor fijo para el aviso "¿comentas?" (El usuario, 2026-09-18) - vacio salvo
        cuando una respuesta htmx lo rellena via hx-swap-oob (ver
        partials/comment_toast.html), asi que existe en toda la app aunque marques el
        episodio desde /pendientes o desde la propia ficha. #}
@@ -97,7 +97,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             <span>Vistas</span>
         </a>
-        {# Puntuar sale de la fila principal del bottomnav (Tara, iPhone 17
+        {# Puntuar sale de la fila principal del bottomnav (El usuario, iPhone 17
            Pro: "en la barra de abajo quita el puntuar y ponlo en mas") - pasa
            a ser un enlace mas dentro de "Mas", junto con el resto de rutas
            puntuales/de exploracion. El icono de "Mas" ahora tambien se marca

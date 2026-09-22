@@ -68,7 +68,7 @@ query ($search: String) {
 
 def _extract_tags(media: dict) -> list[tuple[str, int]]:
     """Tags de AniList relevantes (Isekai, Time Travel...) - mas finos que los generos
-    fijos (Action/Fantasy/...), pedido por Tara: "genero fav es romance e isekai... no
+    fijos (Action/Fantasy/...), pedido por el usuario: "genero fav es romance e isekai... no
     lo veo reflejado" - Isekai no existe como genero en AniList, solo como tag.
     Filtrado a rank>=60 (AniList da un % de cuanto aplica el tag, muchos son ruido de
     <20%) y sin spoilers generales (serian señal de trama, no de gusto), tope 8 por
@@ -102,7 +102,7 @@ def _extract_relations(media: dict) -> tuple[list[int], list[int]]:
 
 def match_anilist_basic(title: str) -> dict | None:
     """Id, generos y estudio principal de AniList para un titulo YA en la biblioteca -
-    construye el perfil de gustos de Tara (genero/estudio vs sus notas, ver
+    construye el perfil de gustos del usuario (genero/estudio vs sus notas, ver
     repo.build_taste_profile) para la prediccion "% que te gustara" del calendario de
     temporada. Solo el mejor match por texto - mismo riesgo de despiste de idioma que
     search_anime/search_characters (ver notas ahi); aceptable porque el perfil no
@@ -132,7 +132,7 @@ def match_anilist_basic(title: str) -> dict | None:
         "studio": studios[0] if studios else None,
         # Titulo romaji/ingles de AniList - subtitulo en la ficha tecnica para poder
         # buscar el anime en jkanime/tioanime/etc, que no conocen el titulo en
-        # español de TMDB ni tienen por que tener el kanji a mano (Tara, 2026-08-14).
+        # español de TMDB ni tienen por que tener el kanji a mano (El usuario, 2026-08-14).
         "title_romaji": title.get("romaji"),
         "title_english": title.get("english"),
         # Solo nombres aqui - esto va al perfil (titulos YA puntuados), el rank de
@@ -140,7 +140,7 @@ def match_anilist_basic(title: str) -> dict | None:
         "tags": [name for name, _rank in _extract_tags(media)],
         # Para poder predecir sobre pendientes (no solo sobre el calendario de
         # temporada): con esto guardado no hace falta re-consultar AniList cada vez
-        # que se calcula la prediccion de un pendiente (Tara, 2026-08-13: "aplicar la
+        # que se calcula la prediccion de un pendiente (El usuario, 2026-08-13: "aplicar la
         # prediccion a mis pendientes").
         "prequel_ids": prequel_ids,
         "cross_rec_ids": cross_rec_ids,
@@ -149,7 +149,7 @@ def match_anilist_basic(title: str) -> dict | None:
 
 def get_seasonal_anime(season: str, year: int) -> list[dict]:
     """Todo el anime de esa temporada/año segun AniList - calendario de descubrimiento
-    (Tara: "para no tener que buscarlo en calendarioanime.com", 2026-08-13), no
+    (El usuario: "para no tener que buscarlo en calendarioanime.com", 2026-08-13), no
     limitado a lo que ya sigue en su biblioteca. Solo formatos serializados (TV/
     TV_SHORT/ONA) - las peliculas y specials no tienen "dia de la semana" y son ruido
     para este calendario en concreto. Pagina hasta 3 tandas (150 titulos) de sobra
@@ -185,7 +185,7 @@ def get_seasonal_anime(season: str, year: int) -> list[dict]:
                     # animes sin licencia occidental, nunca la traduccion al ingles
                     # de AniList - sin este segundo candidato, /calendario/abrir no
                     # encontraba nada bajo ningun titulo calculado desde el ingles
-                    # (caso real, Tara: "You and I Are Polar Opposites Season 2").
+                    # (caso real, el usuario: "You and I Are Polar Opposites Season 2").
                     "title_romaji": title.get("romaji"),
                     "tags": _extract_tags(m),
                     "image": (m.get("coverImage") or {}).get("large"),
@@ -200,7 +200,7 @@ def get_seasonal_anime(season: str, year: int) -> list[dict]:
                     # en emision - una serie YA TERMINADA (frecuente en la temporada de
                     # invierno cuando ya estamos en verano) se queda sin él y caía
                     # siempre en "Sin día fijo" aunque sí tuviera un día fijo real
-                    # (bug real, Tara 2026-08-13). De respaldo, el día del estreno
+                    # (bug real, el usuario 2026-08-13). De respaldo, el día del estreno
                     # (startDate) - el día de la semana no cambia entre el primer
                     # episodio y el resto salvo pausas puntuales.
                     "weekday": (

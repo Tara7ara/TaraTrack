@@ -7,7 +7,7 @@ modelos ni librerias de optimizacion - un grid pequeño y una medida de error ho
 mismo, igual que hace recompute_taste_profile).
 
 Cada combinacion evaluada relanza el pipeline completo de afinidad (~1 min con la
-biblioteca actual de Tara) - el grid por defecto (9 combinaciones) tarda del orden de
+biblioteca actual del usuario) - el grid por defecto (9 combinaciones) tarda del orden de
 10-15 minutos. NO toca la base de datos ni los pesos guardados en /ajustes; solo
 imprime el resultado. Si el resultado convence, aplicar los valores a mano desde
 /ajustes.

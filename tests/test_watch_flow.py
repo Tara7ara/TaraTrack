@@ -37,7 +37,7 @@ def _watched_at(conn, episode_id, user_id):
 
 
 def test_toggle_episode_returns_true_only_when_marking_watched(conn, user_id):
-    """Tara, 2026-09-18 ('estilo tvtime'): la señal de 'esto se acaba de marcar
+    """El usuario, 2026-09-18 ('estilo tvtime'): la señal de 'esto se acaba de marcar
     visto ahora' (no un desmarcado) decide si se abre solo el hilo de debate."""
     _, _, episode = _make_show_with_episode(conn, user_id)
 

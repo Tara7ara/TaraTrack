@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-{# Sync suave movil->escritorio (Tara, notas.txt: "le doy algo al telefono, abro el
+{# Sync suave movil->escritorio (El usuario, notas.txt: "le doy algo al telefono, abro el
    ordenador, no se modifica al instante") - sin websockets ni polling en bucle, solo
    vuelve a pedir esta pagina cuando la pestaña recupera el foco de verdad (evento
    nativo `visibilitychange` del documento, filtrado a "visible"), htmx puro sin JS
@@ -14,7 +14,7 @@
    logs: docenas de GET /todos/confirmar, cero POST /todos). Condicion extra: no
    refrescar solo mientras haya una confirmacion de doble tick abierta en pantalla.
 
-   BUG REAL ENCONTRADO EL 2026-09-16 (Tara: "le doy al tick y desaparece la tarjeta"):
+   BUG REAL ENCONTRADO EL 2026-09-16 (El usuario: "le doy al tick y desaparece la tarjeta"):
    `hx-select` es un atributo HEREDADO en htmx (se resuelve con getClosestAttributeValue,
    caminando hacia arriba por el DOM igual que hx-target/hx-swap) - confirmado leyendo
    el propio htmx.min.js, no solo la documentacion. Como NINGUN boton de dentro de esta

@@ -18,7 +18,7 @@ from app.repo._shared import (
 def list_favorite_episodes(conn, user_id):
     """Episodios marcados con estrella por ESTE usuario (episode_user_state), agrupados
     por titulo - en /estadisticas solo se veia el CONTADOR (fav_episodes de get_stats),
-    sin forma de ver CUALES eran (Tara, notas.txt: "poder ver los eps favoritos que
+    sin forma de ver CUALES eran (El usuario, notas.txt: "poder ver los eps favoritos que
     tengo... que no se cuales son")."""
     return conn.execute(
         """SELECT episodes.season_number, episodes.episode_number, episodes.name,
@@ -90,7 +90,7 @@ def get_stats(conn, user_id):
             genre_counts[genre] = genre_counts.get(genre, 0) + 1
     top_genres = sorted(genre_counts.items(), key=lambda g: g[1], reverse=True)[:10]
 
-    # Excluye episodios de titulos marcados como habito (Shin Chan, Pokemon...) - Tara,
+    # Excluye episodios de titulos marcados como habito (Shin Chan, Pokemon...) - El usuario,
     # tras ver un pico real de 7317 en un mes: eran 5528 episodios de series de habito
     # sincronizadas de golpe un mismo dia, no visionado real ese mes. Mismo criterio que
     # ya usa el motor de afinidad para excluir habito del eje apetito (ver

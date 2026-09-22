@@ -32,7 +32,7 @@ def pendientes(
             # repo.snapshot_profile_progress) - no vital para la pagina en si. Si
             # coincide justo con la escritura final de recompute_taste_profile (sync
             # de fondo, cada 12h) puede toparse con "database is locked" - sin este
-            # try/except, ESO tumbaba /pendientes entera con un 500 (bug real, Tara:
+            # try/except, ESO tumbaba /pendientes entera con un 500 (bug real, el usuario:
             # "a veces tarda mucho en cargar" - en realidad a veces fallaba del todo).
             repo.snapshot_profile_progress(conn, request.state.user_id)
         except Exception:
@@ -108,7 +108,7 @@ def tarjeta_inicio(request: Request, entry_id: int):
 @router.get("/entrada/{entry_id}/todos/confirmar", response_class=HTMLResponse)
 def confirmar_todos_episodios(request: Request, entry_id: int):
     """Primer toque del doble tick: la tarjeta pasa a modo confirmacion. Antes era un
-    hx-confirm, pero window.confirm no llega a saltar en el navegador de Tara (la
+    hx-confirm, pero window.confirm no llega a saltar en el navegador del usuario (la
     peticion nunca salia) - confirmacion renderizada por el servidor, sin dialogos."""
     return _home_card_response(request, entry_id, confirm_all=True)
 
@@ -133,7 +133,7 @@ def marcar_todos_episodios(request: Request, entry_id: int):
 def marcar_siguiente_episodio(request: Request, entry_id: int):
     """El check de la tarjeta de inicio: marca visto el siguiente episodio emitido.
 
-    Tara, 2026-09-18 ("para comentar tengo que entrar a la ficha... es tosco"): este
+    el usuario, 2026-09-18 ("para comentar tengo que entrar a la ficha... es tosco"): este
     es EL sitio donde de verdad se marcan episodios dia a dia (Continuar viendo en
     /pendientes), asi que aqui va el aviso "¿comentas?" en vez de obligar a
     navegar a la ficha despues - mismo hilo de siempre (episode_comments), solo que

@@ -69,7 +69,7 @@ def test_delete_episode_comment_by_another_user_is_a_no_op(conn, user_id):
 
 
 def test_delete_episode_comment_by_admin_removes_anyones(conn, user_id):
-    """Fase 5 (Tara, 2026-09-18: 'eliminar mensajes de todos, cada uno el suyo pero
+    """Fase 5 (El usuario, 2026-09-18: 'eliminar mensajes de todos, cada uno el suyo pero
     admin el total')."""
     other = repo.create_user(conn, "amigo", "unaclave123")
     ep = _episode(conn)
@@ -90,7 +90,7 @@ def _seen_long_ago(conn, user_id):
 
 
 def test_own_comments_never_count_as_unseen_for_yourself(conn, user_id):
-    """Aviso del nav (Tara, 2026-09-18: "estilo tvtime") - no hace falta avisarte
+    """Aviso del nav (El usuario, 2026-09-18: "estilo tvtime") - no hace falta avisarte
     de lo que tu mismo acabas de escribir."""
     _seen_long_ago(conn, user_id)
     ep = _episode(conn)

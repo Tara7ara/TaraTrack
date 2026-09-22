@@ -167,7 +167,7 @@ def _move_in_ranking(conn, table: str, ordered_ids: list[int], target_id: int, d
 def move_list_item(conn, list_id: int, item_id: int, direction: str):
     """Las flechas SIEMPRE reordenan el orden manual (position), aunque ahora mismo se
     este enseñando el orden por duelos - si no, mover algo en modo duelo reescribiria
-    el orden manual con el de Elo sin que Tara lo pidiera."""
+    el orden manual con el de Elo sin que el usuario lo pidiera."""
     ids = [item["item_id"] for item in _list_items_by_position(conn, list_id)]
     _move_in_ranking(conn, "list_items", ids, item_id, direction)
 

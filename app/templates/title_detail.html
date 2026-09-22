@@ -14,7 +14,7 @@
     </div>
     <div class="info">
         <h1 style="margin:0">{{ title_row.title }}</h1>
-        {# Bug real (Tara, 2026-08-21): "Chainsaw Man" salia repetido 3 veces - titulo
+        {# Bug real (El usuario, 2026-08-21): "Chainsaw Man" salia repetido 3 veces - titulo
            principal (h1) + romaji + ingles, cuando los tres coinciden letra a letra
            porque el titulo oficial ya esta en latino/ingles de origen (no todo anime
            tiene romaji/ingles distintos del titulo mostrado). Se descartan aqui los
@@ -27,7 +27,7 @@
         <div class="meta-row">
             <span class="meta-chip">{{ title_row.year or "—" }}{% if title_row.show_status %} · {{ title_row.show_status|fmt_show_status }}{% endif %}</span>
             {% if entry and entry.rating is not none %}
-            {# Tara, 2026-08-21: "si tienen mi nota poner mi nota en la ficha
+            {# El usuario, 2026-08-21: "si tienen mi nota poner mi nota en la ficha
                tecnica... similar como el de internet" - mismo chip que "Internet: X",
                junto a el, para comparar de un vistazo sin bajar hasta la fila de
                acciones (donde ya existia como .rating suelto, ver mas abajo). #}
@@ -52,11 +52,11 @@
     </div>
     {# La "megapildora" de 5 mini-botones (estado, accion, favorito, habito,
        autover) mezclaba decisiones de nivel muy distinto en un unico grupo
-       visual (Tara + analisis externo, 2026-08-21: "no son cinco miniacciones
+       visual (El usuario + analisis externo, 2026-08-21: "no son cinco miniacciones
        equivalentes"). Habito/autover son configuracion de seguimiento, no algo
        que se toca cada vez que se mira la ficha - "Seguimiento" los revela EN
        LINEA (el propio boton se sustituye por los extras + una X para cerrar),
-       sin abrir una caja nueva ni desplazar nada (segunda vuelta, Tara: "no
+       sin abrir una caja nueva ni desplazar nada (segunda vuelta, el usuario: "no
        debera de desaparecer y mostrar los botones extra", no un desplegable que
        empuja contenido hacia abajo). #}
     <div class="entry-actions-row">
@@ -137,7 +137,7 @@
             {% if entry and entry.status == 'watched' %}
             {# Antes la fecha iba dentro de la etiqueta ("Corregir fecha (vista el ...)"),
                mucho mas larga que sus vecinas en la fila - rompia el "en paralelo" que
-               pidio Tara ("se ve raro de cojones"). La fecha ya se ve en el input al
+               pidio el usuario ("se ve raro de cojones"). La fecha ya se ve en el input al
                abrir, no hace falta repetirla en el boton. #}
             <details class="group-accordion">
                 <summary>Corregir fecha</summary>
@@ -162,7 +162,7 @@
             </details>
             {% if title_row.anilist_id %}
             {# Corrige el dia que enseña el calendario de temporada para este titulo
-               (Tara: "lunes Grand Blue pero en el calendario sale los martes") - el
+               (El usuario: "lunes Grand Blue pero en el calendario sale los martes") - el
                calculo automatico va en UTC, puede desplazarse un dia para animes de
                madrugada. "Sin corregir" vacia el campo y vuelve al calculo automatico. #}
             <details class="group-accordion">
@@ -172,6 +172,26 @@
                         <option value=""{% if weekday_override is none %} selected{% endif %}>Sin corregir (automático)</option>
                         {% for nombre in ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] %}
                         <option value="{{ loop.index0 }}"{% if weekday_override == loop.index0 %} selected{% endif %}>{{ nombre }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">Guardar</button>
+                </form>
+            </details>
+            {% endif %}
+            {% if title_row.type == 'show' %}
+            {# Distinto del "Corregir dia de emision" de arriba (ese solo pisa el TEXTO
+               del calendario de temporada por AniList) - esto corrige la fecha REAL de
+               TMDB que usan /pendientes, Continuar viendo y el resto de la app para
+               decidir cuando algo "ya emitio" (El usuario, 2026-09-22: "queria que saliera en
+               pendiente de forma normal los lunes en vez de los martes"). #}
+            <details class="group-accordion">
+                <summary>Corregir fecha de emisión de episodios{% if title_row.air_date_offset_days %} ({{ title_row.air_date_offset_days|abs }} día{{ "s" if title_row.air_date_offset_days|abs > 1 }} {{ "antes" if title_row.air_date_offset_days < 0 else "después" }}){% endif %}</summary>
+                <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/desfase-emision" style="display:flex; gap:0.5rem; align-items:center">
+                    <select name="dias">
+                        {% for d in [0, -2, -1, 1, 2] %}
+                        <option value="{{ d }}"{% if title_row.air_date_offset_days == d %} selected{% endif %}>
+                            {{ "Sin corregir (automático)" if d == 0 else (d|abs|string + " día" + ("s" if d|abs > 1 else "") + (" antes" if d < 0 else " después")) }}
+                        </option>
                         {% endfor %}
                     </select>
                     <button type="submit">Guardar</button>
@@ -189,7 +209,7 @@
         </div>
         <div class="group-items">
             {% if entry.rating is not none %}
-            {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+            {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
             <details class="group-accordion">
                 <summary>Quitar nota</summary>
                 <form method="post" action="/entrada/{{ entry.id }}/quitar-nota">
@@ -213,7 +233,7 @@
 {# El clamp+"Leer mas" (auditoria visual 2026-08-20) tenia sentido en tarjetas
    pequeñas donde de verdad ahorra espacio de rejilla - en la ficha tecnica, la
    unica pagina dedicada por completo al titulo, recortar la sinopsis no ahorra
-   nada (Tara, 2026-08-21: "no tiene sentido y menos que solo ocupe 1/3 de la
+   nada (El usuario, 2026-08-21: "no tiene sentido y menos que solo ocupe 1/3 de la
    pantalla") - se enseña siempre entera aqui. max-width:70ch de .overview se
    mantiene (regla de legibilidad de texto continuo). #}
 <div class="synopsis-block">
@@ -243,7 +263,7 @@
 </div>
 {% endfor %}
 {% if title_row.type == "show" %}
-{# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+{# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
 <details class="manual-add" style="margin-top:0.6rem">
     <summary>Volver a ver</summary>
     <p class="empty" style="margin:0.2rem 0 0.5rem">La serie vuelve a "Continuar viendo" desde el primer episodio. Nada de lo que ya viste se borra — sigue marcado con su fecha real, solo empieza a contar de nuevo a partir de ahora. Tu nota se queda.</p>

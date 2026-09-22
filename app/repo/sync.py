@@ -18,7 +18,7 @@ from app.repo.users import list_users
 
 def get_sync_status(conn):
     """Estado del ultimo sync completado (boton "Sincronizar" o tarea de fondo cada
-    12h) - Tara, tras la revision externa del codigo: "guardar y mostrar ultimo sync
+    12h) - El usuario, tras la revision externa del codigo: "guardar y mostrar ultimo sync
     correcto, duracion y si fallo... es pequeño pero util cuando algo externo deja de
     responder". Mismo patron app_settings clave/valor que get_recompute_status."""
     raw_duration = get_setting(conn, "sync_last_duration_seconds")
@@ -81,7 +81,7 @@ def _sync_library_body(titles) -> int:
             # llamadas de red (get_details + episodios por temporada) - con todo en la
             # MISMA transaccion, el lock de escritura que agarra ese primer UPDATE se
             # quedaba sujeto durante esas llamadas de red tambien, no solo durante los
-            # INSERT finales. Bug real (Tara: "/pendientes tarda mucho a veces, pero
+            # INSERT finales. Bug real (El usuario: "/pendientes tarda mucho a veces, pero
             # Docker no consume nada" - encaja exacto con estar bloqueado esperando el
             # lock, no computando): `snapshot_profile_progress` (la unica otra escritura
             # de la app, llamada en cada carga de /pendientes) fallaba con "database is

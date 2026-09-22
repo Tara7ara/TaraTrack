@@ -2,7 +2,7 @@
 {% block content %}
 <h1>{{ waifus_label(request.state.user_id) }}</h1>
 {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todas.</p>{% endif %}
-{# Buscador + Jugar duelos agrupados en una fila a partes iguales (Tara,
+{# Buscador + Jugar duelos agrupados en una fila a partes iguales (El usuario,
    2026-08-21: "en línea en vez de paralelo" - antes cada uno en su propio
    bloque suelto, sin relacion visual entre si). Mismo patron .search-actions-row
    que .hero-controls de /ajustes ("que sea profesional"). #}
@@ -40,7 +40,7 @@
         <input type="hidden" name="modo" value="duelo">
         <button class="{{ 'active' if order_mode == 'duelo' }}">Duelos</button>
     </form>
-    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
     <details class="del-confirm">
         <summary class="btn secondary danger">Reiniciar Elo</summary>
         <form method="post" action="/waifus/elo/reiniciar">

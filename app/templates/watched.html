@@ -54,7 +54,7 @@
 {% if entries|length > 2 %}
 <div class="page-actions tight">
     <a class="btn secondary" href="/duelo">Jugar duelos (anime)</a>
-    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
     <details class="del-confirm">
         <summary class="btn secondary danger">Reiniciar Elo</summary>
         <form method="post" action="/duelo/elo/reiniciar">
@@ -85,7 +85,7 @@
 {% endif %}
 {% for e in entries %}
 <div class="card">
-    {# La portada no llevaba a ningun sitio, solo el texto del titulo (Tara: "si
+    {# La portada no llevaba a ningun sitio, solo el texto del titulo (El usuario: "si
        clickas a la img debería de llevar a la ficha técnica") - mismo patron que
        ya usan search_results.html/recommendations.html. #}
     <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
@@ -109,7 +109,7 @@
         {% endif %}
         {% if e.is_anime %}<div class="elo-badge">Elo {{ e.elo|round|int }} · {{ e.rd|elo_confidence }}</div>{% endif %}
         {# Comentarios largos alargaban la fila mucho mas que el resto de la lista
-           (Tara: "hacer límite visual") - recortado aquí, el completo se sigue
+           (El usuario: "hacer límite visual") - recortado aquí, el completo se sigue
            viendo entero en la ficha técnica. #}
         {% if e.comment %}<div class="comment">{{ e.comment|truncate(90) }}</div>{% endif %}
         <div class="card-year">

@@ -50,12 +50,23 @@
         <button class="fav-star {{ 'is-fav' if ep.is_favorite else '' }}"
                 hx-post="/episodio/{{ ep.id }}/favorito" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
                 title="Episodio favorito">{{ "★" if ep.is_favorite else "☆" }}</button>
-        <details class="ep-more" onclick="event.stopPropagation()">
+        {# Calidad de vida (El usuario, 2026-09-22): abrir el desplegable ya dejaba escribir,
+           pero hacia falta un clic mas para enfocar el input a mano - "que se pueda
+           escribir directamente, no doble click". ontoggle nativo de <details> (se
+           dispara tanto al abrir como al cerrar, de ahi el "if (this.open)") enfoca
+           el input del propio formulario en cuanto se abre, sin JS de mas. #}
+        <details class="ep-more" {{ 'open' if ep.open_note else '' }} onclick="event.stopPropagation()"
+                  ontoggle="if (this.open) this.querySelector('input').focus()">
             <summary title="Comentar episodio">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
             </summary>
             <form class="ep-comment-form" hx-post="/episodio/{{ ep.id }}/comentario" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">
-                <input type="text" name="comment" placeholder="Comentario del episodio..." value="{{ ep.comment or '' }}">
+                {# Llegada desde el aviso "¿comentas?" (pendientes.py, comment_toast.html) -
+                   abierto server-side, asi que ontoggle (arriba) no dispara solo con esto
+                   (no hay cambio de estado en la carga inicial de la pagina) - autofocus
+                   nativo cubre este caso, ontoggle cubre abrir a mano despues. #}
+                <input type="text" name="comment" placeholder="Comentario del episodio..." value="{{ ep.comment or '' }}"
+                       {{ 'autofocus' if ep.open_note else '' }}>
                 <button type="submit">Guardar</button>
             </form>
         </details>

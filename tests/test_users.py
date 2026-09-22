@@ -109,7 +109,7 @@ def test_create_list_is_scoped_per_user(conn, user_id):
 
 
 def test_set_admin_promotes_and_demotes(conn, user_id):
-    """Fase 5 (Tara, 2026-09-18: 'yo como administrador debería de poder poner
+    """Fase 5 (El usuario, 2026-09-18: 'yo como administrador debería de poder poner
     admin a quien quiera')."""
     other = repo.create_user(conn, "amigo", "unaclave123")
     repo.set_admin(conn, other["id"], True)
@@ -181,7 +181,7 @@ def test_change_password_rejects_short_new_password(conn, user_id):
 
 
 def test_admin_reset_password_does_not_need_the_old_one(conn, user_id):
-    """Tara, 2026-09-18: 'si pierdo la pass como lo recupero, un fallo para el usr
+    """El usuario, 2026-09-18: 'si pierdo la pass como lo recupero, un fallo para el usr
     final' - a diferencia de change_password, esto es justo para cuando NO la
     tienes."""
     other = repo.create_user(conn, "amigo", "unaclave123")

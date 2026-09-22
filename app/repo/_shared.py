@@ -26,7 +26,7 @@ def set_setting(conn, key: str, value: str):
 
 # Señal principal: idioma original japones, dato real de TMDB - "Animation" en TMDB
 # tambien mete dibujos occidentales (Futurama, Rick and Morty, Bluey...), asi que ese
-# genero solo no basta (bug real, Tara 2026-08-13: le salio Futurama en el duelo de
+# genero solo no basta (bug real, el usuario 2026-08-13: le salio Futurama en el duelo de
 # "solo anime"). Si original_language aun no se ha sincronizado (NULL), cae al criterio
 # antiguo (genero Animation/Animacion, o alta manual sin genero) para no perder de golpe
 # anime ya cacheado que todavia no ha pasado por un refresh_metadata.
@@ -49,11 +49,11 @@ def _is_anime(title_row) -> bool:
 
 
 def user_has_anime(conn, user_id) -> bool:
-    """¿Tiene ESTE usuario algo de anime en su biblioteca? (Tara, 2026-09-18: "que
+    """¿Tiene ESTE usuario algo de anime en su biblioteca? (El usuario, 2026-09-18: "que
     a las personas normales le salga 'personajes fav', a la que haya un anime
     puesto en la lista se transforme a lista de waifus") - decide si /waifus,
     /listas y /estadisticas hablan de "Waifus" (termino de nicho, tiene sentido
-    para Tara) o de "Personajes favoritos" (para quien no ve anime, como tu
+    para el usuario) o de "Personajes favoritos" (para quien no ve anime, como su
     hermana/amigo puedan ser)."""
     return bool(
         conn.execute(
@@ -140,7 +140,7 @@ def _promote_if_first_watch(conn, title_id, user_id):
     usuario seguia 'pending' pero ya hay algun episodio visto de verdad POR EL, pasa
     a 'watched'. Sin esto, marcar episodios sin pasar por el boton "Marcar vista"
     dejaba la entry en pending para siempre aunque estuviera vista entera - bug real,
-    Tara: "he visto toda la serie pero no me deja valorar" (entry 913, 2026-08-13).
+    el usuario: "he visto toda la serie pero no me deja valorar" (entry 913, 2026-08-13).
 
     Multiusuario Fase 2 (2026-09-17): antes actualizaba CUALQUIER entry 'pending' de
     ese title_id (bug real encontrado en pruebas - con varios usuarios, el episodio
@@ -170,7 +170,7 @@ PROFILES_DIR = config.PROFILES_DIR
 
 
 # Pesos de la puntuacion detallada por categorias (opcional, ver mark_watched):
-# Disfrute pesa mas (es la nota "de tripas"), Musica pesa menos (Tara es sorda y normalmente
+# Disfrute pesa mas (es la nota "de tripas"), Musica pesa menos (El usuario es sorda y normalmente
 # se salta openings/endings, poca base para juzgar esta categoria en concreto). Sin "Ritmo" -
 # se descarto explicitamente. Una categoria vacia ("no valorar") no cuenta ni en la media ni en el peso.
 CATEGORY_WEIGHTS = {

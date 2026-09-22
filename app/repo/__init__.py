@@ -206,6 +206,7 @@ from app.repo.titles import (  # noqa: F401
     refresh_metadata,
     remove_pending_entry,
     rewatch_episode,
+    set_air_date_offset,
     set_episode_comment,
     set_poster,
     set_predicted_score,

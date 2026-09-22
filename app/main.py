@@ -61,7 +61,7 @@ async def http_error(request: Request, exc: StarletteHTTPException):
 @app.exception_handler(Exception)
 async def unhandled_error(request: Request, exc: Exception):
     """500 con la pinta de la app - la traza sigue yendo a los logs del contenedor
-    (docker logs taratrack), esto solo cambia lo que ve Tara en el navegador."""
+    (docker logs taratrack), esto solo cambia lo que ve el usuario en el navegador."""
     traceback.print_exc()
     return templates.TemplateResponse(
         request, "error.html", {"code": 500, "message": "Algo se ha roto de verdad."}, status_code=500
@@ -77,7 +77,7 @@ async def static_cache_headers(request: Request, call_next):
     explicito, un navegador (sobre todo Safari/iOS, con el back-forward cache mas
     agresivo) puede enseñar una version vieja de /pendientes o /waifus al volver
     atras despues de una accion, dando la sensacion de "esto no se ha guardado" hasta
-    recargar a mano (Tara, 2026-09-18: varios "he tenido que recargar la web" seguidos
+    recargar a mano (El usuario, 2026-09-18: varios "he tenido que recargar la web" seguidos
     tras quitar un pendiente o añadir un personaje favorito)."""
     response = await call_next(request)
     if request.url.path.startswith("/static/"):
@@ -88,7 +88,7 @@ async def static_cache_headers(request: Request, call_next):
 
 
 # ---------- Login (cookie larga, sustituye al Access List de NPM para tracker.midominio.com) ----------
-# Tara, 2026-08-20: "el pass... se puede guardar en la coockie o algo? como hacen las
+# El usuario, 2026-08-20: "el pass... se puede guardar en la coockie o algo? como hacen las
 # grandes apps?" - antes la unica auth era el Access List de Nginx Proxy Manager (basic
 # auth HTTP delante del proxy), sin "recuerdame", asi que el navegador volvia a pedirla
 # a menudo. Login propio con cookie firmada de un año - "como hacen las grandes apps".
@@ -241,11 +241,11 @@ def logout():
     return resp
 
 
-# ---------- Registro (Tara, 2026-09-18: "lo tienen que hacer ellos, no quiero saber la
+# ---------- Registro (El usuario, 2026-09-18: "lo tienen que hacer ellos, no quiero saber la
 # pass en ningun momento") - autoregistro publico desde /login, sin invitacion: el acceso
 # a /login ya esta acotado por su red WireGuard, asi que no hace falta un filtro aparte
 # aqui. Cuentas creadas asi siempre is_admin=False - el alta manual de /ajustes (Fase 1)
-# se queda para uso de la propia Tara si algun dia le hace falta, pero deja de ser el
+# se queda para uso de la propia el usuario si algun dia le hace falta, pero deja de ser el
 # camino que usan su hermana/amigo.
 @app.get("/registro", response_class=HTMLResponse)
 def registro_form(request: Request, next: str = "/"):
@@ -264,7 +264,7 @@ def registro_submit(
             status_code=429,
         )
     _record_registro_attempt()
-    # Registro mas exigente (Tara, 2026-09-18: "registro mas fuerte") - contraseña de
+    # Registro mas exigente (El usuario, 2026-09-18: "registro mas fuerte") - contraseña de
     # al menos 8 y confirmacion para pillar erratas al escribirla (antes no habia
     # forma de saber si te habias equivocado hasta el primer intento de login
     # fallido). El nombre de usuario se valida con repo.validate_username, la misma
@@ -322,11 +322,11 @@ SEASON_CACHE_INTERVAL_HOURS = config.SEASON_CACHE_INTERVAL_HOURS
 
 
 async def season_cache_loop():
-    """Refresca la cache de las 4 temporadas del año actual una vez al dia (Tara,
+    """Refresca la cache de las 4 temporadas del año actual una vez al dia (El usuario,
     2026-08-13: "que solo lo actualice 1 vez al dia" + "¿qué tan costoso es que
     guarde más tiempo?") - las 4 en vez de solo la actual porque el coste real es
     minimo (4 peticiones a AniList una vez al dia, nada frente a su limite de ~90/min)
-    y asi cualquier pestaña de temporada esta siempre al dia sin depender de que Tara
+    y asi cualquier pestaña de temporada esta siempre al dia sin depender de que el usuario
     la visite primero. Los años/temporadas que NO son el año actual (fichas antiguas
     que ya vio) no se tocan aqui - se quedan con lo ya cacheado la ultima vez que se
     visitaron, sin caducar nunca solas (nada las borra); si algun dia hace falta

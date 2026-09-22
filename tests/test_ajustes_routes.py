@@ -46,7 +46,7 @@ def test_crear_usuario_valido_funciona(client):
 
 
 def test_calendario_anime_toggle(client):
-    """Tara, 2026-09-18: 'deberia de haber una etiqueta en conf que permita ver
+    """El usuario, 2026-09-18: 'deberia de haber una etiqueta en conf que permita ver
     todo esto' - forzar a mano si se ve o no el calendario de temporada de anime."""
     r = client.post("/ajustes/perfil/calendario-anime", data={"mostrar": "1"}, follow_redirects=False)
     assert r.status_code == 303
@@ -59,7 +59,7 @@ def test_calendario_anime_toggle(client):
 
 
 def test_non_static_responses_are_not_cached(client):
-    """Tara, 2026-09-18: varios 'he tenido que recargar la web' tras quitar un
+    """El usuario, 2026-09-18: varios 'he tenido que recargar la web' tras quitar un
     pendiente o añadir un favorito - Cache-Control: no-store evita que el
     navegador (sobre todo Safari/iOS) enseñe una version vieja de la pagina."""
     r = client.get("/pendientes")
@@ -67,7 +67,7 @@ def test_non_static_responses_are_not_cached(client):
 
 
 def test_admin_puede_resetear_password_de_otro(client):
-    """Tara, 2026-09-18: recuperacion de acceso via admin, sin email."""
+    """El usuario, 2026-09-18: recuperacion de acceso via admin, sin email."""
     from app import repo
 
     with db.get_connection() as conn:

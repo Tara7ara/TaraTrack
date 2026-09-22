@@ -3,7 +3,7 @@
 Antes TaraTrack no tenia ningun concepto de usuario: la cookie de sesion era un
 candado compartido ("autenticado si/no", ni siquiera llevaba quien eres) y
 TARATRACK_PASSWORD era una unica contraseña para "todos". Con la hermana y un
-amigo de Tara queriendo su propio seguimiento, hace falta identidad de verdad.
+amigo del usuario queriendo su propio seguimiento, hace falta identidad de verdad.
 
 Hash con hashlib.pbkdf2_hmac + salt aleatorio por usuario (sin añadir una
 dependencia nueva tipo passlib/bcrypt, mismo criterio de "sin dependencias de
@@ -86,7 +86,7 @@ def list_users(conn):
 
 
 def set_username(conn, user_id: int, new_username: str):
-    """Cambiar el nombre de usuario (Tara, 2026-09-18: "si quiero cambiar el
+    """Cambiar el nombre de usuario (El usuario, 2026-09-18: "si quiero cambiar el
     nombre") - misma normalizacion/validacion que el alta (create_user/registro)."""
     new_username = validate_username(new_username)
     existing = get_user_by_username(conn, new_username)
@@ -118,7 +118,7 @@ def change_password(conn, user_id: int, old_password: str, new_password: str):
 
 
 def admin_reset_password(conn, user_id: int, new_password: str):
-    """Recuperar el acceso cuando alguien pierde su contraseña (Tara, 2026-09-18:
+    """Recuperar el acceso cuando alguien pierde su contraseña (El usuario, 2026-09-18:
     "si pierdo la pass como lo recupero, un fallo para el usr final") - sin email/SMS
     en un self-host de 2-3 personas de confianza, la via real es que un admin te la
     resetee a mano, no un flujo de "olvidé mi contraseña" automatizado. A diferencia
@@ -140,7 +140,7 @@ def count_admins(conn) -> int:
 
 
 def set_admin(conn, user_id: int, is_admin: bool):
-    """Fase 5 (Tara, 2026-09-18: "yo como administrador debería de poder poner admin
+    """Fase 5 (El usuario, 2026-09-18: "yo como administrador debería de poder poner admin
     a quien quiera"). No deja quitarle el admin al ULTIMO admin que queda - sin esto,
     un despiste (o el propio admin quitandose el rol a si mismo sin querer) dejaria
     la instancia entera sin nadie que pueda gestionar cuentas."""

@@ -35,7 +35,7 @@ def _duel_counts(conn, table: str, ids: list[int]) -> dict:
 
 def duel_coverage(conn, table: str, ids: list[int], min_duels: int = 5):
     """Cuantos duelos faltan de verdad para tener un ranking asentado - no un numero
-    inventado (pedido explicito de Tara: "tendria que ser funcional"). Umbral: 5 duelos
+    inventado (pedido explicito del usuario: "tendria que ser funcional"). Umbral: 5 duelos
     por elemento es lo minimo para que el Elo deje de ser practicamente ruido (con 1-2
     duelos el numero no dice nada todavia). Como random_duel_pair SIEMPRE prioriza a
     los menos comparados, en la practica casi todos los proximos duelos van a restar 1
@@ -60,21 +60,21 @@ def duel_coverage(conn, table: str, ids: list[int], min_duels: int = 5):
 # Sustituye al Elo de K fijo (K=32 siempre) para el duelo de entries/list_items/
 # favorite_characters. Problema real que resuelve: con K fijo, un item recien
 # añadido (0 duelos, puro azar todavia) se mueve exactamente igual que uno ya
-# asentado (50 duelos) - de ahi que Tara notara que "no siempre acaba igual
+# asentado (50 duelos) - de ahi que el usuario notara que "no siempre acaba igual
 # aunque puntue lo mismo". Glicko añade una segunda cifra por item, RD (rating
 # deviation - "cuanta confianza tengo en este numero"): arranca en 350 (nada
 # seguro) y se estrecha con cada duelo, asi que los primeros duelos mueven MUCHO
 # el rating y los de un item ya asentado (RD bajo) solo lo afinan. Funciona
 # identico para las 3 tablas - solo usa los propios duelos, cero dependencia de
 # tener una nota (a diferencia del rating-seed de mas abajo, que SOLO aplica a
-# entries porque es la unica tabla con una nota real de Tara).
+# entries porque es la unica tabla con una nota real del usuario).
 GLICKO_Q = math.log(10) / 400
 
 
 GLICKO_RD_INIT = 350.0
 
 
-GLICKO_RD_MIN = 50.0   # nunca baja de aqui - Tara puede cambiar de opinion siempre
+GLICKO_RD_MIN = 50.0   # nunca baja de aqui - El usuario puede cambiar de opinion siempre
 
 
 BRIDGE_DUEL_CHANCE = 0.1  # ~1 de cada 10 duelos cruza extremos del ranking a
@@ -83,11 +83,11 @@ BRIDGE_DUEL_CHANCE = 0.1  # ~1 de cada 10 duelos cruza extremos del ranking a
 # proposito, para que el pool no se parta en bloques que nunca se comparan entre
 # si (el emparejamiento normal por "mas parecido" nunca los cruzaria solo).
 
-# Seed de Elo para entries desde la nota real de Tara (SOLO esta tabla tiene
+# Seed de Elo para entries desde la nota real del usuario (SOLO esta tabla tiene
 # nota) - percentil de la nota dentro de TODAS sus notas de anime, pasado a Elo
 # con la formula inversa del propio Elo. Dos notas iguales caen siempre en el
 # mismo Elo de partida, en vez del 1500 plano de antes que no distinguia nada.
-# Escala calibrada con datos reales de Tara (2026-08-15, 532 notas, media 6.71):
+# Escala calibrada con datos reales del usuario (2026-08-15, 532 notas, media 6.71):
 # 200 deja el rango en ~1150-1850, parecido a lo que producirian duelos reales -
 # con la escala "de libro" (400) el rango se disparaba a 700-2300, demasiado.
 RATING_SEED_SCALE = 200
@@ -182,7 +182,7 @@ def elo_confidence_label(rd: float) -> str:
 def reset_elo(conn, table: str, ids: list[int], user_id: int | None = None):
     """Reinicia el Elo/RD de estos ids concretos y borra su historial de duelos y
     sus fotos de Elo (elo_snapshots) - para cuando algo deja el ranking descolocado
-    (duelos de prueba, un lote raro) y Tara prefiere empezar de cero. En `entries`
+    (duelos de prueba, un lote raro) y el usuario prefiere empezar de cero. En `entries`
     reseed desde la nota real en vez de 1500 plano (ver reseed_undueled_entries_elo -
     se llama DESPUES de borrar sus duelos, para que estos ids vuelvan a contar como
     "sin duelar" y entren en el recalculo, `user_id` obligatorio en ese caso desde la
@@ -208,7 +208,7 @@ def reset_elo(conn, table: str, ids: list[int], user_id: int | None = None):
 
 def list_watched_ids(conn, user_id):
     """Entry_id vistos de ESTE usuario que son anime - el pool del duelo global
-    (Tara: "el duelo es solo de animes", 2026-08-13, corrigiendo mi primera version
+    (El usuario: "el duelo es solo de animes", 2026-08-13, corrigiendo mi primera version
     que cogia TODO lo
     visto). Mismo criterio que _is_anime()/_genero_sql("Anime"): genero Animation/
     Animacion, o sin genero cacheado (altas manuales, el catalogo importado es casi
@@ -217,9 +217,9 @@ def list_watched_ids(conn, user_id):
 
     entries.status = 'watched' NO significa "acabado" en este esquema - se pone en
     cuanto se marca UN episodio (_promote_if_first_watch), asi que sin el filtro de
-    abajo un anime a medias (Tara, notas.txt: "Skip and Loafer, 2 eps, no puedo
+    abajo un anime a medias (El usuario, notas.txt: "Skip and Loafer, 2 eps, no puedo
     hacer duelo de algo que no me he acabado") entraba igual en el pool. Criterio
-    real (Tara, corrigiendo mi primer intento que exigia la serie ENTERA sin nada
+    real (El usuario, corrigiendo mi primer intento que exigia la serie ENTERA sin nada
     pendiente): basta con haber visto una temporada COMPLETA, aunque haya otra
     temporada mas nueva sin empezar - "si Mushoku esta en temporada 3 pero ya me he
     visto la primera, puede estar en duelos, tengo algo visto de verdad". Filtro:
@@ -234,7 +234,7 @@ def list_watched_ids(conn, user_id):
     (sync_episodes fallo o nunca se llamo, tolerado desde la ronda del 500 real) - sin
     ningun episodio en BBDD no hay como distinguir "temporada completa" de "a medias",
     asi que ahi se confia en el status tal cual (igual que antes de este fix) en vez
-    de excluir por falta de datos que no es culpa de Tara."""
+    de excluir por falta de datos que no es culpa del usuario."""
     return [
         r["id"] for r in conn.execute(
             f"""SELECT entries.id FROM entries JOIN titles ON titles.id = entries.title_id
@@ -262,7 +262,7 @@ def list_watched_ids(conn, user_id):
 
 def list_all_watched_ids(conn, user_id):
     """TODO lo visto de este usuario, sin filtrar por genero - la red de seguridad de
-    duel_pool_for_user cuando el pool de anime sale vacio (cuentas sin anime, Tara,
+    duel_pool_for_user cuando el pool de anime sale vacio (cuentas sin anime, el usuario,
     2026-09-18: "el duelo era para anime pero para las otras personas no se como
     adaptarlo"). A diferencia de list_watched_ids no exige temporada completa - es
     el pool "normal" (no especificamente pensado para maratones de anime a medias)."""
@@ -307,7 +307,7 @@ def random_duel_pair(conn, table: str, ids: list[int]):
     Ademas, 1 de cada ~10 duelos es un "puente" a proposito entre extremos del ranking
     actual en vez de "mas parecido" - sin esto, dos bloques del pool que nunca se
     emparejan entre si podrian derivar en Elos que no son comparables de verdad entre
-    ellos (islas). Pedido original de Tara (2026-08-13) de priorizar lo menos cubierto
+    ellos (islas). Pedido original del usuario (2026-08-13) de priorizar lo menos cubierto
     se mantiene, solo que ahora RD ya ES esa señal, mas fiel que un conteo plano."""
     if len(ids) < 2:
         return None
@@ -337,7 +337,7 @@ def random_duel_pair(conn, table: str, ids: list[int]):
         else:
             # Antes se quedaba SIEMPRE con el par de Elo mas cercano (un unico
             # minimo, sin aleatoriedad) - con un pool estable eso hacia que "Otro
-            # par" sin votar devolviera el mismo par una y otra vez, siempre (Tara:
+            # par" sin votar devolviera el mismo par una y otra vez, siempre (El usuario:
             # "digo otro par y no se cambia"), porque nada en el calculo cambia
             # hasta que se registra un voto de verdad. Ahora se sortea entre los 3
             # pares mas cercanos en vez de coger siempre el minimo exacto - sigue
@@ -382,7 +382,7 @@ def record_duel(conn, table: str, a_id: int, b_id: int, user_id: int, result: fl
     duelos dan un orden mas honesto que ir arrastrando a ojo.
 
     `result` es el resultado desde el punto de vista de a_id: 1.0 gana a_id, 0.0 gana
-    b_id, 0.5 empate ("de los que realmente no sabes" - Tara). Glicko (ver arriba) en
+    b_id, 0.5 empate ("de los que realmente no sabes" - El usuario). Glicko (ver arriba) en
     vez de Elo de K fijo: cada duelo mueve mas o menos el rating segun el RD de cada
     uno (mas incierto = se mueve mas), y el propio RD baja como efecto colateral del
     duelo. Cada duelo queda registrado en `duels` (no se pierde el historial de
@@ -418,7 +418,7 @@ def record_duel(conn, table: str, a_id: int, b_id: int, user_id: int, result: fl
 
 def get_elo_deltas(conn, table: str, ids: list[int]):
     """Cuanto Elo/puestos se han ganado (o perdido) desde la ultima vez que se vio esta
-    lista/waifus - "ultima sesion" pedida por Tara sin tener que inventar un concepto
+    lista/waifus - "ultima sesion" pedida por el usuario sin tener que inventar un concepto
     de sesion de verdad: cada vista de /lista/{id} o /waifus compara contra la foto
     guardada en `elo_snapshots` la vez anterior, y deja una foto nueva para la proxima.
     None para un id sin foto previa (recien añadido, nada que comparar todavia)."""

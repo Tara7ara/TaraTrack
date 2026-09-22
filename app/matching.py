@@ -25,7 +25,7 @@ def _plausible_match(query: str, candidate: str) -> bool:
 def _best_plausible_match(title: str, results: list):
     """Antes solo miraba results[0]: si TMDB devolvia primero un resultado sin
     relacion (agregador, spin-off...) y el titulo real quedaba 2º/3º, caia al
-    buscador aunque hubiera un match real justo debajo - Tara: "me lleva al
+    buscador aunque hubiera un match real justo debajo - El usuario: "me lleva al
     buscador" mas de lo esperado. Ahora prueba los 3 primeros y se queda con el
     primero que pase el freno de _plausible_match, sin relajar el propio freno."""
     for r in results[:3]:
@@ -53,7 +53,7 @@ def _strip_season_suffix(title: str) -> str:
     p.ej. "Seihantai na Kimi to Boku 2nd Season" / "You and I Are Polar Opposites
     Season 2") mientras que TMDB casi siempre indexa el anime entero bajo un unico
     show con todas las temporadas dentro, sin ese sufijo en el nombre - bug real
-    (Tara, calendario de temporada): tmdb.search() con el titulo completo no
+    (El usuario, calendario de temporada): tmdb.search() con el titulo completo no
     encontraba nada y ni siquiera /buscar a mano daba con la ficha. Quita el
     sufijo para reintentar con "el nombre normal"; vacio si no habia sufijo que
     quitar (para no reintentar la misma busqueda dos veces sin motivo)."""
@@ -89,7 +89,7 @@ def _resolve_calendar_match(title: str, romaji: str = ""):
     veces solo indexa el romaji/original de un anime sin licencia occidental, nunca
     la traduccion al ingles - sin el segundo intento, tanto la busqueda como el
     freno de plausibilidad fallaban aunque la ficha SI existiera en TMDB (caso real,
-    Tara: "You and I Are Polar Opposites Season 2" no encontraba nada bajo ningun
+    el usuario: "You and I Are Polar Opposites Season 2" no encontraba nada bajo ningun
     titulo calculado desde el ingles; con el romaji "Seihantai na Kimi to Boku" si
     hay match directo). Prueba titulo, y solo si no cuaja, el romaji."""
     for candidate in [title] + ([romaji] if romaji and romaji != title else []):

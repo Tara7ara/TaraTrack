@@ -244,7 +244,7 @@ CREATE TABLE IF NOT EXISTS episode_user_state (
     PRIMARY KEY (episode_id, user_id)
 );
 
--- Dia de emision manual por titulo (Tara, notas.txt: "lunes Grand Blue pero en el
+-- Dia de emision manual por titulo (El usuario, notas.txt: "lunes Grand Blue pero en el
 -- calendario sale los martes, es molesto ir a buscar") - pisa el weekday calculado en
 -- UTC desde airing_at/startDate de AniList (app/anime.py) SOLO para ese titulo, sin
 -- tocar el calculo automatico que funciona bien para el resto. Keyed por anilist_id,
@@ -309,7 +309,7 @@ MIGRATIONS = [
     # 0 (decidido, no es habito), 1 (habito). Con un booleano a 0 por defecto no se
     # podria distinguir "no lo es" de "aun no lo he mirado". Marcado siempre a mano
     # (ficha o formulario de puntuar), sin sugerencias automaticas - el triaje en
-    # bloque y el goteo se quitaron 2026-08-20 (Tara: "una vez lo pongo es porque
+    # bloque y el goteo se quitaron 2026-08-20 (El usuario: "una vez lo pongo es porque
     # lo se al 100%", no queria que la app le propusiera candidatos).
     "ALTER TABLE entries ADD COLUMN is_habit INTEGER",
     "ALTER TABLE titles ADD COLUMN original_title TEXT",
@@ -318,9 +318,9 @@ MIGRATIONS = [
     "ALTER TABLE titles ADD COLUMN anilist_match_attempts INTEGER NOT NULL DEFAULT 0",
     # Autover (2026-08-15): distinto de is_habit a proposito - habito solo afecta a
     # las estadisticas de afinidad (silencioso), autover marca vistos episodios reales
-    # sin que Tara lo pida - mezclarlos habria hecho que marcar algo "habito" tocara
+    # sin que el usuario lo pida - mezclarlos habria hecho que marcar algo "habito" tocara
     # el historial real de golpe. Booleano simple (no tri-estado): es una decision
-    # explicita de Tara sobre una serie concreta, no algo que se pregunte solo.
+    # explicita del usuario sobre una serie concreta, no algo que se pregunte solo.
     "ALTER TABLE entries ADD COLUMN auto_watch INTEGER NOT NULL DEFAULT 0",
     # Glicko (2026-08-15): sustituye al Elo de K fijo para el duelo (entries/list_items/
     # favorite_characters) - RD es la incertidumbre de cada item (350=nada seguro,
@@ -356,26 +356,36 @@ MIGRATIONS = [
     # date -> user_id+date) asi que necesitan reconstruccion completa, no un ALTER
     # ADD COLUMN simple - ver _migrate_affinity_multiuser mas abajo.
     "ALTER TABLE score_distribution ADD COLUMN user_id INTEGER REFERENCES users(id)",
-    # Bug real (2026-09-18, Tara: "recomienda full anime a la cuenta random"):
+    # Bug real (2026-09-18, el usuario: "recomienda full anime a la cuenta random"):
     # recommendations_cache era UNA tabla global calculada a partir de TODAS las
-    # entries de la instancia (mayoria de Tara), asi que cualquier cuenta nueva veia
-    # los recomendados de Tara. No es una tabla de datos del usuario (es cache
+    # entries de la instancia (mayoria del usuario), asi que cualquier cuenta nueva veia
+    # los recomendados del usuario. No es una tabla de datos del usuario (es cache
     # recalculable), asi que no hace falta reconstruccion: se añade la columna y se
     # tira lo que hubiera - se recalcula sola por usuario en la siguiente visita/sync
     # (ver refresh_recommendations_cache). El DELETE es barato (tabla pequeña) e
     # idempotente, se puede dejar corriendo en cada arranque sin problema.
     "ALTER TABLE recommendations_cache ADD COLUMN user_id INTEGER REFERENCES users(id)",
     "DELETE FROM recommendations_cache WHERE user_id IS NULL",
-    # Perfil de cuenta (Tara, 2026-09-18: "como pongo fotos de usr, si quiero cambiar
+    # Perfil de cuenta (El usuario, 2026-09-18: "como pongo fotos de usr, si quiero cambiar
     # el nombre") - foto propia (avatar), independiente del username en si.
     "ALTER TABLE users ADD COLUMN avatar_path TEXT",
-    # Aviso de comentarios nuevos en el nav (Tara, 2026-09-18: "estilo tvtime") -
+    # Aviso de comentarios nuevos en el nav (El usuario, 2026-09-18: "estilo tvtime") -
     # marca de tiempo de "hasta aqui ya lo he visto", por usuario. Backfill a AHORA
     # (no NULL) para que una cuenta ya existente no vea de golpe todo su historico de
     # comentarios como "nuevo" el dia que se despliega esto - solo cuenta lo que pase
     # DESDE este momento en adelante. Idempotente (solo toca las filas sin fecha).
     "ALTER TABLE users ADD COLUMN comments_seen_at TEXT",
     "UPDATE users SET comments_seen_at = datetime('now') WHERE comments_seen_at IS NULL",
+    # Corregir a mano cuando TMDB desfasa un dia el episodio real (El usuario, 2026-09-22:
+    # Grand Blue emite en Japon el lunes pero TMDB lo cachea con fecha de martes, asi
+    # que en /pendientes/Continuar viendo -que usan episodes.air_date, no el
+    # weekday_overrides de mas arriba que es solo del calendario de temporada por
+    # AniList- no aparecia como emitido hasta un dia despues de lo esperado). Entero
+    # con signo en dias (-1 = "un dia antes de lo que dice TMDB"), 0 = sin corregir -
+    # ver repo.titles.sync_episodes/refresh_metadata, que aplican el desfase al
+    # guardar cada fecha, nunca al compararla, asi que ningun otro sitio del codigo
+    # necesita saber que existe.
+    "ALTER TABLE titles ADD COLUMN air_date_offset_days INTEGER NOT NULL DEFAULT 0",
 ]
 
 # Indices para que las subqueries de inicio/calendario no barran tablas enteras.
@@ -405,7 +415,7 @@ CREATE INDEX IF NOT EXISTS idx_episode_comments_episode ON episode_comments(epis
 
 def _migrate_rating_scale_0_10(conn):
     """SQLite no deja tocar un CHECK con ALTER TABLE, asi que subir la escala de notas
-    de 1-10 a 0-10 (Tara: "nota del 0 al 10, no del 1 al 10") exige reconstruir las
+    de 1-10 a 0-10 (El usuario: "nota del 0 al 10, no del 1 al 10") exige reconstruir las
     tablas con nota (entries, season_ratings). Se hace UNA vez (marca en app_settings) -
     crear tabla nueva + copiar + borrar la vieja + renombrar, con foreign_keys=OFF
     mientras dura para que el hueco intermedio sin la tabla no rompa las referencias de
@@ -417,7 +427,7 @@ def _migrate_rating_scale_0_10(conn):
     if done:
         return
     # Bug real encontrado probando esta migracion contra una copia de la BBDD real
-    # de Tara (2026-09-18, antes de desplegar el multiusuario): "PRAGMA foreign_keys"
+    # del usuario (2026-09-18, antes de desplegar el multiusuario): "PRAGMA foreign_keys"
     # es un no-op si ya hay una transaccion abierta (documentado en la propia SQLite) -
     # y la hay, porque SCHEMA/MIGRATIONS ya han escrito antes en esta misma conexion.
     # Sin este commit, el DROP TABLE de mas abajo revienta con
@@ -485,7 +495,7 @@ def _migrate_rating_scale_0_10(conn):
 
 def _migrate_multiuser(conn):
     """Cuentas de verdad (2026-09-17, Fase 1 del multiusuario - hermana y un amigo
-    de Tara quieren su propio seguimiento). Antes no habia ningun concepto de
+    del usuario quieren su propio seguimiento). Antes no habia ningun concepto de
     usuario: entries/lists/rejected_recommendations eran unicos por titulo/nombre
     en TODA la instancia. Se hace UNA vez (flag en app_settings, mismo patron que
     _migrate_rating_scale_0_10 de arriba) - SQLite no deja alterar un UNIQUE ya
@@ -502,7 +512,7 @@ def _migrate_multiuser(conn):
     if done:
         return
     # Bug real encontrado probando esta migracion contra una copia de la BBDD real de
-    # Tara (2026-09-18): "PRAGMA foreign_keys" no tiene efecto con una transaccion ya
+    # El usuario (2026-09-18): "PRAGMA foreign_keys" no tiene efecto con una transaccion ya
     # abierta (SCHEMA/MIGRATIONS ya escribieron en esta conexion) - sin este commit,
     # el DROP TABLE de mas abajo revienta con "FOREIGN KEY constraint failed" en
     # cuanto entries/lists/rejected_recommendations tienen filas reales referenciadas

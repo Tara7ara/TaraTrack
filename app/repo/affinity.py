@@ -41,9 +41,9 @@ def backfill_anilist_profile(conn):
     para el indice de afinidad (build_taste_profile, get_affinity_display);
     pendiente hace falta para poder predecir "% que te
     gustara" tambien sobre lo que YA tienes sin ver, no solo sobre el calendario de
-    temporada (Tara, 2026-08-13: "aplicar la prediccion a mis pendientes"). Boton
+    temporada (El usuario, 2026-08-13: "aplicar la prediccion a mis pendientes"). Boton
     manual en /calendario/anual, no automatico - son cientos de llamadas a AniList la
-    primera vez, no tiene sentido colarlo en la sync de fondo de 12h sin que Tara sepa
+    primera vez, no tiene sentido colarlo en la sync de fondo de 12h sin que el usuario sepa
     que tarda. Filtra por `anilist_tags IS NULL OR anilist_title_romaji IS NULL` (no
     solo `anilist_id IS NULL`) para que un titulo ya emparejado ANTES de que se
     guardaran tags/relaciones/titulo-romaji tambien se reprocese una vez - sin esto se
@@ -59,7 +59,7 @@ def backfill_anilist_profile(conn):
     vuelo y se guarda, para no depender de esperar al siguiente refresh_metadata.
 
     Cada fallo (los dos candidatos sin match) suma 1 a `anilist_match_attempts`; al
-    llegar a MAX_ANILIST_MATCH_ATTEMPTS el titulo deja de aparecer aqui - Tara,
+    llegar a MAX_ANILIST_MATCH_ATTEMPTS el titulo deja de aparecer aqui - El usuario,
     2026-08-14: "que si al intentar 5 veces no lo mete, pues que no lo mete y ya",
     para no reintentar para siempre lo que genuinamente no tiene entrada en AniList
     (recopilatorias/especiales con titulos japoneses muy especificos, altas manuales
@@ -131,7 +131,7 @@ def backfill_anilist_profile(conn):
 
 
 def snapshot_profile_progress(conn, user_id):
-    """Foto diaria de cuanto perfil de gustos de ESTE usuario hay construido (Tara,
+    """Foto diaria de cuanto perfil de gustos de ESTE usuario hay construido (El usuario,
     2026-08-13: "que me gustaria ver como va evolucionando cada dia que use la
     herramienta") - INSERT OR IGNORE por (usuario, fecha), asi que solo se guarda la
     primera vez que se llama cada dia, no importa cuantas veces se visite la app.
@@ -171,7 +171,7 @@ def count_anilist_backfill_pending(conn) -> int:
     "Actualizar perfil de gustos" de /calendario/anual por hacer. Mismo filtro exacto
     que backfill_anilist_profile (_ANILIST_BACKFILL_FILTER_SQL), incluido el tope de
     intentos - sin esto el contador se quedaba pegado en un numero que nunca bajaba
-    (Tara, 2026-08-14: "me pone que faltan 97 pero no baja nunca") con titulos que
+    (El usuario, 2026-08-14: "me pone que faltan 97 pero no baja nunca") con titulos que
     genuinamente no tienen match en AniList y se reintentaban para siempre."""
     return conn.execute(
         f"""SELECT count(*) FROM titles JOIN entries ON entries.title_id = titles.id
@@ -243,10 +243,10 @@ PREDICT_SIGNAL_WEIGHTS = {
 # calendario de temporada (no solo para el numero, tambien para el marco dorado y la
 # etiqueta). Un titulo con SOLO señal de genero (el mas generico y debil, peso 1.0 de
 # 13.5 = ~7.4% de confianza) puede llegar a 100% si su unico genero coincide con el
-# que mas le gusta a Tara - eso no es un "candidato a obra maestra" de verdad, es una
+# que mas le gusta al usuario - eso no es un "candidato a obra maestra" de verdad, es una
 # coincidencia de un solo dato. 10 excluye limpiamente genero-solo (~7%) pero deja
 # pasar estudio-solo (~15%), tags-solo (~26%) o precuela (~37%) - "soporte real" tal
-# como lo pidio Tara (2026-08-14, "que no sea solo un genero suelto").
+# como lo pidio el usuario (2026-08-14, "que no sea solo un genero suelto").
 MASTERPIECE_MIN_CONFIDENCE = 10
 
 
@@ -841,7 +841,7 @@ def get_recompute_status(conn, user_id):
     """Estado del recalculo del indice de afinidad DE ESTE USUARIO, para el indicador
     visible en /ajustes y /calendario/anual - lanzarlo (backfill de AniList +
     recompute_taste_profile, hasta varios minutos) redirigia al instante sin ninguna
-    señal de que estuviera pasando algo (Tara, 2026-08-14: "como se si realmente esta
+    señal de que estuviera pasando algo (El usuario, 2026-08-14: "como se si realmente esta
     trabajando"). Multiusuario Fase 3 (2026-09-18): namespacing por user_id en la
     clave de app_settings, igual que affinity_config."""
     return {
@@ -1096,7 +1096,7 @@ def _cached_predict_item(title_row) -> dict:
 def add_predictions(conn, user_id, entries, profile=None):
     """Añade `predict` (0-100 o None) a cada entry, calculado sobre el perfil de gustos
     DE ESTE USUARIO y los campos anilist_* ya cacheados en titles - para poder
-    predecir sobre pendientes, no solo sobre el calendario de temporada (Tara,
+    predecir sobre pendientes, no solo sobre el calendario de temporada (El usuario,
     2026-08-13: "aplicar la prediccion a mis pendientes"). `entries` debe traer las
     columnas anilist_* (ver list_pending). Devuelve una lista NUEVA de dicts
     (sqlite3.Row no admite asignar claves nuevas)."""
@@ -1165,7 +1165,7 @@ def get_affinity_display(conn, user_id, min_titles: int = 3, limit: int = 15):
         (user_id,),
     ).fetchone()[0]
 
-    # Grafica de un vistazo (Tara, 2026-08-15: "no veo una grafica, le falta algo"):
+    # Grafica de un vistazo (El usuario, 2026-08-15: "no veo una grafica, le falta algo"):
     # apetito y calidad ya se calculan por separado, pero la lectura util - "esto lo
     # veo por costumbre" vs "esto me gusta mas de lo que lo persigo" - es su diferencia
     # (inercia), no cada numero suelto. Barra divergente con los TOP por |inercia| de

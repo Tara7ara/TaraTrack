@@ -17,7 +17,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 def avatar(username: str, avatar_path: str | None = None) -> Markup:
     """Foto de perfil si el usuario ha subido una, si no iniciales con un color
-    estable derivado del nombre (Tara, 2026-09-18: "como pongo fotos de usr").
+    estable derivado del nombre (El usuario, 2026-09-18: "como pongo fotos de usr").
     Un solo sitio para el marcado - antes cada plantilla repetia el mismo
     `<span class="avatar avatar-N">` a mano con criterios de color distintos."""
     username = username or "?"
@@ -42,7 +42,7 @@ _SHOW_STATUS_ES = {
     # "Returning Series" de TMDB NO significa "en emision ahora mismo" (sigue
     # activo entre temporadas, ver _NO_EN_EMISION_SQL en repo) - "Continua" es
     # la traduccion que no promete un proximo episodio inminente que puede no
-    # existir todavia. Tara, 2026-09-20: "algo para saber si hay mas temporada,
+    # existir todavia. El usuario, 2026-09-20: "algo para saber si hay mas temporada,
     # si esta finalizada cancelada" - el dato ya se guardaba pero se enseñaba
     # en ingles crudo, facil de pasar por alto en una ficha en español.
     "Returning Series": "Continúa",
@@ -164,7 +164,7 @@ _TMDB_SIZE_RE = re.compile(r"/t/p/w\d+/")
 def poster_size(url, size):
     """Cambia la resolucion de una URL de TMDB (siempre guardada en w500) a `size`
     (p.ej. 'w185'). Los posters locales (/static/posters/...) y el placeholder
-    sin-portada no llevan ese patron, se devuelven tal cual - Tara: pantallas sin
+    sin-portada no llevan ese patron, se devuelven tal cual - El usuario: pantallas sin
     Retina (27"/23.8") no necesitan pedir siempre la version mas pesada."""
     if not url or "image.tmdb.org" not in url:
         return url
@@ -184,7 +184,7 @@ templates.env.filters["poster_size"] = poster_size
 templates.env.filters["elo_confidence"] = repo.elo_confidence_label
 templates.env.filters["avatar"] = avatar
 # Cache-busting de estaticos propios: /static se cachea 7 dias, asi que sin esto un
-# cambio de CSS tarda una semana en llegar al movil de Tara. Cambia en cada arranque.
+# cambio de CSS tarda una semana en llegar al movil del usuario. Cambia en cada arranque.
 templates.env.globals["static_v"] = int(time.time())
 
 
@@ -207,7 +207,7 @@ templates.env.globals["puntuar_queue_count"] = _puntuar_queue_count
 
 
 def _comments_badge_count(user_id: int) -> int:
-    """Aviso de comentarios nuevos en el nav (Tara, 2026-09-18: "estilo tvtime") -
+    """Aviso de comentarios nuevos en el nav (El usuario, 2026-09-18: "estilo tvtime") -
     mismo criterio de coste que _puntuar_queue_count de arriba."""
     try:
         with get_connection() as conn:
@@ -220,8 +220,8 @@ templates.env.globals["comments_badge_count"] = _comments_badge_count
 
 
 def _waifus_label(user_id: int) -> str:
-    """"Waifus" tiene sentido para Tara (anime de sobra), pero es jerga de nicho para
-    quien no ve anime (Tara, 2026-09-18: "que a las personas normales le salga
+    """"Waifus" tiene sentido para el usuario (anime de sobra), pero es jerga de nicho para
+    quien no ve anime (El usuario, 2026-09-18: "que a las personas normales le salga
     'personajes fav', a la que haya un anime puesto en la lista se transforme a lista
     de waifus") - un termino u otro segun tenga o no anime en su biblioteca."""
     try:
@@ -255,7 +255,7 @@ def _recompute_with_status(user_id, extra=None):
     """Envuelve recompute_taste_profile marcando running=True/False en app_settings
     (repo.set_recompute_running) - sin esto, lanzar el recalculo desde /ajustes o
     /calendario/anual redirigia al instante sin ninguna señal de que estuviera
-    pasando algo (Tara, 2026-08-14). `extra`, si se da, corre ANTES del recalculo y
+    pasando algo (El usuario, 2026-08-14). `extra`, si se da, corre ANTES del recalculo y
     cuenta dentro de la misma ventana de "running" (el backfill de AniList de
     /calendario/anual/perfil, que puede tardar varios minutos el solo). `finally`
     para que un fallo a medias no deje el indicador pegado en "recalculando" para

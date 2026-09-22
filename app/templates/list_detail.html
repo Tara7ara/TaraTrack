@@ -8,7 +8,7 @@
             <input type="text" name="name" value="{{ list_row.name }}" required>
             <button class="secondary">Renombrar</button>
         </form>
-        {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+        {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
         <details class="del-confirm">
             <summary class="btn secondary danger">Borrar lista</summary>
             <form method="post" action="/lista/{{ list_row.id }}/borrar">
@@ -19,7 +19,7 @@
     {% endif %}
 </div>
 {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para toda la lista.</p>{% endif %}
-{# Añadir títulos + Jugar duelos agrupados en una fila a partes iguales (Tara,
+{# Añadir títulos + Jugar duelos agrupados en una fila a partes iguales (El usuario,
    2026-08-21: "en línea en vez de paralelo" - mismo patron .search-actions-row
    que .hero-controls de /ajustes, "que sea profesional"). #}
 <div class="search-actions-row">
@@ -50,7 +50,7 @@
         <input type="hidden" name="modo" value="duelo">
         <button class="{{ 'active' if list_row.order_mode == 'duelo' }}">Duelos</button>
     </form>
-    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil de Tara. #}
+    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
     <details class="del-confirm">
         <summary class="btn secondary danger">Reiniciar Elo</summary>
         <form method="post" action="/lista/{{ list_row.id }}/elo/reiniciar">
@@ -74,7 +74,7 @@
 {% for e in entries %}
 <div class="card">
     <div class="card-poster">
-        {# Bug real (Tara, 2026-08-21): "pulso img y no me lleva a la ficha" - el
+        {# Bug real (El usuario, 2026-08-21): "pulso img y no me lleva a la ficha" - el
            poster nunca tuvo un <a> propio, solo el titulo de texto de abajo
            (.card-title) navegaba. Pasaba en cualquier lista, no solo Favoritos. #}
         <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">

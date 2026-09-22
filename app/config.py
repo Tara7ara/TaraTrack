@@ -65,7 +65,7 @@ def get_admin_username() -> str:
 def validate(env=None) -> None:
     """Falla alto y claro si falta algo obligatorio - llamada una vez en
     on_startup (main.py), para descubrirlo en "docker logs" justo tras un
-    despliegue en vez de en la primera peticion real de Tara. `env` es
+    despliegue en vez de en la primera peticion real del usuario. `env` es
     inyectable para los tests (monkeypatch de variables de entorno) sin
     depender de cuando se importo este modulo por primera vez."""
     env = os.environ if env is None else env

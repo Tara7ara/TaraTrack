@@ -21,7 +21,7 @@ _pool = ThreadPoolExecutor(max_workers=8)
 
 def _get(path: str, **params):
     params["api_key"] = API_KEY
-    # Titulos/sinopsis en español donde TMDB los tenga (mas cercano a como busca Tara).
+    # Titulos/sinopsis en español donde TMDB los tenga (mas cercano a como busca el usuario).
     params.setdefault("language", "es-ES")
     resp = _client.get(f"{API_BASE}{path}", params=params)
     resp.raise_for_status()

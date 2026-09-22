@@ -24,8 +24,8 @@
         <div class="home-card-ep">
             {% if confirm_all %}
             {# Confirmacion del doble tick renderizada por el servidor: window.confirm
-               (hx-confirm) no salta en el navegador de Tara. Vuelve al estilo de iconos
-               original (Tara: prefiere visualmente esto a los botones de texto que se
+               (hx-confirm) no salta en el navegador del usuario. Vuelve al estilo de iconos
+               original (El usuario: prefiere visualmente esto a los botones de texto que se
                probaron el 2026-09-16) - ya no hace falta que sea visualmente distinta del
                estado normal para evitar el clic reflejo: la causa real de aquel bug era
                que "Sí"/doble-tick coincidian en la MISMA posicion (izquierda) antes del
@@ -50,7 +50,7 @@
                 {# throttle: un doble clic accidental marcaba DOS episodios seguidos en vez
                    de uno - con solo 2 pendientes eso vaciaba la cola entera y la tarjeta
                    desaparecia del carrusel de golpe, pareciendo un bug de datos cuando en
-                   realidad marcaba de verdad los 2 episodios reales (Tara: "le doy a
+                   realidad marcaba de verdad los 2 episodios reales (El usuario: "le doy a
                    vista... desaparece la tarjeta en vez de actualizarse"). #}
                 <button class="home-card-check" title="Marcar T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }} visto"
                         hx-post="/entrada/{{ c.id }}/siguiente" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML"

@@ -12,7 +12,7 @@ def _insert_cache_row(conn, user_id, tmdb_id, title="Rec de prueba"):
 
 
 def test_list_recommendations_only_sees_own_cache(conn, user_id):
-    """Bug real (2026-09-18, Tara: 'recomienda full anime a la cuenta random'):
+    """Bug real (2026-09-18, el usuario: 'recomienda full anime a la cuenta random'):
     recommendations_cache era una unica tabla global calculada de las entries de
     TODA la instancia - una cuenta nueva veia los recomendados de otra."""
     other = repo.create_user(conn, "amigo", "unaclave123")
@@ -49,11 +49,11 @@ def test_refresh_with_no_seeds_only_clears_own_cache(conn, user_id):
 def test_known_titles_are_scoped_per_user_not_the_whole_catalog(conn, user_id):
     """Bug real critico (AGY, 2026-09-18): "known" comprobaba TODO el catalogo
     compartido (titles), no lo que ESTE usuario tiene en su biblioteca. Con el
-    catalogo de Tara lleno de cientos de titulos, una cuenta nueva se quedaba sin
+    catalogo del usuario lleno de cientos de titulos, una cuenta nueva se quedaba sin
     poder recibir NINGUNO de ellos como recomendacion, solo por existir en `titles`,
     aunque esa cuenta nunca los hubiera visto."""
     other = repo.create_user(conn, "amigo", "unaclave123")
-    # Tara tiene Frieren en su biblioteca (existe en el catalogo compartido `titles`).
+    # El usuario tiene Frieren en su biblioteca (existe en el catalogo compartido `titles`).
     title = repo.ensure_manual_title(conn, "show", "Frieren", 2023)
     conn.execute(
         "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')", (title["id"], user_id)

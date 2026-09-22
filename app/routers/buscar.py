@@ -24,7 +24,7 @@ def buscar(request: Request, q: str = ""):
     logica de busqueda de /buscar/resultados."""
     with get_connection() as conn:
         # 6 dejaba una fila corta con hueco muerto grande a la derecha en pantallas
-        # anchas (Tara, monitor QHD: "se ve vacía") - 11 a peticion explicita suya.
+        # anchas (El usuario, monitor QHD: "se ve vacía") - 11 a peticion explicita suya.
         recs = repo.list_recommendations(conn, request.state.user_id, limit=11)
     for r in recs:
         r["state"] = "new"
@@ -40,7 +40,7 @@ def buscar_resultados(request: Request, q: str = ""):
     se reintenta con el. tmdb.search() sin proteger tumbaba la ruta entera (500, sin
     resultados en pantalla) si un solo timeout de TMDB reventaba - "Black Clover" a
     veces desaparecia del buscador sin más explicación por esto."""
-    # Bug real (Tara, 2026-08-21): "al buscar una cosa se me desaparecen los
+    # Bug real (El usuario, 2026-08-21): "al buscar una cosa se me desaparecen los
     # recomendados" - al escribir y luego borrar el buscador hasta dejarlo vacio,
     # este endpoint devolvia un partial en blanco (search_results.html no pinta
     # nada si results=[] y query=""), perdiendo para siempre los recomendados que

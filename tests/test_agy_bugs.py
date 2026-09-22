@@ -109,7 +109,7 @@ def test_get_available_years_ignores_malformed_watched_at(conn, user_id):
 
 
 def test_duel_pool_falls_back_to_all_watched_when_no_anime(conn, user_id):
-    """Tara, 2026-09-18: 'el duelo era para anime pero para las otras personas no
+    """El usuario, 2026-09-18: 'el duelo era para anime pero para las otras personas no
     se como adaptarlo' - con menos de 2 titulos de anime, el duelo cae a TODO lo
     visto en vez de quedarse vacio."""
     for i, name in enumerate(["Breaking Bad", "Dark", "The Wire"]):
@@ -152,7 +152,7 @@ def test_user_has_anime(conn, user_id):
 
 
 def test_show_anime_calendar_defaults_to_the_given_default(conn, user_id):
-    """Tara, 2026-09-18: 'deberia de haber una etiqueta en conf' - sin tocarlo
+    """El usuario, 2026-09-18: 'deberia de haber una etiqueta en conf' - sin tocarlo
     nunca, manda el default (normalmente repo.user_has_anime)."""
     assert repo.get_show_anime_calendar(conn, user_id, default=True) is True
     assert repo.get_show_anime_calendar(conn, user_id, default=False) is False

@@ -71,7 +71,7 @@ def ajustes(
 
 @router.post("/ajustes/perfil/calendario-anime", response_class=HTMLResponse)
 def ajustes_calendario_anime(request: Request, mostrar: str = Form("0")):
-    """Tara, 2026-09-18: "deberia de haber una etiqueta en conf que permita ver
+    """El usuario, 2026-09-18: "deberia de haber una etiqueta en conf que permita ver
     todo esto (ej Otaku o Anime)" - ensena/oculta el "Calendario de temporada"
     (todo el anime de la temporada, no solo lo que sigues) segun preferencia
     explicita, no solo la deteccion automatica de repo.user_has_anime."""
@@ -84,7 +84,7 @@ def ajustes_calendario_anime(request: Request, mostrar: str = Form("0")):
 
 @router.post("/ajustes/perfil/nombre", response_class=HTMLResponse)
 def ajustes_cambiar_nombre(request: Request, username: str = Form(...)):
-    """Cambiar tu propio nombre de usuario (Tara, 2026-09-18: "si quiero cambiar
+    """Cambiar tu propio nombre de usuario (El usuario, 2026-09-18: "si quiero cambiar
     el nombre") - cada uno el suyo, no hace falta ser admin."""
     with get_connection() as conn:
         try:
@@ -121,7 +121,7 @@ def ajustes_cambiar_password(
 
 @router.post("/ajustes/perfil/foto", response_class=HTMLResponse)
 async def ajustes_cambiar_foto(request: Request, imagen: UploadFile = File(...)):
-    """Foto de perfil propia (Tara, 2026-09-18: "como pongo fotos de usr") - mismo
+    """Foto de perfil propia (El usuario, 2026-09-18: "como pongo fotos de usr") - mismo
     patron de validacion por trozos que cambiar_portada (app/routers/titulo.py):
     tipo de contenido + tope de tamaño, sin leer el fichero entero de una vez."""
     if imagen.content_type not in config.POSTER_CONTENT_TYPES:
@@ -171,7 +171,7 @@ def ajustes_crear_usuario(request: Request, username: str = Form(...), password:
 
 @router.post("/ajustes/usuarios/{user_id}/admin", response_class=HTMLResponse)
 def ajustes_toggle_admin(request: Request, user_id: int, valor: str = Form(...)):
-    """Fase 5 (Tara, 2026-09-18: "yo como administrador debería de poder poner admin
+    """Fase 5 (El usuario, 2026-09-18: "yo como administrador debería de poder poner admin
     a quien quiera") - solo admin, y no se puede dejar la instancia sin ningun admin
     (ver repo.set_admin)."""
     if not request.state.is_admin:
@@ -188,7 +188,7 @@ def ajustes_toggle_admin(request: Request, user_id: int, valor: str = Form(...))
 
 @router.post("/ajustes/usuarios/{user_id}/password", response_class=HTMLResponse)
 def ajustes_resetear_password(request: Request, user_id: int, password: str = Form(...)):
-    """Recuperar el acceso (Tara, 2026-09-18: "si pierdo la pass como lo recupero,
+    """Recuperar el acceso (El usuario, 2026-09-18: "si pierdo la pass como lo recupero,
     un fallo para el usr final") - sin email en este self-host, la via real es que
     tu (admin) le pongas una contraseña nueva a quien se haya quedado fuera."""
     if not request.state.is_admin:

@@ -20,7 +20,7 @@ MAX_RECS_WORKERS = 10
 
 
 # Semillas con este numero de BAN acumulados (recomendaciones suyas rechazadas) pesan
-# menos en el ranking - son mal recomendadoras para Tara, no todas las semillas valen igual.
+# menos en el ranking - son mal recomendadoras para el usuario, no todas las semillas valen igual.
 SEED_BAN_THRESHOLD = 3
 
 
@@ -53,9 +53,9 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
     llama la sync de fondo cada 12h para que /recomendados sea una lectura local
     instantanea en vez de esperar a N llamadas a TMDB en cada visita.
 
-    Bug real (2026-09-18, Tara: "recomienda full anime a la cuenta random"): esto
+    Bug real (2026-09-18, el usuario: "recomienda full anime a la cuenta random"): esto
     era una unica tabla GLOBAL calculada a partir de las entries de TODA la
-    instancia (en la practica, casi todo Tara) - cualquier cuenta nueva veia sus
+    instancia (en la practica, casi todo el usuario) - cualquier cuenta nueva veia sus
     recomendados. Ahora es por usuario, mismo criterio que recompute_taste_profile
     (repo/sync.py): sin user_id, recalcula la de TODOS los usuarios (llamada de la
     sync de fondo); con user_id, solo la de ese usuario (red de seguridad de
@@ -80,9 +80,9 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
         ).fetchall()
         # Bug real (AGY, 2026-09-18): "known" comprobaba TODO el catalogo compartido
         # (titles), no lo que ESTE usuario tiene en su biblioteca - con el catalogo
-        # ya lleno de las ~900 entradas de Tara, una cuenta nueva se quedaba sin
+        # ya lleno de las ~900 entradas del usuario, una cuenta nueva se quedaba sin
         # poder recibir NINGUNA de esas obras como recomendacion aunque ella nunca
-        # las hubiera visto, solo porque Tara si las tenia. "Conocido" tiene que ser
+        # las hubiera visto, solo porque el usuario si las tenia. "Conocido" tiene que ser
         # "tengo una entry de esto", no "existe en el catalogo de alguien".
         known = {
             row["tmdb_id"] for row in conn.execute(
@@ -209,7 +209,7 @@ def reject_recommendation(
 ):
     """El BAN de una tarjeta de recomendados: no vuelve a salir. Guarda tambien la
     semilla ("porque te gusto X") que la genero - antes se tiraba esa señal, y con ella
-    _seed_ban_counts puede detectar semillas que recomiendan mal para Tara.
+    _seed_ban_counts puede detectar semillas que recomiendan mal para el usuario.
     `user_id` obligatorio desde el multiusuario (2026-09-17): antes `tmdb_id` era
     UNIQUE en toda la instancia - sin filtrar, el ban de un usuario ocultaria esa
     recomendación para todos los demás también."""

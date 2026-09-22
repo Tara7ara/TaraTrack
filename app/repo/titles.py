@@ -4,7 +4,7 @@ el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
 exactamente igual que antes, este split es puramente interno."""
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app import anime, tmdb
 from app.repo._shared import (
@@ -28,7 +28,7 @@ def get_title(conn, tmdb_id: int):
 def set_poster(conn, tmdb_id: int, poster_path: str):
     """Portada propia subida a mano desde la ficha - ver POST /titulo/{id}/{type}/portada.
     custom_poster=1 para poder distinguirla de una portada de TMDB en Mosaico/ficha
-    (Tara: "que en el mosaico se vea qué es lo que he añadido", 2026-08-13) - sin este
+    (El usuario: "que en el mosaico se vea qué es lo que he añadido", 2026-08-13) - sin este
     flag no había forma de saberlo, el nombre de fichero es igual en los dos casos."""
     conn.execute(
         "UPDATE titles SET poster_path = ?, custom_poster = 1 WHERE tmdb_id = ?", (poster_path, tmdb_id)
@@ -87,6 +87,26 @@ def ensure_title(conn, tmdb_id: int, media_type: str):
 
 
 
+def _shift_date(value: str | None, offset_days: int) -> str | None:
+    """Suma offset_days (con signo) a una fecha 'YYYY-MM-DD' (o con hora detras, se
+    conserva tal cual esa parte). None/vacia se devuelve igual - un titulo sin fecha
+    cacheada no tiene nada que desplazar."""
+    if not value or not offset_days:
+        return value
+    day_part, _, rest = value.partition("T")
+    shifted = date.fromisoformat(day_part[:10]) + timedelta(days=offset_days)
+    return f"{shifted.isoformat()}T{rest}" if rest else shifted.isoformat()
+
+
+def set_air_date_offset(conn, title_id: int, days: int):
+    """Corrige a mano el desfase entre la fecha de emision que cachea TMDB y la fecha
+    real (El usuario, 2026-09-22: Grand Blue emite el lunes en Japon pero TMDB lo guarda en
+    martes) - dias con signo, 0 quita la correccion. Se aplica en sync_episodes/
+    refresh_metadata AL GUARDAR, nunca al comparar, asi que el resto del codigo
+    (missing_eps, next_unwatched_episode, /calendario...) no necesita saber que existe."""
+    conn.execute("UPDATE titles SET air_date_offset_days = ? WHERE id = ?", (days, title_id))
+
+
 def refresh_metadata(conn, title_row):
     """Vuelve a consultar TMDB para refrescar nota/duracion (y proximo episodio si es serie).
     Tambien pisa titulo/sinopsis/generos: los titulos cacheados antes del cambio a
@@ -94,6 +114,7 @@ def refresh_metadata(conn, title_row):
     if title_row["tmdb_id"] < 0:
         return
     details = tmdb.get_details(title_row["tmdb_id"], title_row["type"])
+    offset = title_row["air_date_offset_days"] or 0
     conn.execute(
         """UPDATE titles SET title = ?, overview = ?, genres = ?, show_status = ?,
            next_episode_air_date = ?, next_episode_label = ?,
@@ -104,7 +125,7 @@ def refresh_metadata(conn, title_row):
             details["overview"],
             ",".join(details.get("genres", [])),
             details.get("show_status"),
-            details.get("next_episode_air_date"),
+            _shift_date(details.get("next_episode_air_date"), offset),
             details.get("next_episode_label"),
             details.get("vote_average"),
             details.get("runtime_minutes"),
@@ -131,6 +152,7 @@ def sync_episodes(conn, title_row):
         episodes_by_season = pool.map(
             lambda s: tmdb.get_season_episodes(title_row["tmdb_id"], s), seasons
         )
+    offset = title_row["air_date_offset_days"] or 0
     for episodes in episodes_by_season:
         for ep in episodes:
             conn.execute(
@@ -138,7 +160,8 @@ def sync_episodes(conn, title_row):
                    VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT(title_id, season_number, episode_number)
                    DO UPDATE SET name = excluded.name, air_date = excluded.air_date""",
-                (title_row["id"], ep["season_number"], ep["episode_number"], ep["name"], ep["air_date"]),
+                (title_row["id"], ep["season_number"], ep["episode_number"], ep["name"],
+                 _shift_date(ep["air_date"], offset)),
             )
 
 
@@ -146,7 +169,7 @@ def sync_episodes(conn, title_row):
 
 def list_episodes(conn, title_id):
     # watch_count (2026-08-20, "x2/x3" visual del rewatch): cuantas veces se ha
-    # marcado ESTE episodio en total (episode_watches), no solo "visto si/no" - Tara
+    # marcado ESTE episodio en total (episode_watches), no solo "visto si/no" - El usuario
     # pidio explicitamente que un episodio ya visto antes nunca se vea "vacio" al
     # empezar un rewatch, solo que el contador suba.
     return conn.execute(
@@ -162,7 +185,7 @@ def list_episodes(conn, title_id):
 
 def toggle_episode(conn, episode_id, user_id):
     """Desmarcar el ultimo episodio visto de una serie dejaba la entry en 'watched'
-    sin un solo episodio visto de verdad (Tara: "no esta vista por ningun ep, esto es
+    sin un solo episodio visto de verdad (El usuario: "no esta vista por ningun ep, esto es
     un bug, deberia estar en pendientes") - si al desmarcar no queda ningun episodio
     visto POR ESTE USUARIO, su entry vuelve a 'pending'. "Visto ahora" es round-aware
     (2026-08-20): si hay un rewatch en curso, un marcado ANTERIOR a esa ronda cuenta
@@ -201,7 +224,7 @@ def toggle_episode(conn, episode_id, user_id):
     _log_episode_watch(conn, episode_id, user_id, now)
     _promote_if_first_watch(conn, title_id, user_id)
     # True = "esto acaba de marcarse visto ahora" (no un desmarcado) - señal para la
-    # ficha/el aviso de "¿comentas?" (Tara, 2026-09-18: "quiero comentar por episodio,
+    # ficha/el aviso de "¿comentas?" (El usuario, 2026-09-18: "quiero comentar por episodio,
     # como tvtime" - el momento natural para ofrecerlo es justo al marcarlo, no una
     # vuelta a buscarlo despues).
     return True
@@ -210,7 +233,7 @@ def toggle_episode(conn, episode_id, user_id):
 
 
 def rewatch_episode(conn, episode_id, user_id):
-    """Volver a ver UN episodio suelto (2026-08-21, Tara: "puedo mirar violet ep 7 por
+    """Volver a ver UN episodio suelto (2026-08-21, el usuario: "puedo mirar violet ep 7 por
     x motivo y no quiero ver todo") - a diferencia de toggle_episode, nunca desmarca:
     siempre añade una fila nueva a episode_watches, sin tocar entries.status ni
     rewatch_started_at. Pensado para episodios YA vistos (watched_now=True) - si el
@@ -277,7 +300,7 @@ def list_season_ratings(conn, entry_id: int) -> dict:
 def set_season_rating(conn, entry_id: int, season_number: int, rating: float, comment: str,
                        categories: dict | None = None):
     """Puntua una temporada suelta en vez de la serie entera - pensado para series donde
-    unas temporadas valen mas que otras (Tara: 'hay series que valoro mas la primera que
+    unas temporadas valen mas que otras (El usuario: 'hay series que valoro mas la primera que
     la segunda') y una sola nota por serie completa las mezclaba todas en una media mala."""
     categories = categories or {}
     conn.execute(
@@ -296,7 +319,7 @@ def set_season_rating(conn, entry_id: int, season_number: int, rating: float, co
             categories.get("musica"), categories.get("disfrute"),
         ),
     )
-    # Bug real (Tara, 2026-09-20: "he decidido puntuar por temporada y no ha hecho
+    # Bug real (El usuario, 2026-09-20: "he decidido puntuar por temporada y no ha hecho
     # un promedio"): puntuar por temporada nunca tocaba entries.rating (la nota
     # general), asi que una serie puntuada solo por temporadas se quedaba con
     # rating NULL para siempre - sin nota general que enseñar junto a "Internet: X"
@@ -592,7 +615,7 @@ def list_new_airing(conn, user_id):
     """Series recien añadidas (pendientes, 0 episodios vistos) que YA tienen algun
     episodio emitido esperando Y son de la temporada actual (release_date dentro de la
     temporada en curso) - complementario a list_continue_watching (esa exige >=1
-    visto, esta exige 0). Pedido por Tara (2026-08-13): si añade algo con solo el
+    visto, esta exige 0). Pedido por el usuario (2026-08-13): si añade algo con solo el
     primer episodio fuera porque el resto aun no ha salido, quiere que se lo recuerde
     "arriba" en vez de perderse entre pendientes - pero solo lo de esta temporada, no
     cualquier pendiente atrasado de hace tiempo con un episodio suelto sin ver."""
@@ -618,7 +641,7 @@ def get_home_card(conn, entry_id: int, user_id: int):
     ver) - sin esto, marcar el ultimo episodio que faltaba devolvia la fila igual
     (missing_eps=0) y la tarjeta se quedaba en pantalla con el badge "Al dia" en vez de
     desaparecer del carrusel, obligando a recargar para que se fuera de verdad. Bug
-    real, Tara: "si marco visto deberia salir, no quedarse ahi con 'esta visto y ya'".
+    real, el usuario: "si marco visto deberia salir, no quedarse ahi con 'esta visto y ya'".
 
     Multiusuario Fase 2 (2026-09-17): `user_id` es ademas una comprobacion de
     propiedad - si `entry_id` no es de ESE usuario, `entries.user_id = ?` no encuentra
@@ -632,7 +655,7 @@ def get_home_card(conn, entry_id: int, user_id: int):
 
 
 def list_trackable_titles(conn):
-    """Todo lo que Tara sigue (pendiente o visto) con tmdb_id real - candidatos a refrescar metadatos."""
+    """Todo lo que el usuario sigue (pendiente o visto) con tmdb_id real - candidatos a refrescar metadatos."""
     return conn.execute(
         """SELECT DISTINCT titles.* FROM titles JOIN entries ON entries.title_id = titles.id
            WHERE titles.tmdb_id > 0"""
@@ -767,7 +790,7 @@ def get_owned_entry_with_title(conn, entry_id: int, user_id: int):
 
 def _snapshot_rating_history(conn, entry_id: int):
     """Guarda la nota/categorias/comentario actuales en rating_history antes de pisarlas -
-    para poder ver como cambia de opinion Tara con el tiempo ('le puse un 9 hace dos años,
+    para poder ver como cambia de opinion el usuario con el tiempo ('le puse un 9 hace dos años,
     ahora un 6'). Solo si ya habia una nota puesta - no tiene sentido guardar un hueco vacio."""
     row = conn.execute(
         """SELECT rating, cat_historia, cat_animacion, cat_personajes, cat_musica, cat_disfrute, comment
@@ -831,17 +854,40 @@ def mark_watched(conn, entry_id: int, rating: float, comment: str, categories: d
     )
     user_id = conn.execute("SELECT user_id FROM entries WHERE id = ?", (entry_id,)).fetchone()["user_id"]
     reseed_undueled_entries_elo(conn, user_id)
+    # Bug real (El usuario, 2026-09-22, generalizacion de la ronda 2026-09-20 sobre Hell
+    # Mode): puntuar por aqui (el examen general, no "Puntuar temp.") a una serie EN
+    # EMISION que todavia solo tiene una temporada cacheada ("voy al dia") no dejaba
+    # ninguna fila en season_ratings - _entry_unrated_season exige >=1 fila para
+    # considerar que la entry "usa puntuacion por temporada", asi que en cuanto
+    # saliera una temporada 2 y se terminara, nunca habria vuelto a aparecer en
+    # /puntuar (rating ya no es NULL). Confirmado contra produccion antes de tocar
+    # codigo: 44 entries reales en este estado exacto (Frieren, Jujutsu Kaisen, Dan
+    # Da Dan, Kaiju No. 8...). Fix: si la serie sigue en emision y solo tiene UNA
+    # temporada por ahora, la misma nota se guarda tambien como season_ratings[1] -
+    # set_season_rating recalcula entries.rating como la media de season_ratings,
+    # que con una sola fila es la propia nota, asi que no cambia nada visible hoy.
+    title = conn.execute(
+        "SELECT titles.id AS title_id, titles.type, titles.show_status FROM entries "
+        "JOIN titles ON titles.id = entries.title_id WHERE entries.id = ?", (entry_id,)
+    ).fetchone()
+    if title and title["type"] == "show" and title["show_status"] == "Returning Series":
+        season_count = conn.execute(
+            "SELECT COUNT(DISTINCT season_number) AS n FROM episodes WHERE title_id = ? AND season_number > 0",
+            (title["title_id"],),
+        ).fetchone()["n"]
+        if season_count == 1:
+            set_season_rating(conn, entry_id, 1, rating, comment, categories)
 
 
 
 
 def set_watched_at(conn, entry_id: int, date_str: str):
     """Corrige la fecha de visionado de una entry YA marcada como vista, sin pasar por
-    el formulario de nota (Tara: series vistas hace tiempo que se marcaron con la fecha
+    el formulario de nota (El usuario: series vistas hace tiempo que se marcaron con la fecha
     de hoy al importarlas/recuperarlas, e inflaban las estadisticas del año en curso).
     Solo el dia, la hora se fija a mediodia UTC para que no cambie de dia por huso horario.
 
-    Bug real #1 (Tara, 2026-08-23): "Nande Koko ni Sensei ga!?" corregida a 2019 en la
+    Bug real #1 (El usuario, 2026-08-23): "Nande Koko ni Sensei ga!?" corregida a 2019 en la
     ficha, pero seguia saliendo con hoy en /historial y en "Episodios por mes" - esto
     solo tocaba entries.watched_at (el resumen de la entry), pero para una serie la
     fecha que de verdad alimenta historial/calendario/estadisticas es
@@ -851,7 +897,7 @@ def set_watched_at(conn, entry_id: int, date_str: str):
     en el sitio, no _log_episode_watch: esto es arreglar un dato, no un nuevo
     visionado - no debe sumar al contador "x2" de episode_watches).
 
-    Bug real #2, misma ronda (Tara, captura real de "Episodios"): el primer intento
+    Bug real #2, misma ronda (El usuario, captura real de "Episodios"): el primer intento
     ponia LA MISMA fecha (la escrita en el formulario) en los 12 episodios de golpe -
     "como vas a poner la fecha y se me pone la fecha del primer ep y no de la fecha
     que le corresponde". Cada episodio usa su PROPIO air_date (ya visible en la propia
@@ -890,7 +936,7 @@ def set_watched_at(conn, entry_id: int, date_str: str):
 
 
 def undo_mark_watched(conn, entry_id: int):
-    """Deshace un "Marcar vista" por error (Tara, Tougen Anki 2026-08-13: lo marco sin
+    """Deshace un "Marcar vista" por error (El usuario, Tougen Anki 2026-08-13: lo marco sin
     querer, no se lo ha visto de verdad, y no habia ninguna via en la UI para revertirlo
     del todo - el desmarcado por episodio solo revierte a pending si habia justo un
     episodio marcado, pero si el marcado inicial ni siquiera llego a marcar ninguno
@@ -951,7 +997,7 @@ def toggle_habit(conn, entry_id: int) -> bool:
 def toggle_auto_watch(conn, entry_id: int) -> bool:
     """Toggle binario en la ficha: la serie marcada se autover - en cuanto sync_library
     detecta episodios nuevos emitidos, se marcan vistos solos (ver mas abajo), sin que
-    Tara tenga que entrar ni clicar "Marcar vista" cada semana. Ejemplo pedido: One
+    el usuario tenga que entrar ni clicar "Marcar vista" cada semana. Ejemplo pedido: One
     Piece. Flag independiente de is_habit, ver el porque en MIGRATIONS."""
     row = conn.execute("SELECT auto_watch FROM entries WHERE id = ?", (entry_id,)).fetchone()
     new_value = 0 if row["auto_watch"] else 1
@@ -990,7 +1036,7 @@ def _tipo_sql(tipo):
     """Filtro Todo/Series/Pelis/Anime compartido por pendientes y vistas. "anime" no es
     un titles.type real (series/peliculas ya sean anime o no) - reusa _IS_ANIME_SQL,
     el mismo criterio (idioma original japones) que ya usa el duelo global y el genero
-    "Anime" del desplegable (Tara: "ya tienes la categoria montada", 2026-08-13)."""
+    "Anime" del desplegable (El usuario: "ya tienes la categoria montada", 2026-08-13)."""
     if tipo == "anime":
         return f" AND {_IS_ANIME_SQL}"
     media_type = TIPOS.get(tipo)
@@ -1007,15 +1053,15 @@ ORDENES_PENDIENTES = {
 }
 
 
-# Direccion por defecto de cada orden si Tara no la ha tocado - fechas/notas de mas
-# reciente/alto a menos, titulo alfabetico. Tara puede invertir cualquiera a mano.
+# Direccion por defecto de cada orden si el usuario no la ha tocado - fechas/notas de mas
+# reciente/alto a menos, titulo alfabetico. El usuario puede invertir cualquiera a mano.
 ORDENES_PENDIENTES_DEFAULT_DIR = {"anadido": "desc", "lanzamiento": "desc", "nota_internet": "desc", "titulo": "asc"}
 
 
 
 
 def _orden_sql(columnas: dict, defaults: dict, orden: str, direccion: str) -> str:
-    """Arma el ORDER BY final: columna segun `orden`, direccion explicita si Tara la ha
+    """Arma el ORDER BY final: columna segun `orden`, direccion explicita si el usuario la ha
     puesto (asc/desc) o el default de esa columna si no. NULLS LAST siempre, para que
     los titulos sin nota/duracion/año cacheado no se cuelen arriba en ascendente."""
     columna = columnas.get(orden, columnas[next(iter(columnas))])
@@ -1130,7 +1176,7 @@ def start_rewatch(conn, entry_id: int):
     (La columna speed es herencia del diseño anterior - se queda en su default '1x'.)
 
     2026-08-20, estilo Trakt: YA NO desmarca (borra la fecha de) ningun episodio -
-    Tara: "el volver a ver que hay ahora es poco intuitivo" tras investigar como lo
+    el usuario: "el volver a ver que hay ahora es poco intuitivo" tras investigar como lo
     hace Trakt ("no plays will be lost - solo recalculamos el progreso desde ese
     punto"). Ahora solo se guarda CUANDO empezo esta ronda (entries.rewatch_started_at)
     - next_unwatched_episode y mark_all_aired_watched/mark_season_watched (ver
@@ -1170,7 +1216,7 @@ def set_predicted_score(conn, entry_id: int, predicted: int):
     calendario en el momento de añadir - solo si no habia ninguna ya (no pisar la
     prediccion original con una recalculada mas tarde, con el perfil ya cambiado).
     Sirve de "expectativa" para comparar contra la nota real una vez puntuada
-    (predicted_outcome_label, Tara 2026-08-13)."""
+    (predicted_outcome_label, el usuario 2026-08-13)."""
     conn.execute(
         "UPDATE entries SET predicted_score = ? WHERE id = ? AND predicted_score IS NULL",
         (predicted, entry_id),
@@ -1181,7 +1227,7 @@ def set_predicted_score(conn, entry_id: int, predicted: int):
 
 def predicted_outcome_label(predicted: int, rating: float) -> str | None:
     """'Expectativa vs realidad': compara la prediccion guardada al añadir con la nota
-    final. Ninguna señal si no hay prediccion o nota. Umbrales fijados a ojo (Tara no
+    final. Ninguna señal si no hay prediccion o nota. Umbrales fijados a ojo (El usuario no
     dio numeros exactos, solo un par de ejemplos) - de mas extremo a menos, la primera
     que encaje gana:
     - "Flechazo inesperado": predijo muy bajo (<=40%) y acabo siendo obra maestra (>=9.5)
@@ -1266,12 +1312,12 @@ def list_all_posters(conn):
 # original excluia por ese campo solo, y dejaba 42 de 70 series "pendientes de
 # puntuar" atascadas para siempre sin tener nada pendiente de verdad (Frieren,
 # Jujutsu Kaisen... con la temporada ya acabada, sin proximo episodio programado) -
-# bug real, Tara: "me parecen demasiadas". Ahora excluye solo si HAY un proximo
+# bug real, el usuario: "me parecen demasiadas". Ahora excluye solo si HAY un proximo
 # episodio con fecha real - eso si es "en emision de verdad", coincide con el mismo
 # criterio que ya usa in_season en _HOME_SHOWS_SQL.
-# Bug real (Tara, 2026-09-20: "he acabado un par de series de estos semanales, no
+# Bug real (El usuario, 2026-09-20: "he acabado un par de series de estos semanales, no
 # me han salido a puntuar"): next_episode_air_date es un cache de TMDB que solo se
-# refresca con sync_library (cada 12h o al pulsar "Sincronizar") - si Tara ve y
+# refresca con sync_library (cada 12h o al pulsar "Sincronizar") - si el usuario ve y
 # puntua el episodio el mismo dia que emite, ese campo sigue apuntando a la fecha
 # de HOY (o una ya pasada) hasta el proximo sync, y "IS NULL" da falso aunque ya
 # no quede ningun episodio pendiente de verdad. Una fecha de "proximo episodio"
@@ -1281,12 +1327,12 @@ _NO_EN_EMISION_SQL = (
     "(titles.next_episode_air_date IS NULL OR date(titles.next_episode_air_date) <= date('now'))"
 )
 
-# Bug real (Tara, 2026-08-21): Dorohedoro entro en /puntuar con solo 4 de 23
+# Bug real (El usuario, 2026-08-21): Dorohedoro entro en /puntuar con solo 4 de 23
 # episodios emitidos vistos - entries.status pasa a 'watched' con solo marcar el
 # PRIMER episodio (decision de diseño de siempre), asi que sin
 # esta condicion cualquier serie "empezada y abandonada" (o simplemente a medio
 # ver) que ademas no este emitiendo AHORA MISMO (_NO_EN_EMISION_SQL) cae en la
-# cola de puntuar antes de que Tara la haya terminado de verdad. Mismo criterio
+# cola de puntuar antes de que el usuario la haya terminado de verdad. Mismo criterio
 # de "falta por ver" que ya usa _HOME_SHOWS_SQL (missing_eps) - si es un show y
 # le queda algun episodio ya emitido sin ver, no esta lista para puntuar todavia.
 # Multiusuario Fase 2 (2026-09-17): "falta por ver" se mira contra episode_watches de
@@ -1366,7 +1412,7 @@ def count_review_queue(conn, user_id: int) -> int:
     medio ver con episodios emitidos pendientes (ver _SIN_PENDIENTES_SQL). Suma tambien
     las series que YA tienen nota general (puntuadas por temporada, ver
     set_season_rating) pero a las que les ha salido una temporada nueva completa sin
-    puntuar todavia - Tara, 2026-09-20: "si sale una tercera temporada no puedo
+    puntuar todavia - El usuario, 2026-09-20: "si sale una tercera temporada no puedo
     puntuar" - sin esto, una vez la media de temporadas rellena entries.rating, la
     serie sale de esta cola para siempre y nada avisa de que hay una temporada nueva."""
     base = conn.execute(
@@ -1488,7 +1534,7 @@ def _genero_sql(genero):
     'Anime' es una etiqueta propia (no viene de TMDB) - ver _IS_ANIME_SQL/_is_anime():
     idioma original japones como señal principal, no solo genero Animacion (ese genero
     solo tambien mete dibujos occidentales - Futurama, Rick and Morty, Bluey... - bug
-    real visto en el duelo global, Tara 2026-08-13)."""
+    real visto en el duelo global, el usuario 2026-08-13)."""
     if not genero:
         return "", []
     if genero == "Anime":

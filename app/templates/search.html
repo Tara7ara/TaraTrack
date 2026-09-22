@@ -14,7 +14,7 @@
 </div>
 <span id="buscando" class="htmx-indicator empty"><span class="spinner"></span>Buscando...</span>
 
-{# Alta manual escondida (Tara: "un poco mas escondido") - de bloque destacado a
+{# Alta manual escondida (El usuario: "un poco mas escondido") - de bloque destacado a
    enlace de texto pequeño bajo el buscador, no al lado (en movil el input ya
    ocupa todo el ancho, un segundo control en la misma fila se habria apretado).
    id="alta-manual" para que el enlace del estado vacio de abajo pueda abrirlo. #}
@@ -50,7 +50,7 @@
 </details>
 
 <div id="resultados" class="grid">
-{# El carrusel de una fila se descartó (Tara: "se ve demasiado raro, falta 1
+{# El carrusel de una fila se descartó (El usuario: "se ve demasiado raro, falta 1
    tarjeta en la grande, se corta una tarjeta en la mediana" - el scroll horizontal
    con una tarjeta cortada a medias en el borde se veía peor que el problema
    original). Rejilla normal otra vez, pero ver el auto-fit de .grid más abajo: sin
@@ -63,7 +63,7 @@
 <script>
 // Tras añadir un título ("+ Pendientes"/"Marcar vista" en una tarjeta de resultado),
 // el input seguía con el texto de la búsqueda anterior y había que borrarlo a mano
-// para buscar otra cosa (Tara: "el buscador no se reinicia"). El swap de htmx solo
+// para buscar otra cosa (El usuario: "el buscador no se reinicia"). El swap de htmx solo
 // toca la tarjeta (hx-target="closest .actions"), nunca el input - se limpia aparte
 // escuchando el mismo evento que ya usa swipe.js.
 document.getElementById("resultados").addEventListener("htmx:afterRequest", (e) => {

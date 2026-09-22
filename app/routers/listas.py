@@ -38,7 +38,7 @@ def listas(request: Request):
 @router.post("/listas", response_class=HTMLResponse)
 def crear_lista(request: Request, name: str = Form(...)):
     """Post normal + redirect (no htmx): el swap de <body> entero via hx-select
-    daba pantalla en negro en el movil de Tara - swapear el body es fragil, mejor
+    daba pantalla en negro en el movil del usuario - swapear el body es fragil, mejor
     una recarga normal como el resto de altas de la app."""
     with get_connection() as conn:
         repo.create_list(conn, name, request.state.user_id)
@@ -92,7 +92,7 @@ def lista_orden(request: Request, list_id: int, modo: str = Form(...)):
 @router.post("/lista/{list_id}/elo/reiniciar", response_class=HTMLResponse)
 def lista_elo_reiniciar(request: Request, list_id: int):
     """Reinicia a 1500 el Elo de esta lista y borra su historial de duelos - por si
-    sale algo raro y Tara prefiere empezar el ranking de cero. Solo esta lista, no
+    sale algo raro y el usuario prefiere empezar el ranking de cero. Solo esta lista, no
     toca el Elo de otras listas ni de waifus. `elo_reset=1` en el redirect para el
     aviso visible (ver duelo_general_elo_reiniciar)."""
     with get_connection() as conn:

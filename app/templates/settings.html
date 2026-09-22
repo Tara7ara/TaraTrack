@@ -2,7 +2,7 @@
 {% block content %}
 <h1>Ajustes</h1>
 
-{# Perfil propio (Tara, 2026-09-18: "como pongo fotos de usr, si quiero cambiar el
+{# Perfil propio (El usuario, 2026-09-18: "como pongo fotos de usr, si quiero cambiar el
    nombre") - cada cuenta gestiona su propia foto/nombre, no hace falta ser admin. #}
 <div class="settings-section">
     <h2>Tu perfil</h2>
@@ -36,7 +36,7 @@
     </details>
 </div>
 
-{# Tara, 2026-09-18: "deberia de haber una etiqueta en conf que permita ver todo
+{# El usuario, 2026-09-18: "deberia de haber una etiqueta en conf que permita ver todo
    esto" - el "Calendario de temporada" (TODO el anime de la temporada, no solo lo
    que sigues) se detecta solo por defecto (repo.user_has_anime), pero cada uno
    puede forzarlo a mano aqui, tenga o no anime ya en su biblioteca. #}
@@ -99,7 +99,7 @@
                 <button class="btn-text">{{ "Quitar admin" if u.is_admin else "Hacer admin" }}</button>
             </form>
             {% endif %}
-            {# Tara, 2026-09-18: "si pierdo la pass como lo recupero, un fallo para
+            {# El usuario, 2026-09-18: "si pierdo la pass como lo recupero, un fallo para
                el usr final" - sin email en este self-host, tu (admin) le pones una
                contraseña nueva a quien se quede fuera. #}
             <details class="ep-more" onclick="event.stopPropagation()">
@@ -148,7 +148,7 @@
     <p class="page-hint">Cómo se combinan las señales de apetito y calidad en /estadísticas y en la predicción "% que te gustará". Guardar recalcula el perfil en segundo plano, tarda alrededor de un minuto en aplicarse.</p>
 
     {# Estado de recalculo + "Ver calibracion" + el desplegable, los 3 en fila en
-       vez de apilados como una lista (Tara: "los 3 botones en paralelo y no en
+       vez de apilados como una lista (El usuario: "los 3 botones en paralelo y no en
        lista"). #}
     <div class="hero-controls">
         <div hx-get="/afinidad/estado" hx-trigger="load" hx-swap="outerHTML"></div>

@@ -23,7 +23,7 @@ def client(tmp_path, monkeypatch):
 
 
 def test_marcar_vista_rapido_on_a_show_does_not_500(client):
-    """Bug real (2026-09-18, Tara: 'no puedo marcar como vista pero si como
+    """Bug real (2026-09-18, el usuario: 'no puedo marcar como vista pero si como
     pendiente'): marcar_vista_rapido (POST /vista/{tmdb_id}/show) llamaba a
     repo.get_home_card(conn, entry_id) sin el user_id que ya es obligatorio desde el
     multiusuario (Fase 2) - TypeError, 500 en cualquier serie. Titulo manual (sin
@@ -47,7 +47,7 @@ def test_marcar_vista_rapido_on_a_movie_does_not_500(client):
 
 
 def test_episodio_toggle_opens_debate_thread_when_marking_watched(client):
-    """Tara, 2026-09-18 ('estilo tvtime'): marcar un episodio visto abre solo su
+    """El usuario, 2026-09-18 ('estilo tvtime'): marcar un episodio visto abre solo su
     hilo de debate, sin tener que ir a buscarlo despues."""
     with db.get_connection() as conn:
         title = repo.ensure_manual_title(conn, "show", "Serie con debate", 2020)
@@ -89,7 +89,7 @@ def test_titulo_detalle_opens_debate_thread_via_comentar_param(client):
 
 
 def test_marcar_siguiente_muestra_aviso_de_comentar(client):
-    """Tara, 2026-09-18: el aviso "¿comentas?" tiene que salir en el sitio donde de
+    """El usuario, 2026-09-18: el aviso "¿comentas?" tiene que salir en el sitio donde de
     verdad se marcan episodios dia a dia (Continuar viendo en /pendientes)."""
     with db.get_connection() as conn:
         title = repo.ensure_manual_title(conn, "show", "Serie de continuar viendo", 2020)
