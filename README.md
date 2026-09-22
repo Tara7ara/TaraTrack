@@ -10,7 +10,7 @@ Los metadatos vienen de TMDB (y de Jikan/AniList para anime), pero en la base de
 
 ## Capturas
 
-_(biblioteca de ejemplo; no contiene datos personales)_
+_(biblioteca de ejemplo)_
 
 ![Pendientes](screenshots/pendientes.png)
 ![Vistas](screenshots/vistas.png)
