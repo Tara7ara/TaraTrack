@@ -4,17 +4,18 @@
 
 No intenta ser otra base de datos de títulos: intenta entender qué te apetece de verdad, no solo qué has visto.
 
-Tracker personal autoalojado, sustituto propio de Trakt/TV Time — mi segundo proyecto de este verano (el primero fue [TarArch](https://github.com/Tara7ara/TarArch), mi escritorio Linux), en desarrollo activo desde hace varios meses. El historial de commits de este repo es reciente porque lo publico ahora, no porque se haya hecho en un día. FastAPI + Jinja2 + htmx + SQLite, server-rendered, sin build step de frontend.
+Tracker personal autoalojado, sustituto propio de Trakt/TV Time. FastAPI + Jinja2 + htmx + SQLite, server-rendered, sin build step de frontend.
 
 Los metadatos vienen de TMDB (y de Jikan/AniList para anime), pero en la base de datos solo se guarda lo que realmente sigues: lo pendiente, lo visto, tus notas, tus listas y tus personajes favoritos.
 
 ## Capturas
 
-_(biblioteca de ejemplo, no la real — ver "Índice de afinidad" más abajo para lo interesante de verdad)_
+_(biblioteca de ejemplo; no contiene datos personales)_
 
 ![Pendientes](screenshots/pendientes.png)
 ![Vistas](screenshots/vistas.png)
-![Perfil de gustos](screenshots/perfil-gustos.png)
+![Estadísticas](screenshots/estadisticas.png)
+![Duelo, con el fallback a toda la biblioteca en una cuenta sin anime](screenshots/duelo.png)
 
 ## Hecho para usarlo cada día
 
@@ -23,7 +24,7 @@ _(biblioteca de ejemplo, no la real — ver "Índice de afinidad" más abajo par
 - **Calendario de temporada con predicción propia**: todo el anime de la temporada, con un "% que te va a gustar" calculado desde tus notas — nunca desde la nota media de la crítica.
 - **Ranking por duelos con Glicko**, no un Elo de toda la vida: cada elemento lleva su propia incertidumbre, así que el ranking se afina más rápido con menos duelos.
 - **Multiusuario real**: cuentas aisladas de verdad, no una contraseña compartida con un "modo invitado".
-- **Autoalojado y privado**: tus datos no salen de tu servidor — TMDB/AniList/Jikan solo se consultan para traer metadatos.
+- **Autoalojado y privado**: tus datos personales no salen de tu servidor — TMDB/AniList/Jikan solo se consultan para traer metadatos.
 
 ## Arrancar en local
 
@@ -48,7 +49,7 @@ ruff check .
 
 - **Puntuación por categorías**: un "examen" corto (Historia, Animación, Personajes, Música, Disfrute) con pesos distintos por categoría en vez de un número suelto.
 - **Calendario semanal** estilo Trakt, con sincronización automática cada 12 h.
-- **"Volver a ver" sin perder nada**: sigues pudiendo ver cuándo lo viste la primera vez aunque lo estés reviendo.
+- **Listas ilimitadas**, con orden manual o por duelos (mismo motor Glicko que el ranking general).
 - **Autover**: series de muchos episodios que sigues sin pensarlo se marcan vistas solas.
 - **Personajes de anime reales, no actores**: para anime se tira de AniList/Jikan en vez del reparto de TMDB.
 - **Resumen anual** tipo "wrapped" y **discrepancias con la crítica** (tu nota vs. Internet).
@@ -85,7 +86,7 @@ Varias cuentas reales en la misma instancia (pensado para 2-3 personas de confia
 ## Privacidad y límites
 
 - Los datos se quedan en tu instancia; TMDB/AniList/Jikan se usan solo para consultar metadatos, nunca reciben tus notas ni tu biblioteca.
-- No está diseñado como SaaS público multi-tenant — el autoregistro presupone que ya estás detrás de una red privada (VPN, LAN), no está pensado como puerta de entrada abierta a Internet.
+- Está pensado para una instancia privada compartida con pocas personas, no para abrir registros en Internet — el autoregistro presupone que ya estás detrás de una red privada (VPN, LAN).
 - La sesión es una cookie firmada de larga duración (para no reintroducir la contraseña cada dos por tres); "Cerrar sesión" en Ajustes la borra.
 - Haz backup del volumen de datos y de los de imágenes si despliegas con Docker — ver [`docs/architecture.md`](docs/architecture.md).
 
@@ -99,7 +100,7 @@ Tema único, oscuro — paleta propia "Warm Dark" con tres capas de profundidad 
 
 ## Estado
 
-En desarrollo activo, uso personal diario. Licencia MIT. Issues y PRs bienvenidos — para cambios grandes, mejor abrir una issue antes para hablarlo. Los metadatos de series/películas/anime son de [TMDB](https://www.themoviedb.org/) (This product uses the TMDB API but is not endorsed or certified by TMDB), [AniList](https://anilist.co/) y [Jikan](https://jikan.moe/) (MyAnimeList).
+En desarrollo activo, uso personal diario desde hace varios meses — el historial de commits de este repo es reciente porque se publica ahora, no porque se haya hecho en un día. Es mi segundo proyecto de este verano (el primero fue [TarArch](https://github.com/Tara7ara/TarArch), mi escritorio Linux). Licencia MIT. Issues y PRs bienvenidos — para cambios grandes, mejor abrir una issue antes para hablarlo. Los metadatos de series/películas/anime son de [TMDB](https://www.themoviedb.org/) (This product uses the TMDB API but is not endorsed or certified by TMDB), [AniList](https://anilist.co/) y [Jikan](https://jikan.moe/) (MyAnimeList).
 
 ## Más detalle
 
