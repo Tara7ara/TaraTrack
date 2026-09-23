@@ -34,19 +34,23 @@ function setupSwipe(row) {
         setTimeout(() => row.remove(), 260);
     }
 
-    // Bug real (El usuario, 2026-09-18: "quito una serie de pendientes, he tenido que
-    // recargar la web"): el boton "Marcar vista" existe desde el primer render y un
-    // listener puesto aqui encima le llega bien, pero "quitar de pendientes" pasa
-    // antes por una confirmacion en dos pasos (ver partials/entry_actions.html,
-    // estado "pending_confirm") - el boton real que hay que escuchar ("¿Quitar? Sí")
-    // ni siquiera existe en el DOM todavia en este momento, lo inserta un swap de
-    // htmx despues. Delegar el listener en la fila entera (en vez de en un boton
-    // concreto) sí capta esos clics futuros, porque el evento de htmx burbujea
-    // hasta aqui pase lo que pase con el swap de mas abajo.
+    // El listener va en la fila entera y no en un boton concreto: "quitar de
+    // pendientes" pasa por una confirmacion en dos pasos (ver
+    // partials/entry_actions.html, estado "pending_confirm") y el boton final
+    // ("¿Quitar? Sí") todavia no existe en el DOM en este momento, lo inserta un
+    // swap de htmx despues. Delegando en la fila tambien se captan esos botones.
+    //
+    // Se decide por la peticion (ruta + POST) y no por e.detail.elt: el swap
+    // (hx-target="closest .actions", outerHTML) saca el boton del DOM antes de que
+    // htmx dispare afterRequest, asi que htmx lo vuelve a disparar sobre el primer
+    // ancestro que sigue conectado y sobrescribe detail.elt con ese ancestro - nunca
+    // es el boton. El POST importa porque "¿Quitar?" y "No" son GET a /pendiente/...
+    // y no deben quitar la fila.
     row.addEventListener("htmx:afterRequest", (e) => {
         if (!e.detail.successful) return;
-        const el = e.detail.elt;
-        if (el.matches && (el.matches('button[hx-post^="/vista/"]') || el.matches('button[hx-post^="/pendiente/"]'))) {
+        const path = e.detail.pathInfo && e.detail.pathInfo.requestPath;
+        const verb = e.detail.requestConfig && e.detail.requestConfig.verb;
+        if (verb === "post" && path && (path.startsWith("/vista/") || path.startsWith("/pendiente/"))) {
             collapseAndRemove();
         }
     });
