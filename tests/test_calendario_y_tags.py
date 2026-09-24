@@ -58,11 +58,11 @@ def test_calendar_cards_ignore_other_users_library(conn, user_id):
 
 def test_status_ribbon_uses_next_episode_for_airing():
     base = {"type": "show", "next_episode_air_date": None}
-    assert show_status_ribbon({**base, "show_status": "Ended"}) == ("Finalizada", "ribbon-ended")
-    assert show_status_ribbon({**base, "show_status": "Canceled"}) == ("Cancelada", "ribbon-canceled")
+    assert show_status_ribbon({**base, "show_status": "Ended"}) == ("Acabada", "ribbon-ended")
+    assert show_status_ribbon({**base, "show_status": "Canceled"}) == ("Cancel.", "ribbon-canceled")
     assert show_status_ribbon({**base, "show_status": "Returning Series"})[1] == "ribbon-returning"
     airing = {**base, "show_status": "Returning Series", "next_episode_air_date": "2026-09-29"}
-    assert show_status_ribbon(airing) == ("En emisión", "ribbon-airing")
+    assert show_status_ribbon(airing) == ("Emisión", "ribbon-airing")
     assert show_status_ribbon({**base, "type": "movie", "show_status": "Released"}) is None
 
 
@@ -183,9 +183,9 @@ def test_status_ribbon_premiere_and_pause():
     base = {"type": "show", "show_status": "Returning Series"}
     premiere = {**base, "next_episode_air_date": "2026-10-04", "next_episode_label": "T2E1 — Episodio 1"}
     weekly = {**base, "next_episode_air_date": "2026-10-04", "next_episode_label": "T2E11 — Episodio 11"}
-    assert show_status_ribbon(premiere)[0] == "Próximamente"
-    assert show_status_ribbon(weekly)[0] == "En emisión"
-    assert show_status_ribbon({**base, "next_episode_air_date": None, "next_episode_label": None})[0] == "En pausa"
+    assert show_status_ribbon(premiere)[0] == "Prox."
+    assert show_status_ribbon(weekly)[0] == "Emisión"
+    assert show_status_ribbon({**base, "next_episode_air_date": None, "next_episode_label": None})[0] == "Pausa"
 
 
 def test_sparse_anime_cast_is_topped_up_once(conn, user_id, monkeypatch):

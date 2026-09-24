@@ -64,13 +64,18 @@ def show_status_ribbon(title_row):
         # Próximo episodio = el 1 de una temporada: aún no ha empezado.
         label = title_row["next_episode_label"] if "next_episode_label" in title_row.keys() else None
         if re.match(r"T\d+E1\b", label or ""):
-            return "Próximamente", "ribbon-planned"
-        return "En emisión", "ribbon-airing"
+            return "Prox.", "ribbon-planned"
+        return "Emisión", "ribbon-airing"
     if status == "Returning Series":
         # Sin proximo episodio con fecha: entre temporadas ("Continua" no le gustaba)
-        return "En pausa", "ribbon-returning"
+        return "Pausa", "ribbon-returning"
     css = {"Ended": "ribbon-ended", "Canceled": "ribbon-canceled"}.get(status, "ribbon-planned")
-    return fmt_show_status(status), css
+    return _RIBBON_SHORT.get(status, fmt_show_status(status)), css
+
+
+# Textos cortos para la tira: con ellos cabe pegada a la esquina, tapando poca portada.
+# El estado completo sigue en el chip de la ficha (fmt_show_status).
+_RIBBON_SHORT = {"Ended": "Acabada", "Canceled": "Cancel.", "In Production": "En prod.", "Planned": "Anunc."}
 
 
 
