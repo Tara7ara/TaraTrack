@@ -187,6 +187,7 @@ from app.repo.titles import (  # noqa: F401
     get_title,
     list_all_posters,
     list_calendar,
+    library_version,
     list_continue_watching,
     list_episode_watch_dates,
     list_episodes,

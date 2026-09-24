@@ -10,7 +10,8 @@
 <div id="pendientes-page"
      hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo={{ tipo }}"
      hx-select="#pendientes-page" hx-disinherit="hx-select" hx-target="#pendientes-page" hx-swap="outerHTML"
-     hx-trigger="visibilitychange[document.visibilityState=='visible' && !document.querySelector('.home-card-check.no')] from:document">
+     data-version="{{ library_version }}"
+     hx-trigger="visibilitychange[document.visibilityState=='visible' && !document.querySelector('.home-card-check.no')] from:document, tt-refresh">
 
 {% if continuar %}
 <h1>Continuar viendo</h1>
@@ -178,4 +179,24 @@ document.querySelectorAll(".tag-filter select").forEach((sel) => {
 </div>
 
 </div>
+<script>
+// Con la página abierta y visible (p. ej. en el ordenador mientras marcas desde el
+// móvil), cada 20 s y al volver a la ventana se pide la huella de la biblioteca; si ha
+// cambiado, se refresca #pendientes-page. No se refresca a mitad de una interacción.
+if (!window.__ttVersionPoll) {
+    window.__ttVersionPoll = true;
+    const busy = () => document.querySelector(".home-card-check.no, .filters-toggle:checked, details[open]")
+        || ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement && document.activeElement.tagName);
+    const check = async () => {
+        const page = document.getElementById("pendientes-page");
+        if (!page || document.visibilityState !== "visible" || busy()) return;
+        try {
+            const r = await fetch("/pendientes/version", { cache: "no-store" });
+            if (r.ok && (await r.text()) !== page.dataset.version) htmx.trigger(page, "tt-refresh");
+        } catch (e) { /* sin red: se reintenta en la siguiente vuelta */ }
+    };
+    setInterval(check, 20000);
+    window.addEventListener("focus", check);
+}
+</script>
 {% endblock %}

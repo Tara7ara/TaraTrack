@@ -227,3 +227,26 @@ def test_episode_watch_is_isolated_per_user(conn, user_id):
     assert _entry(conn, entry_b["id"])["status"] == "pending"
     assert _watched_at(conn, episode["id"], user_id) is not None
     assert _watched_at(conn, episode["id"], other["id"]) is None
+
+
+def test_library_version_changes_when_marking_and_unmarking(conn, user_id):
+    """La huella de /pendientes cambia al marcar y al desmarcar un episodio, y no la
+    toca lo que hace otro usuario."""
+    other = repo.create_user(conn, "otra", "unaclave123")
+    title = repo.ensure_manual_title(conn, "show", "Serie huella", 2020)
+    conn.execute(
+        "INSERT INTO episodes (title_id, season_number, episode_number, air_date) VALUES (?, 1, 1, '2020-01-01')",
+        (title["id"],),
+    )
+    ep = conn.execute("SELECT * FROM episodes WHERE title_id = ?", (title["id"],)).fetchone()
+    repo.ensure_entry(conn, title["tmdb_id"], "show", user_id)
+    repo.ensure_entry(conn, title["tmdb_id"], "show", other["id"])
+
+    v0 = repo.library_version(conn, user_id)
+    repo.toggle_episode(conn, ep["id"], other["id"])
+    assert repo.library_version(conn, user_id) == v0
+    repo.toggle_episode(conn, ep["id"], user_id)
+    v1 = repo.library_version(conn, user_id)
+    assert v1 != v0
+    repo.toggle_episode(conn, ep["id"], user_id)
+    assert repo.library_version(conn, user_id) not in (v1,)

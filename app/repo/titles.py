@@ -519,6 +519,23 @@ def _with_next_episode(conn, row):
 
 
 
+def library_version(conn, user_id):
+    """Huella barata de todo lo que pinta /pendientes para este usuario: visionados,
+    entries (estado, nota), rewatches y el último sync (episodios nuevos emitidos).
+    Si cambia, la página abierta en otro dispositivo sabe que tiene que refrescarse."""
+    row = conn.execute(
+        """SELECT
+             (SELECT coalesce(max(id), 0) || '-' || count(*) FROM episode_watches WHERE user_id = ?),
+             (SELECT count(*) || '-' || coalesce(max(id), 0) || '-' || coalesce(sum(status = 'watched'), 0)
+                     || '-' || coalesce(sum(rating), 0) FROM entries WHERE user_id = ?),
+             (SELECT count(*) FROM watch_sessions JOIN entries ON entries.id = watch_sessions.entry_id
+               WHERE entries.user_id = ?),
+             (SELECT value FROM app_settings WHERE key = 'sync_last_finished_at')""",
+        (user_id, user_id, user_id),
+    ).fetchone()
+    return ":".join(str(v) for v in row)
+
+
 def list_continue_watching(conn, user_id):
     """Estilo Trakt: cualquier serie con al menos un episodio visto (por ESTE usuario)
     y emitidos por ver, lo mas reciente primero - da igual el status de la entry (The

@@ -4,7 +4,7 @@ from collections import Counter
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from app import repo, web
 from app.db import get_connection
@@ -52,6 +52,14 @@ def _matches_tags(entry, tokens: list[str]) -> bool:
     return True
 
 
+@router.get("/pendientes/version", response_class=PlainTextResponse)
+def pendientes_version(request: Request):
+    """Huella de la biblioteca (ver repo.library_version): la consulta cada poco la página
+    abierta para refrescarse sola cuando se marca algo desde otro dispositivo."""
+    with get_connection() as conn:
+        return repo.library_version(conn, request.state.user_id)
+
+
 @router.get("/pendientes", response_class=HTMLResponse)
 def pendientes(
     request: Request, tipo: str = "", orden: str = "anadido", q: str = "", genero: str = "",
@@ -64,6 +72,7 @@ def pendientes(
             repo.snapshot_profile_progress(conn, request.state.user_id)
         except Exception:
             logging.warning("snapshot_profile_progress: fallo, se salta esta vez", exc_info=True)
+        version = repo.library_version(conn, request.state.user_id)
         continuar = repo.list_continue_watching(conn, request.state.user_id)
         nuevas = repo.list_new_airing(conn, request.state.user_id)
         shown = {c["id"] for c in continuar} | {n["id"] for n in nuevas}
@@ -106,6 +115,7 @@ def pendientes(
         "pending.html",
         {
             "entries": entries,
+            "library_version": version,
             "continuar": continuar,
             "nuevas": nuevas,
             "tipo": tipo,
