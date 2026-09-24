@@ -1,16 +1,12 @@
-"""app.repo.lists - extraido de repo.py en el split de modulos (ronda 2026-08-21).
-Ver app/repo/__init__.py para el mapa completo de que vive en cada fichero -
-el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
-exactamente igual que antes, este split es puramente interno."""
+"""app.repo.lists - listas, Favoritos y orden manual. El resto del proyecto usa
+`from app import repo; repo.funcion(...)`."""
 
 
 
 
 
 def get_default_list(conn, user_id: int):
-    """`user_id` obligatorio desde el multiusuario (2026-09-17): cada usuario tiene
-    su propia lista "Favoritos" (creada en repo.users.create_user) - sin filtrar,
-    "WHERE is_default=1" sin más sería ambiguo en cuanto exista más de una cuenta."""
+    """La lista "Favoritos" de este usuario (cada cuenta tiene la suya)."""
     return conn.execute(
         "SELECT * FROM lists WHERE user_id = ? AND is_default = 1", (user_id,)
     ).fetchone()
@@ -19,10 +15,8 @@ def get_default_list(conn, user_id: int):
 
 
 def get_or_create_default_list(conn, user_id: int):
-    """Bug real (AGY, 2026-09-18): marcar un favorito asumia que la lista "Favoritos"
-    siempre existe (normalmente si, la crea create_user) - una cuenta que llegara a
-    tenerla borrada, o creada fuera de ese flujo, revienta con un 500 al primer
-    intento de marcar algo favorito en vez de arreglarse sola."""
+    """Como get_default_list, pero la crea si no existe, para que marcar un favorito
+    no falle en una cuenta sin ella."""
     default_list = get_default_list(conn, user_id)
     if default_list:
         return default_list
@@ -44,8 +38,8 @@ def is_entry_favorite(conn, entry_id: int, user_id: int) -> bool:
 
 
 def get_owned_list(conn, list_id: int, user_id: int):
-    """Devuelve la lista solo si es de ESTE usuario - guarda de propiedad (multiusuario
-    Fase 2, 2026-09-17) para cualquier ruta que reciba un list_id directo en la URL."""
+    """La lista solo si es de este usuario: guarda de propiedad para las rutas que
+    reciben un list_id en la URL."""
     row = conn.execute("SELECT * FROM lists WHERE id = ? AND user_id = ?", (list_id, user_id)).fetchone()
     return row
 
@@ -70,10 +64,7 @@ def list_lists(conn, user_id, preview_count=10):
 
 
 def create_list(conn, name: str, user_id: int):
-    """`user_id` obligatorio desde el multiusuario (2026-09-17): `lists.name` era
-    UNIQUE en toda la instancia - sin filtrar, dos usuarios no podrían tener cada
-    uno una lista con el mismo nombre (p.ej. "Top 10"), y el segundo en crearla
-    se habría quedado silenciosamente enganchado a la lista del primero."""
+    """Crea una lista de este usuario; el nombre es único por usuario."""
     name = name.strip()
     existing = conn.execute(
         "SELECT * FROM lists WHERE name = ? AND user_id = ?", (name, user_id)
@@ -133,7 +124,7 @@ def list_items_in_list(conn, list_id: int):
         else "list_items.position NULLS LAST, list_items.added_at DESC"
     )
     return conn.execute(
-        f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id,
+        f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id, titles.show_status, titles.next_episode_air_date, titles.next_episode_label,
                   list_items.id AS item_id, list_items.elo AS elo, list_items.rd AS rd
            FROM list_items
            JOIN entries ON entries.id = list_items.entry_id
@@ -165,9 +156,8 @@ def _move_in_ranking(conn, table: str, ordered_ids: list[int], target_id: int, d
 
 
 def move_list_item(conn, list_id: int, item_id: int, direction: str):
-    """Las flechas SIEMPRE reordenan el orden manual (position), aunque ahora mismo se
-    este enseñando el orden por duelos - si no, mover algo en modo duelo reescribiria
-    el orden manual con el de Elo sin que el usuario lo pidiera."""
+    """Las flechas reordenan siempre el orden manual (position), aunque se esté
+    enseñando el orden por duelos."""
     ids = [item["item_id"] for item in _list_items_by_position(conn, list_id)]
     _move_in_ranking(conn, "list_items", ids, item_id, direction)
 
@@ -191,11 +181,8 @@ def get_list_items_by_ids(conn, list_id: int, ids: list[int]):
 
 
 def rename_list(conn, list_id: int, user_id: int, name: str):
-    """Bug real (AGY, 2026-09-18): lists tiene UNIQUE(user_id, name) - renombrar a un
-    nombre que ya usa OTRA lista tuya reventaba con sqlite3.IntegrityError (500) sin
-    capturar. Si ya existe, no hace nada (se queda con el nombre de antes) en vez de
-    dar un error - mismo criterio "fallar en silencio antes que rebentar" que el resto
-    de altas duplicadas de la app (create_user, create_list)."""
+    """Renombrar a un nombre que ya usa otra lista tuya no hace nada (el nombre es
+    único por usuario), igual que el resto de altas duplicadas."""
     name = name.strip()
     if not name:
         return

@@ -1,4 +1,4 @@
-"""app.routers.puntuar - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.puntuar - cola de puntuar y examen por categorías."""
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse

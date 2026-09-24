@@ -1,7 +1,5 @@
-"""app.repo._shared - extraido de repo.py en el split de modulos (ronda 2026-08-21).
-Ver app/repo/__init__.py para el mapa completo de que vive en cada fichero -
-el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
-exactamente igual que antes, este split es puramente interno."""
+"""app.repo._shared - utilidades compartidas por los módulos de app/repo/. El resto
+del proyecto usa `from app import repo; repo.funcion(...)` (ver app/repo/__init__.py)."""
 from datetime import datetime, timezone
 
 from app import config
@@ -24,12 +22,9 @@ def set_setting(conn, key: str, value: str):
 
 
 
-# Señal principal: idioma original japones, dato real de TMDB - "Animation" en TMDB
-# tambien mete dibujos occidentales (Futurama, Rick and Morty, Bluey...), asi que ese
-# genero solo no basta (bug real, el usuario 2026-08-13: le salio Futurama en el duelo de
-# "solo anime"). Si original_language aun no se ha sincronizado (NULL), cae al criterio
-# antiguo (genero Animation/Animacion, o alta manual sin genero) para no perder de golpe
-# anime ya cacheado que todavia no ha pasado por un refresh_metadata.
+# Anime = idioma original japonés. El género "Animation" de TMDB también incluye
+# animación occidental. Si original_language aún no está sincronizado, se usa el
+# criterio antiguo (género Animation o alta manual sin género).
 _IS_ANIME_SQL = (
     "(titles.original_language = 'ja' OR (titles.original_language IS NULL AND "
     "(titles.genres IS NULL OR titles.genres = '' "
@@ -49,12 +44,8 @@ def _is_anime(title_row) -> bool:
 
 
 def user_has_anime(conn, user_id) -> bool:
-    """¿Tiene ESTE usuario algo de anime en su biblioteca? (El usuario, 2026-09-18: "que
-    a las personas normales le salga 'personajes fav', a la que haya un anime
-    puesto en la lista se transforme a lista de waifus") - decide si /waifus,
-    /listas y /estadisticas hablan de "Waifus" (termino de nicho, tiene sentido
-    para el usuario) o de "Personajes favoritos" (para quien no ve anime, como su
-    hermana/amigo puedan ser)."""
+    """¿Tiene este usuario anime en su biblioteca? Decide si la app habla de "Waifus"
+    o de "Personajes favoritos"."""
     return bool(
         conn.execute(
             f"""SELECT 1 FROM entries JOIN titles ON titles.id = entries.title_id
@@ -80,17 +71,10 @@ _GENRE_ES = {
 
 
 def _pending_clause(rewatch_started_at: str | None, user_id: int):
-    """Fragmento SQL (+ params) para "este episodio falta por ver ahora PARA ESTE
-    USUARIO" sobre la tabla episodes directamente (sin JOIN a entries) - version
-    parametrizada gemela de la subquery correlacionada de _HOME_SHOWS_SQL, para las
-    funciones que marcan episodios en bloque (mark_all_aired_watched,
-    mark_season_watched, next_unwatched_episode). `episodes.id` debe estar en scope
-    en la query que use este fragmento (referencia correlacionada a episode_watches).
-
-    Multiusuario Fase 2 (2026-09-17): antes miraba episodes.watched_at directamente
-    (compartido); ahora consulta episode_watches filtrado por user_id - "pendiente"
-    significa que ESTE usuario no tiene ningun marcado (o ninguno posterior al inicio
-    de su propio rewatch, si tiene uno en curso)."""
+    """Fragmento SQL (+ params) para "este episodio le falta por ver a este usuario":
+    ningún visionado, o ninguno posterior al inicio de su rewatch activo. Requiere
+    `episodes.id` en scope. Lo usan mark_all_aired_watched, mark_season_watched y
+    next_unwatched_episode."""
     if rewatch_started_at:
         return (
             "NOT EXISTS (SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id "
@@ -106,13 +90,8 @@ def _pending_clause(rewatch_started_at: str | None, user_id: int):
 
 
 def _log_episode_watch(conn, episode_id: int, user_id: int, when: str):
-    """Marca un episodio visto AHORA por ESTE usuario, sin pisar el historial
-    (2026-08-20, "Volver a ver" estilo Trakt) - cada marcado/re-marcado deja su
-    propia fila en episode_watches, que nunca se borra sola. Multiusuario Fase 2
-    (2026-09-17): episodes.watched_at DEJA de actualizarse como cache - con varias
-    personas viendo lo mismo, "la ultima vez que se vio" ya no tiene un unico dueño;
-    todo el codigo que necesita saber si ALGUIEN concreto lo ha visto consulta
-    episode_watches filtrado por user_id directamente."""
+    """Marca un episodio visto ahora por este usuario. Cada marcado deja su propia fila
+    en episode_watches, que no se borra nunca sola; así un rewatch no pierde fechas."""
     conn.execute(
         "INSERT INTO episode_watches (episode_id, user_id, watched_at) VALUES (?, ?, ?)",
         (episode_id, user_id, when),
@@ -135,17 +114,9 @@ def _unlog_episode_watch(conn, episode_id: int, user_id: int):
 
 
 def _promote_if_first_watch(conn, title_id, user_id):
-    """Simetrico al 'si al desmarcar no queda ninguno, vuelve a pending' de abajo:
-    si al marcar (episodio suelto, temporada completa o doble tick) la entry de ESTE
-    usuario seguia 'pending' pero ya hay algun episodio visto de verdad POR EL, pasa
-    a 'watched'. Sin esto, marcar episodios sin pasar por el boton "Marcar vista"
-    dejaba la entry en pending para siempre aunque estuviera vista entera - bug real,
-    el usuario: "he visto toda la serie pero no me deja valorar" (entry 913, 2026-08-13).
-
-    Multiusuario Fase 2 (2026-09-17): antes actualizaba CUALQUIER entry 'pending' de
-    ese title_id (bug real encontrado en pruebas - con varios usuarios, el episodio
-    marcado por uno promocionaria tambien la entry de otro que no ha visto nada).
-    Ahora solo toca la entry de ESTE user_id."""
+    """Si la entry de este usuario sigue 'pending' pero ya tiene algún episodio visto,
+    pasa a 'watched'. Sin esto, marcar episodios sin pulsar "Marcar vista" dejaba la
+    serie en pendientes para siempre. Solo toca la entry de este usuario."""
     has_watched = conn.execute(
         """SELECT EXISTS(
              SELECT 1 FROM episode_watches ew JOIN episodes e ON e.id = ew.episode_id
@@ -169,10 +140,8 @@ PROFILES_DIR = config.PROFILES_DIR
 
 
 
-# Pesos de la puntuacion detallada por categorias (opcional, ver mark_watched):
-# Disfrute pesa mas (es la nota "de tripas"), Musica pesa menos (El usuario es sorda y normalmente
-# se salta openings/endings, poca base para juzgar esta categoria en concreto). Sin "Ritmo" -
-# se descarto explicitamente. Una categoria vacia ("no valorar") no cuenta ni en la media ni en el peso.
+# Pesos de la puntuación por categorías (opcional, ver mark_watched). Disfrute pesa
+# más; Música, menos. Una categoría sin valorar no cuenta ni en la media ni en el peso.
 CATEGORY_WEIGHTS = {
     "historia": 1.0,
     "animacion": 1.0,

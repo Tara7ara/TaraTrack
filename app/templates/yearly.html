@@ -22,11 +22,8 @@
 <p class="page-hint">Tu mes más activo del {{ year }} fue <strong>{{ stats.busiest_month.month|fmt_month }}</strong>, con {{ stats.busiest_month.c }} episodios.</p>
 {% endif %}
 
-{# Layout en 2 bloques en paralelo (cuarto analisis, 2026-08-21: "barras de max
-   560px sin nada que llene el resto del ancho... en QHD se convierte en una
-   columna estrecha flotando a la izquierda"). Barras a la izquierda, titulos
-   destacados a la derecha - auto-fit colapsa a 1 columna sola si no hay
-   top_rated, sin dejar un hueco vacio. #}
+{# Barras a la izquierda y destacados a la derecha; auto-fit deja una columna si no
+   hay destacados. #}
 <div class="yearly-layout">
 <div class="yearly-bars">
 {% if stats.top_genres %}

@@ -1,5 +1,7 @@
-"""app.routers.pendientes - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.pendientes - pendientes, Continuar viendo y acciones de sus tarjetas."""
 import logging
+from collections import Counter
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -21,19 +23,44 @@ def home():
 
 
 
+def _parse_tags(raw: str) -> list[str]:
+    """"Fantasy,-Harem,-Isekai" -> ["Fantasy", "-Harem", "-Isekai"]: con "-" delante
+    se excluye, sin nada se exige."""
+    return list(dict.fromkeys(t.strip() for t in raw.split(",") if t.strip().lstrip("-")))
+
+
+def _entry_tags(entry) -> list[str]:
+    """Generos + tags de AniList del titulo (solo anime emparejado con AniList los tiene)."""
+    out = []
+    for col in ("anilist_genres", "anilist_tags"):
+        out += [t.strip() for t in (entry[col] or "").split(",") if t.strip()]
+    return list(dict.fromkeys(out))
+
+
+def _matches_tags(entry, tokens: list[str]) -> bool:
+    """Filtro por tags de /pendientes: todos los incluidos y ninguno de los excluidos.
+    Un título sin tags de AniList no entra en cuanto hay algún filtro."""
+    if not tokens:
+        return True
+    have = {t.casefold() for t in _entry_tags(entry)}
+    if not have:
+        return False
+    for tok in tokens:
+        excluded = tok.startswith("-")
+        if (tok.lstrip("-").casefold() in have) == excluded:
+            return False
+    return True
+
+
 @router.get("/pendientes", response_class=HTMLResponse)
 def pendientes(
     request: Request, tipo: str = "", orden: str = "anadido", q: str = "", genero: str = "",
-    direccion: str = "", afinidad_alta: str = "",
+    direccion: str = "", afinidad_alta: str = "", tags: str = "",
 ):
     with get_connection() as conn:
         try:
-            # Solo una foto diaria de "cuanto perfil hay construido" (ver
-            # repo.snapshot_profile_progress) - no vital para la pagina en si. Si
-            # coincide justo con la escritura final de recompute_taste_profile (sync
-            # de fondo, cada 12h) puede toparse con "database is locked" - sin este
-            # try/except, ESO tumbaba /pendientes entera con un 500 (bug real, el usuario:
-            # "a veces tarda mucho en cargar" - en realidad a veces fallaba del todo).
+            # La foto diaria del perfil no es vital: si coincide con el recálculo de
+            # fondo y da "database is locked", la página sigue sin ella.
             repo.snapshot_profile_progress(conn, request.state.user_id)
         except Exception:
             logging.warning("snapshot_profile_progress: fallo, se salta esta vez", exc_info=True)
@@ -53,12 +80,26 @@ def pendientes(
                 key=lambda e: e["predict"] if e["predict"] is not None else -1,
                 reverse=(direccion != "asc"),
             )
-        # Fase 4 del indice de afinidad: filtro "solo 95% o mas" - el percentil ya
-        # viene calibrado contra la propia biblioteca (build_taste_profile), asi que
-        # 95 significa lo mismo aqui que en el calendario de temporada.
+        # Filtro "solo 95% o más": el percentil está calibrado contra la propia
+        # biblioteca, así que significa lo mismo que en el calendario de temporada.
         if afinidad_alta:
             entries = [e for e in entries if e["predict"] is not None and e["predict"] >= 95]
         generos = repo.list_genres(conn)
+    tag_tokens = _parse_tags(tags)
+    tag_counts = Counter(t for e in entries for t in _entry_tags(e))
+    entries = [e for e in entries if _matches_tags(e, tag_tokens)]
+    base_qs = urlencode(
+        {"tipo": tipo, "orden": orden, "q": q, "genero": genero,
+         "afinidad_alta": afinidad_alta, "direccion": direccion}
+    )
+    tag_chips = [
+        (tok, ",".join(o for o in tag_tokens if o != tok)) for tok in tag_tokens
+    ]
+    active = {t.lstrip("-").casefold() for t in tag_tokens}
+    tag_options = sorted(
+        ((t, n) for t, n in tag_counts.items() if t.casefold() not in active),
+        key=lambda x: x[0].casefold(),
+    )
     direccion_actual = direccion if direccion in ("asc", "desc") else repo.ORDENES_PENDIENTES_DEFAULT_DIR.get(orden, "desc")
     return templates.TemplateResponse(
         request,
@@ -74,6 +115,10 @@ def pendientes(
             "generos": generos,
             "direccion": direccion_actual,
             "afinidad_alta": afinidad_alta,
+            "tags": ",".join(tag_tokens),
+            "tag_chips": tag_chips,
+            "tag_options": tag_options,
+            "base_qs": base_qs,
         },
     )
 
@@ -81,12 +126,9 @@ def pendientes(
 
 
 def _home_card_response(request: Request, entry_id: int, confirm_all=False, oob: str = ""):
-    """`oob` (hx-swap-oob del indicador de Puntuar, ver web.render_nav_cola_oob) solo lo
-    pasan las dos rutas que de verdad pueden cambiar la cola - el resto de callers
-    (re-render tras cancelar, "no" de la confirmacion) no pagan la query de mas.
-    `get_home_card` ya comprueba que la entry es del usuario de la sesion - si no lo
-    es (o ya no existe), simplemente no devuelve tarjeta, sin dar pistas de que la
-    entry existe pero es ajena."""
+    """`oob` (indicador de Puntuar, ver web.render_nav_cola_oob) solo lo pasan las rutas
+    que pueden cambiar la cola. get_home_card ya comprueba la propiedad: si la entry no
+    es de este usuario, no hay tarjeta."""
     with get_connection() as conn:
         card = repo.get_home_card(conn, entry_id, request.state.user_id)
     html = templates.env.get_template("partials/home_card.html").render(
@@ -107,9 +149,8 @@ def tarjeta_inicio(request: Request, entry_id: int):
 
 @router.get("/entrada/{entry_id}/todos/confirmar", response_class=HTMLResponse)
 def confirmar_todos_episodios(request: Request, entry_id: int):
-    """Primer toque del doble tick: la tarjeta pasa a modo confirmacion. Antes era un
-    hx-confirm, pero window.confirm no llega a saltar en el navegador del usuario (la
-    peticion nunca salia) - confirmacion renderizada por el servidor, sin dialogos."""
+    """Primer toque del doble tick: la tarjeta pasa a modo confirmación. Confirmación
+    renderizada por el servidor: window.confirm no salta en algunos navegadores móviles."""
     return _home_card_response(request, entry_id, confirm_all=True)
 
 
@@ -131,13 +172,8 @@ def marcar_todos_episodios(request: Request, entry_id: int):
 
 @router.post("/entrada/{entry_id}/siguiente", response_class=HTMLResponse)
 def marcar_siguiente_episodio(request: Request, entry_id: int):
-    """El check de la tarjeta de inicio: marca visto el siguiente episodio emitido.
-
-    el usuario, 2026-09-18 ("para comentar tengo que entrar a la ficha... es tosco"): este
-    es EL sitio donde de verdad se marcan episodios dia a dia (Continuar viendo en
-    /pendientes), asi que aqui va el aviso "¿comentas?" en vez de obligar a
-    navegar a la ficha despues - mismo hilo de siempre (episode_comments), solo que
-    el enlace para abrirlo aparece justo donde ya estabas."""
+    """Check de la tarjeta de inicio: marca visto el siguiente episodio emitido y
+    ofrece el aviso "¿comentas?" en el mismo sitio."""
     with get_connection() as conn:
         entry = repo.get_owned_entry_with_title(conn, entry_id, request.state.user_id)
         oob = ""
@@ -174,11 +210,8 @@ def anadir_pendiente(request: Request, tmdb_id: int, type: str):
     querer desde una lista); si no, lo anade."""
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
-        # Bug real encontrado en pruebas (multiusuario, 2026-09-17): sin filtrar por
-        # user_id, un segundo usuario tocando "+Pendientes" en un titulo que OTRO
-        # usuario ya tenia pendiente encontraba la entry AJENA y la BORRABA
-        # (repo.remove_pending_entry) en vez de crear la suya propia - no solo una
-        # vista compartida, un borrado activo de datos de otra cuenta.
+        # Filtrado por user_id: si no, "+ Pendientes" encontraría la entry de otro
+        # usuario y la borraría en vez de crear la propia.
         existing = (
             conn.execute(
                 "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",

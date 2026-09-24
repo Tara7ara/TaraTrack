@@ -1,4 +1,4 @@
-"""app.routers.duelo - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.duelo - duelo general A/B."""
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,13 +14,9 @@ router = APIRouter()
 
 @router.get("/duelo", response_class=HTMLResponse)
 def duelo_general(request: Request):
-    """Duelo A/B (El usuario: "el duelo es solo de animes", 2026-08-13) - pero para quien
-    no ve anime (2026-09-18: "para las otras personas no se como adaptarlo") ese
-    pool sale vacio y la pantalla no serviria de nada. repo.duel_pool_for_user cae a
-    TODO lo visto cuando el de anime no llega a 2 titulos, sin tocar el
-    comportamiento de quien si tiene anime de sobra (El usuario). Mismo mecanismo que
-    /waifus/duelo y /lista/{id}/duelo pero sobre entries.elo. El ranking resultante
-    se ve ordenando /vistas por "Elo", no hay una pagina de ranking aparte para esto."""
+    """Duelo A/B general sobre entries.elo. El pool es anime y, si no hay al menos 2,
+    todo lo visto (repo.duel_pool_for_user). El ranking se ve ordenando /vistas por
+    "Elo"."""
     with get_connection() as conn:
         ids, es_anime = repo.duel_pool_for_user(conn, request.state.user_id)
         pair_ids = repo.random_duel_pair(conn, "entries", ids)
@@ -51,12 +47,8 @@ def duelo_general_votar(request: Request, a_id: int = Form(...), b_id: int = For
 
 @router.post("/duelo/elo/reiniciar", response_class=HTMLResponse)
 def duelo_general_elo_reiniciar(request: Request):
-    """Reinicia a 1500 el Elo de TODA la biblioteca vista y borra su historial de
-    duelos - por si sale algo raro. No toca listas ni waifus (tablas separadas).
-    Vuelve a /vistas (de donde sale el boton) en vez de saltar a /duelo - mismo
-    patron que listas/waifus, con un aviso visible (`elo_reset`) porque el numero de
-    Elo por si solo, sin la señal de haber cambiado de pantalla, pasaba desapercibido
-    (El usuario, 2026-08-14: "en las listas no se nota... pero si que reinicia")."""
+    """Reinicia el Elo de toda la biblioteca vista y borra su historial de duelos (no
+    toca listas ni waifus). Vuelve a /vistas con `elo_reset` para enseñar un aviso."""
     with get_connection() as conn:
         ids, _ = repo.duel_pool_for_user(conn, request.state.user_id)
         repo.reset_elo(conn, "entries", ids, request.state.user_id)

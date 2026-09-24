@@ -6,16 +6,10 @@
         {% if ep.watch_count and ep.watch_count >= 2 %}<span class="ep-watch-count">×{{ ep.watch_count }}</span>{% endif %}
     </button>
     <span class="ep-num">E{{ ep.episode_number }}</span>
-    {# Datos historicos (fecha de emision, fecha de visto, comentario) agrupados
-       junto al titulo en vez de en su propia "columna" a media fila - menos
-       prominencia, se leen como contexto del titulo, no como dato destacado
-       (cuarto analisis, 2026-08-21: "reduciria la prominencia de datos historicos
-       que no son necesarios en cada mirada"). #}
+    {# Fechas y comentario junto al título, con menos peso que el resto de la fila. #}
     <span class="ep-name">{{ ep.name or "" }}
         {% if ep.air_date %}<span class="ep-date">{{ ep.air_date }}</span>{% endif %}
-        {# La fecha de visto se enseña aunque no cuente para ESTA ronda
-           (watched_now=False) - "nada se pierde" tambien significa poder ver
-           cuando lo viste la vez anterior. #}
+        {# La fecha de visto se enseña aunque no cuente para esta ronda de rewatch. #}
         {% if ep.watched_at %}<span class="ep-seen-label">Visto {{ ep.watched_at[:10] }}</span>{% endif %}
         {% if ep.comment %}<span class="ep-comment">{{ ep.comment }}</span>{% endif %}
     </span>
@@ -23,9 +17,8 @@
        fav-star y "comentar" iban sueltos, cada uno pegado a su vecino sin
        relacion visual entre si. #}
     <div class="ep-actions">
-        {# Volver a ver ESTE episodio suelto, sin tocar la serie entera (2026-08-21) -
-           solo tiene sentido si ya esta visto EN ESTA RONDA: si no, el checkbox de
-           arriba ya sirve para marcarlo la primera vez. #}
+        {# Volver a ver este episodio suelto: solo si ya está visto en esta ronda; si
+           no, el checkbox de arriba sirve para marcarlo. #}
         {% if ep.watched_now %}
         <button class="ep-rewatch" hx-post="/episodio/{{ ep.id }}/volver-a-ver"
                 hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
@@ -50,11 +43,8 @@
         <button class="fav-star {{ 'is-fav' if ep.is_favorite else '' }}"
                 hx-post="/episodio/{{ ep.id }}/favorito" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
                 title="Episodio favorito">{{ "★" if ep.is_favorite else "☆" }}</button>
-        {# Calidad de vida (El usuario, 2026-09-22): abrir el desplegable ya dejaba escribir,
-           pero hacia falta un clic mas para enfocar el input a mano - "que se pueda
-           escribir directamente, no doble click". ontoggle nativo de <details> (se
-           dispara tanto al abrir como al cerrar, de ahi el "if (this.open)") enfoca
-           el input del propio formulario en cuanto se abre, sin JS de mas. #}
+        {# ontoggle enfoca el input al abrir (se dispara también al cerrar, de ahí el
+           "if (this.open)"). #}
         <details class="ep-more" {{ 'open' if ep.open_note else '' }} onclick="event.stopPropagation()"
                   ontoggle="if (this.open) this.querySelector('input').focus()">
             <summary title="Comentar episodio">
@@ -70,11 +60,9 @@
                 <button type="submit">Guardar</button>
             </form>
         </details>
-        {# Debate por episodio (Fase 4, 2026-09-18) - hilo publico entre usuarios, distinto
-           del comentario privado de arriba. Oculto/difuminado hasta que ESTE usuario ha
-           marcado el episodio como visto (ep.watched_now), con opcion de quitar el
-           spoiler antes de tiempo - mismo patron CSS que el aviso +18 (checkbox oculto +
-           label + filter:blur() + :has(), sin JS ni estado persistido). #}
+        {# Debate por episodio, compartido entre usuarios. Difuminado hasta que este
+           usuario ha visto el episodio, con opción de verlo antes: checkbox oculto +
+           label + filter:blur() + :has(), sin JS. #}
         <details class="ep-more ep-debate" {{ 'open' if ep.open_debate else '' }} onclick="event.stopPropagation()">
             <summary title="Comentarios ({{ ep.debate|length }})">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v3l-3-3H9a2 2 0 0 1-1.8-1.1"></path><path d="M17 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1v3z"></path></svg>
@@ -106,11 +94,8 @@
                     </form>
                 </div>
                 {% if not ep.watched_now %}
-                {# Bug real (AGY, 2026-09-18): al enviar un comentario sin haber marcado el
-                   episodio como visto, el swap entero de la fila reiniciaba el checkbox y
-                   el propio comentario que acabas de escribir volvia a quedar difuminado
-                   para ti. Si esta respuesta viene de enviar un comentario (open_debate),
-                   el checkbox nace marcado - sigues viendo tu spoiler propio sin tocar nada. #}
+                {# Si la respuesta viene de enviar un comentario (open_debate), el checkbox
+                   nace marcado para no volver a difuminar lo que acabas de escribir. #}
                 <input type="checkbox" id="spoiler-ep-{{ ep.id }}" class="spoiler-check" {{ 'checked' if ep.open_debate else '' }}>
                 <label for="spoiler-ep-{{ ep.id }}" class="spoiler-label">Spoiler · Toca para ver</label>
                 {% endif %}

@@ -1,12 +1,13 @@
-"""Regresion de los bugs reportados por la auditoria de AGY (2026-09-18)."""
+"""Tests de regresión variados: altas manuales, borrado en cascada, propiedad de
+duelos, listas, resumen anual, pool del duelo y ajuste del calendario."""
 from app import repo
 
 
 def test_create_manual_entry_is_scoped_to_user(conn, user_id):
-    """Bug real: create_manual_entry insertaba la entry sin user_id - no aparecia
-    en los pendientes de nadie ("entries.user_id" quedaba NULL)."""
+    """create_manual_entry guarda el user_id: si no, la entry no aparece en los
+    pendientes de nadie."""
     other = repo.create_user(conn, "amigo", "unaclave123")
-    repo.create_manual_entry(conn, "show", "Serie manual de tara", 2020, None, user_id)
+    repo.create_manual_entry(conn, "show", "Serie manual de principal", 2020, None, user_id)
     repo.create_manual_entry(conn, "show", "Serie manual del amigo", 2020, None, other["id"])
 
     mine = conn.execute("SELECT title_id, user_id FROM entries WHERE user_id = ?", (user_id,)).fetchall()
@@ -17,8 +18,8 @@ def test_create_manual_entry_is_scoped_to_user(conn, user_id):
 
 
 def test_remove_pending_entry_with_episode_comments_does_not_crash(conn, user_id):
-    """Bug real: episode_comments se quedo fuera del cascade de borrado - FOREIGN KEY
-    constraint failed al borrar `episodes` en cuanto un episodio tenia un comentario."""
+    """El borrado en cascada incluye episode_comments; si no, borrar episodes falla por
+    FOREIGN KEY en cuanto hay un comentario."""
     title = repo.ensure_manual_title(conn, "show", "Serie con debate", 2020)
     conn.execute(
         "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'pending')", (title["id"], user_id)
@@ -47,8 +48,7 @@ def test_get_or_create_default_list_recovers_missing_list(conn, user_id):
 
 
 def test_record_duel_rejects_ids_owned_by_another_user(conn, user_id):
-    """Gap real: un POST manipulado a /duelo con a_id/b_id de otro usuario podia
-    tocar su Elo - record_duel ahora exige que ambos sean del user_id que vota."""
+    """record_duel exige que los dos ids sean del usuario que vota."""
     other = repo.create_user(conn, "amigo", "unaclave123")
     title_a = repo.ensure_manual_title(conn, "movie", "Peli A", 2020)
     title_b = repo.ensure_manual_title(conn, "movie", "Peli B", 2021)
@@ -64,9 +64,8 @@ def test_record_duel_rejects_ids_owned_by_another_user(conn, user_id):
 
 
 def test_rename_list_to_a_duplicate_name_does_not_crash(conn, user_id):
-    """Bug real (AGY, 2026-09-18): lists tiene UNIQUE(user_id, name) - renombrar a
-    un nombre que ya usa otra lista TUYA reventaba con sqlite3.IntegrityError (500)
-    sin capturar."""
+    """Renombrar a un nombre que ya usa otra lista tuya no revienta (UNIQUE por
+    usuario)."""
     repo.create_list(conn, "Top 10", user_id)
     lista_b = repo.create_list(conn, "Por ver", user_id)
 
@@ -90,8 +89,7 @@ def test_rename_list_same_name_on_another_users_list_is_fine(conn, user_id):
 
 
 def test_get_available_years_ignores_malformed_watched_at(conn, user_id):
-    """Bug real (AGY, 2026-09-18): int(r["y"]) sin proteger tumbaba /resumen entero
-    si algun watched_at no empezaba por un año de verdad."""
+    """Un watched_at que no empieza por un año válido no tumba /resumen."""
     title = repo.ensure_manual_title(conn, "movie", "Peli con fecha rara", 2020)
     conn.execute(
         "INSERT INTO entries (title_id, user_id, status, watched_at) VALUES (?, ?, 'watched', ?)",
@@ -109,9 +107,7 @@ def test_get_available_years_ignores_malformed_watched_at(conn, user_id):
 
 
 def test_duel_pool_falls_back_to_all_watched_when_no_anime(conn, user_id):
-    """El usuario, 2026-09-18: 'el duelo era para anime pero para las otras personas no
-    se como adaptarlo' - con menos de 2 titulos de anime, el duelo cae a TODO lo
-    visto en vez de quedarse vacio."""
+    """Con menos de 2 títulos de anime, el duelo usa todo lo visto."""
     for i, name in enumerate(["Breaking Bad", "Dark", "The Wire"]):
         title = repo.ensure_manual_title(conn, "show", name, 2020 + i)
         conn.execute("UPDATE titles SET original_language = 'en' WHERE id = ?", (title["id"],))
@@ -152,8 +148,7 @@ def test_user_has_anime(conn, user_id):
 
 
 def test_show_anime_calendar_defaults_to_the_given_default(conn, user_id):
-    """El usuario, 2026-09-18: 'deberia de haber una etiqueta en conf' - sin tocarlo
-    nunca, manda el default (normalmente repo.user_has_anime)."""
+    """Sin tocar el ajuste, manda el valor por defecto (normalmente repo.user_has_anime)."""
     assert repo.get_show_anime_calendar(conn, user_id, default=True) is True
     assert repo.get_show_anime_calendar(conn, user_id, default=False) is False
 

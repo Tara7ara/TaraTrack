@@ -1,0 +1,6 @@
+{# Tira de estado en pequeño para pósters de listados (ver show_status_ribbon en
+   web.py). `row` = fila con type/show_status/next_episode_*; `right` = esquina
+   derecha, para no pisar el #puesto de las listas. El contenedor del póster
+   tiene que ser position:relative con overflow:hidden (.poster-ribbon-host). #}
+{% set rb = row|show_status_ribbon %}
+{% if rb %}<span class="status-ribbon-clip mini{{ ' right' if right }}"><span class="status-ribbon {{ rb[1] }}">{{ rb[0] }}</span></span>{% endif %}

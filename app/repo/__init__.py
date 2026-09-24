@@ -48,6 +48,7 @@ from app.repo.affinity import (  # noqa: F401
     backfill_anilist_profile,
     build_taste_profile,
     count_anilist_backfill_pending,
+    get_accuracy_history,
     get_affinity_config,
     get_affinity_display,
     get_profile_history,
@@ -79,7 +80,8 @@ from app.repo.comments import (  # noqa: F401
     mark_comments_seen,
 )
 from app.repo.duels import (  # noqa: F401
-    BRIDGE_DUEL_CHANCE,
+    DUEL_ANCHORS,
+    DUEL_COOLDOWN,
     GLICKO_Q,
     GLICKO_RD_INIT,
     GLICKO_RD_MIN,
@@ -137,6 +139,8 @@ from app.repo.season_cache import (  # noqa: F401
     get_show_anime_calendar,
     get_weekday_override,
     get_weekday_overrides,
+    library_status_for_cards,
+    link_calendar_card,
     save_season_cache,
     set_show_anime_calendar,
     set_weekday_override,

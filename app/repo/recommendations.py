@@ -1,13 +1,11 @@
-"""app.repo.recommendations - extraido de repo.py en el split de modulos (ronda 2026-08-21).
-Ver app/repo/__init__.py para el mapa completo de que vive en cada fichero -
-el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
-exactamente igual que antes, este split es puramente interno."""
+"""app.repo.recommendations - recomendados (TMDB + comunidad de AniList) y BAN. El
+resto del proyecto usa `from app import repo; repo.funcion(...)`."""
 import logging
-import random
 from concurrent.futures import ThreadPoolExecutor
 
-from app import tmdb
+from app import anime, tmdb
 from app.db import get_connection
+from app.matching import _best_plausible_match, _tmdb_search_flexible
 from app.repo.titles import TIPOS
 from app.repo.users import list_users
 
@@ -19,8 +17,8 @@ SEED_COUNT = 25
 MAX_RECS_WORKERS = 10
 
 
-# Semillas con este numero de BAN acumulados (recomendaciones suyas rechazadas) pesan
-# menos en el ranking - son mal recomendadoras para el usuario, no todas las semillas valen igual.
+# Las semillas con tantos BAN acumulados (recomendaciones suyas rechazadas) pesan
+# menos: recomiendan mal para este usuario.
 SEED_BAN_THRESHOLD = 3
 
 
@@ -32,12 +30,16 @@ SEED_BAN_PENALTY = 0.3
 MAX_PER_SEED = 6
 
 
+# Candidatos de la comunidad de AniList (los mas votados por tus semillas) que se
+# intentan emparejar con TMDB en cada tanda - el emparejamiento es lo caro (una
+# busqueda TMDB por candidato), la puntuacion en si es local.
+ANILIST_CANDIDATES = 60
+
+
 
 
 def _seed_ban_counts(conn, user_id: int):
-    """Cuantos BAN vinieron de cada semilla ('porque te gusto X') - la señal negativa
-    que antes se guardaba pero nunca se usaba para nada. Por usuario (2026-09-18): el
-    ban de uno no debe penalizar la semilla en los recomendados de otro."""
+    """Cuántos BAN salieron de cada semilla ("porque te gustó X"), por usuario."""
     rows = conn.execute(
         """SELECT seed_title, count(*) AS c FROM rejected_recommendations
            WHERE seed_title IS NOT NULL AND user_id = ? GROUP BY seed_title""",
@@ -48,18 +50,71 @@ def _seed_ban_counts(conn, user_id: int):
 
 
 
-def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_COUNT):
-    """Recalcula la tanda de recomendados y la deja en recommendations_cache - la
-    llama la sync de fondo cada 12h para que /recomendados sea una lectura local
-    instantanea en vez de esperar a N llamadas a TMDB en cada visita.
+def _seed_weight(rating, seed_title, ban_counts):
+    """Ponderar por la nota de la semilla en vez de contar todas igual: un 10 debe
+    arrastrar mas peso que un 8.5. Favoritos sin nota propia (aun no puntuados) se
+    tratan como el umbral minimo de semilla (0.85 = nota 8.5)."""
+    weight = (rating / 10) if rating else 0.85
+    if ban_counts.get(seed_title, 0) >= SEED_BAN_THRESHOLD:
+        weight *= SEED_BAN_PENALTY
+    return weight
 
-    Bug real (2026-09-18, el usuario: "recomienda full anime a la cuenta random"): esto
-    era una unica tabla GLOBAL calculada a partir de las entries de TODA la
-    instancia (en la practica, casi todo el usuario) - cualquier cuenta nueva veia sus
-    recomendados. Ahora es por usuario, mismo criterio que recompute_taste_profile
-    (repo/sync.py): sin user_id, recalcula la de TODOS los usuarios (llamada de la
-    sync de fondo); con user_id, solo la de ese usuario (red de seguridad de
-    list_recommendations cuando un usuario visita con la cache aun vacia)."""
+
+def _anilist_community_candidates(conn, user_id, ban_counts):
+    """Recomendaciones de la comunidad de AniList (anilist_cross_rec_ids, ya cacheadas)
+    sumadas sobre todas las semillas anime. Son locales, así que no hace falta
+    muestrear como con TMDB; para anime ordenan mucho mejor que el grafo de TMDB.
+    Devuelve [(anilist_id, score, [(peso, semilla), ...])] ordenado por score, sin lo
+    que el usuario ya tiene."""
+    seeds = conn.execute(
+        """SELECT titles.title, titles.anilist_cross_rec_ids, entries.rating
+           FROM entries JOIN titles ON titles.id = entries.title_id
+           WHERE entries.user_id = ? AND titles.anilist_cross_rec_ids IS NOT NULL
+             AND titles.anilist_cross_rec_ids != ''
+             AND (entries.rating >= 8.5 OR EXISTS(
+                  SELECT 1 FROM list_items JOIN lists ON lists.id = list_items.list_id
+                  WHERE list_items.entry_id = entries.id AND lists.is_default = 1))""",
+        (user_id,),
+    ).fetchall()
+    known = {
+        row["anilist_id"] for row in conn.execute(
+            """SELECT titles.anilist_id FROM entries JOIN titles ON titles.id = entries.title_id
+               WHERE entries.user_id = ? AND titles.anilist_id IS NOT NULL""",
+            (user_id,),
+        )
+    }
+    scores, seeds_by_cand = {}, {}
+    for seed in seeds:
+        weight = _seed_weight(seed["rating"], seed["title"], ban_counts)
+        for raw_id in seed["anilist_cross_rec_ids"].split(","):
+            if not raw_id:
+                continue
+            cand = int(raw_id)
+            if cand in known:
+                continue
+            scores[cand] = scores.get(cand, 0.0) + weight
+            seeds_by_cand.setdefault(cand, []).append((weight, seed["title"]))
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    return [(cand, score, sorted(seeds_by_cand[cand], reverse=True)) for cand, score in ranked]
+
+
+def _match_anilist_to_tmdb(names: dict):
+    """Primer resultado plausible de TMDB para un anime de AniList, probando el
+    titulo en ingles y luego el romaji (mismo freno que /calendario/abrir)."""
+    for title in (names.get("english"), names.get("romaji")):
+        if not title:
+            continue
+        match = _best_plausible_match(title, _tmdb_search_flexible(title))
+        if match:
+            return match
+    return None
+
+
+def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_COUNT):
+    """Recalcula la tanda de recomendados en recommendations_cache, para que
+    /recomendados sea una lectura local. Sin user_id recalcula la de todos los usuarios
+    (sync de fondo); con user_id, solo la de ese usuario (cuando visita con la caché
+    vacía)."""
     if user_id is None:
         with get_connection() as conn:
             user_ids = [row["id"] for row in list_users(conn)]
@@ -78,12 +133,8 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
                ORDER BY RANDOM() LIMIT ?""",
             (user_id, seed_count),
         ).fetchall()
-        # Bug real (AGY, 2026-09-18): "known" comprobaba TODO el catalogo compartido
-        # (titles), no lo que ESTE usuario tiene en su biblioteca - con el catalogo
-        # ya lleno de las ~900 entradas del usuario, una cuenta nueva se quedaba sin
-        # poder recibir NINGUNA de esas obras como recomendacion aunque ella nunca
-        # las hubiera visto, solo porque el usuario si las tenia. "Conocido" tiene que ser
-        # "tengo una entry de esto", no "existe en el catalogo de alguien".
+        # "Conocido" es lo que este usuario tiene en su biblioteca, no todo el catálogo
+        # compartido.
         known = {
             row["tmdb_id"] for row in conn.execute(
                 """SELECT titles.tmdb_id FROM entries JOIN titles ON titles.id = entries.title_id
@@ -103,12 +154,7 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
         futures = {pool.submit(tmdb.get_recommendations, s["tmdb_id"], s["type"]): s for s in seeds}
         for future in futures:
             seed = futures[future]
-            # Ponderar por la nota de la semilla en vez de contar todas igual: un 10 debe
-            # arrastrar mas peso que un 8.5. Favoritos sin nota propia (aun no puntuados)
-            # se tratan como el umbral minimo de semilla (0.85 = nota 8.5).
-            seed_weight = (seed["rating"] / 10) if seed["rating"] else 0.85
-            if ban_counts.get(seed["title"], 0) >= SEED_BAN_THRESHOLD:
-                seed_weight *= SEED_BAN_PENALTY
+            seed_weight = _seed_weight(seed["rating"], seed["title"], ban_counts)
             try:
                 recs = future.result()
             except Exception:
@@ -120,6 +166,26 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
                 if seed["title"] not in item["seeds"]:
                     item["seeds"].append(seed["title"])
                     item["score"] += seed_weight
+
+    # Comunidad de AniList: se suma al mismo ranking. Las semillas de AniList van
+    # delante (ordenadas por peso), asi el tope por semilla principal y el "Porque
+    # te gusto X" reflejan la mas fuerte.
+    try:
+        community = _anilist_community_candidates_for(user_id, ban_counts)[:ANILIST_CANDIDATES]
+        names = anime.get_anilist_titles([cand for cand, _score, _seeds in community]) if community else {}
+    except Exception:
+        logging.exception("recomendados: fallo la parte de AniList para usuario %s", user_id)
+        community, names = [], {}
+    with ThreadPoolExecutor(max_workers=MAX_RECS_WORKERS) as pool:
+        matches = list(pool.map(lambda c: _match_anilist_to_tmdb(names.get(c[0], {})), community))
+    for (cand, score, cand_seeds), match in zip(community, matches):
+        if not match or match["tmdb_id"] in known:
+            continue
+        item = scored.setdefault(match["tmdb_id"], {**match, "seeds": [], "score": 0.0})
+        item["adult"] = bool(item.get("adult")) or names.get(cand, {}).get("is_adult", False)
+        seed_titles = [title for _w, title in cand_seeds]
+        item["seeds"] = seed_titles + [t for t in item["seeds"] if t not in seed_titles]
+        item["score"] += score
 
     ranked = sorted(scored.values(), key=lambda r: (r["score"], r["popularity"]), reverse=True)
 
@@ -157,13 +223,18 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
 
 
 
-def list_recommendations(conn, user_id: int, tipo="", limit=40):
+def list_recommendations(conn, user_id: int, tipo="", limit=40, tanda=0, with_pages=False):
     """Lee la tanda ya calculada por refresh_recommendations_cache - sin llamar a TMDB.
     Si la cache de ESTE usuario esta vacia (cuenta recien creada, o primer arranque
     antes de la primera sync de fondo), la calcula al vuelo como red de seguridad -
     con cero semillas propias (nada puntuado con 8.5+ ni en Favoritos) se queda
     vacia igualmente, y /recomendados ya tiene un estado vacio para ese caso
-    ("Todavía no hay de dónde tirar")."""
+    ("Todavía no hay de dónde tirar").
+
+    Siempre por score, de mejor a peor: `tanda` pasa a los siguientes `limit` (y da
+    la vuelta al principio al acabarse). Antes "Otra tanda" sorteaba 40 al azar del
+    pool entero, y lo mejor podia no salir. Con `with_pages` devuelve tambien
+    (lista, numero_de_tandas)."""
     if conn.execute(
         "SELECT count(*) AS c FROM recommendations_cache WHERE user_id = ?", (user_id,)
     ).fetchone()["c"] == 0:
@@ -194,11 +265,11 @@ def list_recommendations(conn, user_id: int, tipo="", limit=40):
         for r in rows
         if r["tmdb_id"] not in banned and r["tmdb_id"] not in known
     ]
-    # "Otra tanda": variedad sin volver a llamar a TMDB - una muestra al azar del pool
-    # cacheado (ponderado por score al ordenar despues) en vez de siempre el mismo top N.
-    shown = random.sample(pool, min(limit, len(pool))) if pool else []
-    shown.sort(key=lambda r: r["score"], reverse=True)
-    return shown
+    pool.sort(key=lambda r: r["score"], reverse=True)
+    pages = max(1, -(-len(pool) // limit))
+    start = (tanda % pages) * limit
+    shown = pool[start:start + limit]
+    return (shown, pages) if with_pages else shown
 
 
 
@@ -207,12 +278,8 @@ def reject_recommendation(
     conn, tmdb_id: int, media_type: str, title: str, poster_path: str | None, user_id: int,
     seed_title: str | None = None,
 ):
-    """El BAN de una tarjeta de recomendados: no vuelve a salir. Guarda tambien la
-    semilla ("porque te gusto X") que la genero - antes se tiraba esa señal, y con ella
-    _seed_ban_counts puede detectar semillas que recomiendan mal para el usuario.
-    `user_id` obligatorio desde el multiusuario (2026-09-17): antes `tmdb_id` era
-    UNIQUE en toda la instancia - sin filtrar, el ban de un usuario ocultaria esa
-    recomendación para todos los demás también."""
+    """BAN de una tarjeta de recomendados: no vuelve a salir. Guarda también la semilla
+    que la generó, para que _seed_ban_counts detecte semillas que recomiendan mal."""
     conn.execute(
         """INSERT OR IGNORE INTO rejected_recommendations (tmdb_id, type, title, poster_path, seed_title, user_id)
            VALUES (?, ?, ?, ?, ?, ?)""",
@@ -231,8 +298,12 @@ def list_rejected_recommendations(conn, user_id):
 
 
 def unreject_recommendation(conn, rejected_id: int, user_id: int):
-    """`user_id` obligatorio (multiusuario Fase 3, 2026-09-18) - sin filtrar, cualquier
-    usuario podria deshacer el ban de otro adivinando su id."""
+    """Deshace un BAN; filtra por usuario para no tocar los de otra cuenta."""
     conn.execute(
         "DELETE FROM rejected_recommendations WHERE id = ? AND user_id = ?", (rejected_id, user_id)
     )
+
+
+def _anilist_community_candidates_for(user_id, ban_counts):
+    with get_connection() as conn:
+        return _anilist_community_candidates(conn, user_id, ban_counts)

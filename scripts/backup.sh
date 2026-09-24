@@ -1,10 +1,10 @@
 #!/bin/bash
-# Backup nocturno de TaraTrack: BBDD (online-safe via API de sqlite3) + posters/uploads.
-# Se ejecuta en el servidor (host), no dentro del contenedor. Ver plan Fase 0 / punto 3 de riesgos.
+# Backup nocturno: BBDD (copia en caliente con la API de sqlite3) + pósters/uploads.
+# Se ejecuta en el host del servidor, no dentro del contenedor.
 set -euo pipefail
 
 STAMP=$(date +%F)
-BACKUP_DIR="/home/tara/taratrack/backups"
+BACKUP_DIR="$HOME/taratrack/backups"
 KEEP_DAYS=14
 
 mkdir -p "$BACKUP_DIR"
@@ -26,19 +26,13 @@ mkdir -p "$BACKUP_DIR/posters-${STAMP}" "$BACKUP_DIR/uploads-${STAMP}" "$BACKUP_
 docker cp "taratrack:/srv/app/static/posters/." "$BACKUP_DIR/posters-${STAMP}/"
 docker cp "taratrack:/srv/app/static/uploads/." "$BACKUP_DIR/uploads-${STAMP}/"
 docker cp "taratrack:/srv/app/static/profiles/." "$BACKUP_DIR/profiles-${STAMP}/"
-# avatars/ (fotos de perfil de cuenta, 2026-09-18) se crea al vuelo con la primera
-# subida - puede no existir todavia en el contenedor, `mkdir -p` la deja lista para
-# que el docker cp de abajo no reviente con `set -e` en una instalacion nueva.
+# avatars/ se crea con la primera subida; mkdir -p evita que el docker cp de abajo
+# falle en una instalación nueva.
 docker exec taratrack mkdir -p /srv/app/static/avatars
 docker cp "taratrack:/srv/app/static/avatars/." "$BACKUP_DIR/avatars-${STAMP}/"
 
 find "$BACKUP_DIR" -maxdepth 1 -mtime +${KEEP_DAYS} \( -name 'taratrack-*.db' -o -name 'posters-*' -o -name 'uploads-*' -o -name 'profiles-*' -o -name 'avatars-*' \) -exec rm -rf {} +
 
-# NOTA: el servidor no tiene montado el NAS (solo el PC del usuario lo tiene).
-# Este directorio debe estar cubierto por la rutina de Synology Active Backup
-# for Business del servidor (ver Apuntes/Cosas_de_casa/NAS/Copias de Seguridad.md) —
-# si esa rutina hace backup bare-metal completo del servidor, ya incluye esta carpeta
-# sin configuracion adicional. Si se quiere una copia secundaria explicita en el NAS,
-# habria que montar el CIFS en el propio servidor (pendiente, no bloqueante).
+# Este directorio debe quedar cubierto por la copia de seguridad del propio servidor.
 
 echo "[$(date -Iseconds)] backup OK: taratrack-${STAMP}.db"

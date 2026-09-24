@@ -13,8 +13,7 @@ def _episode(conn):
 
 
 def test_comment_visible_to_other_user(conn, user_id):
-    """El hilo de debate es la unica pieza pensada para verse ENTRE usuarios (Fase 4,
-    2026-09-18) - a diferencia de todo lo demas del multiusuario, que esta aislado."""
+    """El debate es lo único que se ve entre usuarios; todo lo demás está aislado."""
     other = repo.create_user(conn, "amigo", "unaclave123")
     ep = _episode(conn)
 
@@ -38,7 +37,7 @@ def test_comments_are_ordered_chronologically(conn, user_id):
 
     comments = repo.list_episode_comments(conn, ep["id"])
     assert [c["body"] for c in comments] == ["primero", "segundo"]
-    assert [c["username"] for c in comments] == ["tara", "amigo"]
+    assert [c["username"] for c in comments] == ["principal", "amigo"]
 
 
 def test_empty_comment_is_ignored(conn, user_id):
@@ -60,7 +59,7 @@ def test_delete_episode_comment_by_owner(conn, user_id):
 def test_delete_episode_comment_by_another_user_is_a_no_op(conn, user_id):
     other = repo.create_user(conn, "amigo", "unaclave123")
     ep = _episode(conn)
-    repo.add_episode_comment(conn, ep["id"], user_id, "de tara")
+    repo.add_episode_comment(conn, ep["id"], user_id, "de principal")
     comment_id = repo.list_episode_comments(conn, ep["id"])[0]["id"]
 
     repo.delete_episode_comment(conn, comment_id, other["id"], is_admin=False)
@@ -69,8 +68,7 @@ def test_delete_episode_comment_by_another_user_is_a_no_op(conn, user_id):
 
 
 def test_delete_episode_comment_by_admin_removes_anyones(conn, user_id):
-    """Fase 5 (El usuario, 2026-09-18: 'eliminar mensajes de todos, cada uno el suyo pero
-    admin el total')."""
+    """Cada uno borra el suyo; el admin, cualquiera."""
     other = repo.create_user(conn, "amigo", "unaclave123")
     ep = _episode(conn)
     repo.add_episode_comment(conn, ep["id"], other["id"], "del amigo")
@@ -90,8 +88,7 @@ def _seen_long_ago(conn, user_id):
 
 
 def test_own_comments_never_count_as_unseen_for_yourself(conn, user_id):
-    """Aviso del nav (El usuario, 2026-09-18: "estilo tvtime") - no hace falta avisarte
-    de lo que tu mismo acabas de escribir."""
+    """Los comentarios propios no cuentan como nuevos."""
     _seen_long_ago(conn, user_id)
     ep = _episode(conn)
     repo.add_episode_comment(conn, ep["id"], user_id, "mio")

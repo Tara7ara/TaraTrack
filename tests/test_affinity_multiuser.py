@@ -15,8 +15,7 @@ def _rated_title(conn, name, anilist_id, genre, user_id, rating):
 
 
 def test_taste_profile_is_isolated_per_user(conn, user_id):
-    """Multiusuario Fase 3 (2026-09-18): cada usuario recalcula y lee SU PROPIO
-    taste_profile - antes era una unica tabla global mezclando el gusto de cualquiera."""
+    """Cada usuario recalcula y lee su propio taste_profile."""
     other = repo.create_user(conn, "otro", "unaclave123")
     _rated_title(conn, "Comedia", 111, "Comedy", user_id, 9.0)
     _rated_title(conn, "Drama", 222, "Drama", user_id, 4.0)

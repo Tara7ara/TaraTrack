@@ -2,8 +2,7 @@
 {% block content %}
 <h1>Ajustes</h1>
 
-{# Perfil propio (El usuario, 2026-09-18: "como pongo fotos de usr, si quiero cambiar el
-   nombre") - cada cuenta gestiona su propia foto/nombre, no hace falta ser admin. #}
+{# Perfil propio: cada cuenta gestiona su foto y su nombre. #}
 <div class="settings-section">
     <h2>Tu perfil</h2>
     {% if perfil_error %}<p class="empty" style="color:var(--danger)">{{ perfil_error }}</p>{% endif %}
@@ -36,10 +35,8 @@
     </details>
 </div>
 
-{# El usuario, 2026-09-18: "deberia de haber una etiqueta en conf que permita ver todo
-   esto" - el "Calendario de temporada" (TODO el anime de la temporada, no solo lo
-   que sigues) se detecta solo por defecto (repo.user_has_anime), pero cada uno
-   puede forzarlo a mano aqui, tenga o no anime ya en su biblioteca. #}
+{# El calendario de temporada se detecta solo (repo.user_has_anime), pero cada uno
+   puede forzarlo aquí. #}
 <div class="settings-section">
     <h2>Preferencias</h2>
     <form method="post" action="/ajustes/perfil/calendario-anime">
@@ -50,9 +47,7 @@
     </form>
 </div>
 
-{# Jerarquia entre secciones (auditoria visual 2026-08-20): "Tus datos" y
-   "Sesion" son acciones simples y poco frecuentes, bajan a tarjetas compactas
-   en fila en vez de ocupar el mismo peso que el resto. #}
+{# "Tus datos" y "Sesión" son acciones poco frecuentes: tarjetas compactas en fila. #}
 <div class="settings-compact-row">
     <div class="settings-section compact">
         <div class="settings-compact-head">
@@ -78,9 +73,7 @@
     </div>
 </div>
 
-{# Cuentas (2026-09-17, multiusuario Fase 1) - solo la/s admin la ven. De momento
-   solo alta (usuario+contraseña); borrar/desactivar cuentas queda para mas
-   adelante, no hace falta todavia con 2-3 personas de confianza. #}
+{# Cuentas: solo las ven los admin. #}
 {% if request.state.is_admin %}
 <div class="settings-section">
     <h2>Usuarios</h2>
@@ -99,9 +92,8 @@
                 <button class="btn-text">{{ "Quitar admin" if u.is_admin else "Hacer admin" }}</button>
             </form>
             {% endif %}
-            {# El usuario, 2026-09-18: "si pierdo la pass como lo recupero, un fallo para
-               el usr final" - sin email en este self-host, tu (admin) le pones una
-               contraseña nueva a quien se quede fuera. #}
+            {# Sin email en un self-host: un admin pone una contraseña nueva a quien se
+               quede fuera. #}
             <details class="ep-more" onclick="event.stopPropagation()">
                 <summary class="btn-text" title="Resetear contraseña" style="cursor:pointer">Resetear pass</summary>
                 <form method="post" action="/ajustes/usuarios/{{ u.id }}/password" class="ep-comment-form">
@@ -147,9 +139,7 @@
     </div>
     <p class="page-hint">Cómo se combinan las señales de apetito y calidad en /estadísticas y en la predicción "% que te gustará". Guardar recalcula el perfil en segundo plano, tarda alrededor de un minuto en aplicarse.</p>
 
-    {# Estado de recalculo + "Ver calibracion" + el desplegable, los 3 en fila en
-       vez de apilados como una lista (El usuario: "los 3 botones en paralelo y no en
-       lista"). #}
+    {# Estado de recálculo, "Ver calibración" y el desplegable en una fila. #}
     <div class="hero-controls">
         <div hx-get="/afinidad/estado" hx-trigger="load" hx-swap="outerHTML"></div>
         <a class="btn secondary" href="/afinidad/calibracion">Ver calibración de la predicción</a>

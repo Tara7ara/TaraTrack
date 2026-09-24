@@ -54,7 +54,7 @@
 {% if entries|length > 2 %}
 <div class="page-actions tight">
     <a class="btn secondary" href="/duelo">Jugar duelos (anime)</a>
-    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
+    {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
     <details class="del-confirm">
         <summary class="btn secondary danger">Reiniciar Elo</summary>
         <form method="post" action="/duelo/elo/reiniciar">
@@ -85,15 +85,14 @@
 {% endif %}
 {% for e in entries %}
 <div class="card">
-    {# La portada no llevaba a ningun sitio, solo el texto del titulo (El usuario: "si
-       clickas a la img debería de llevar a la ficha técnica") - mismo patron que
-       ya usan search_results.html/recommendations.html. #}
-    <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
+    {# El póster también enlaza a la ficha. #}
+    <a class="poster-ribbon-host" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
         {% if e.poster_path %}
         <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
         {% else %}
         <img src="/static/img/sin-portada.svg" alt="Sin portada">
         {% endif %}
+        {% with row = e %}{% include "partials/status_ribbon.html" %}{% endwith %}
     </a>
     <div class="card-body">
         <div style="display:flex; justify-content:space-between; align-items:start; gap:0.4rem;">
@@ -108,9 +107,7 @@
         <a class="btn" href="/marcar-vista/{{ e.tmdb_id }}/{{ e.type }}">Puntuar</a>
         {% endif %}
         {% if e.is_anime %}<div class="elo-badge">Elo {{ e.elo|round|int }} · {{ e.rd|elo_confidence }}</div>{% endif %}
-        {# Comentarios largos alargaban la fila mucho mas que el resto de la lista
-           (El usuario: "hacer límite visual") - recortado aquí, el completo se sigue
-           viendo entero en la ficha técnica. #}
+        {# Comentario recortado en la lista; entero en la ficha. #}
         {% if e.comment %}<div class="comment">{{ e.comment|truncate(90) }}</div>{% endif %}
         <div class="card-year">
             {% if e.vote_average %}Internet: {{ e.vote_average|fmt_rating(1) }}{% endif %}

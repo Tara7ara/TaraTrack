@@ -3,11 +3,10 @@ import os
 import pytest
 
 os.environ.setdefault("TMDB_API_KEY", "test")
-# init_db() bootstrapea la primera cuenta (admin) a partir de estas dos variables
-# (db._migrate_multiuser, 2026-09-17) - sin TARATRACK_PASSWORD ningun test tendria
-# usuario contra el que probar nada que dependa de user_id.
+# init_db() crea la primera cuenta (admin) a partir de estas variables; sin ella no
+# habría usuario con el que probar nada que dependa de user_id.
 os.environ.setdefault("TARATRACK_PASSWORD", "test-password")
-os.environ.setdefault("TARATRACK_ADMIN_USERNAME", "tara")
+os.environ.setdefault("TARATRACK_ADMIN_USERNAME", "principal")
 
 from app import db
 

@@ -1,7 +1,5 @@
-"""app.repo.waifus - extraido de repo.py en el split de modulos (ronda 2026-08-21).
-Ver app/repo/__init__.py para el mapa completo de que vive en cada fichero -
-el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
-exactamente igual que antes, este split es puramente interno."""
+"""app.repo.waifus - personajes favoritos y su orden. El resto del proyecto usa
+`from app import repo; repo.funcion(...)`."""
 
 from app.repo._shared import (
     get_setting,
@@ -11,10 +9,8 @@ from app.repo.lists import _move_in_ranking
 
 
 def _waifus_by_position(conn, user_id):
-    """El orden MANUAL puro (position) de ESTE usuario - lo usan las flechas, ver
-    _list_items_by_position. `favorite_characters` no tiene su propia columna
-    user_id (deliberado, ver Fase 1) - la propiedad se deriva via el entry_id, que
-    ya pertenece a un unico usuario."""
+    """Orden manual (position) de este usuario, el que usan las flechas.
+    favorite_characters no tiene user_id propio: la propiedad sale del entry_id."""
     return conn.execute(
         """SELECT favorite_characters.id AS fav_id FROM favorite_characters
            JOIN entries ON entries.id = favorite_characters.entry_id
@@ -27,9 +23,8 @@ def _waifus_by_position(conn, user_id):
 
 
 def list_waifus(conn, user_id):
-    """Personajes con estrella de ESTE usuario. Orden mostrado: manual o por duelos
-    segun 'waifus_order_mode:<user_id>' (ver record_duel) - namespaced por usuario
-    desde la Fase 3 (2026-09-18), antes era un ajuste global compartido."""
+    """Personajes con estrella de este usuario, en orden manual o por duelos según
+    'waifus_order_mode:<user_id>'."""
     mode = get_setting(conn, f"waifus_order_mode:{user_id}", "manual")
     order_sql = (
         "favorite_characters.elo DESC" if mode == "duelo"

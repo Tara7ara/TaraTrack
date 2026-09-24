@@ -7,7 +7,10 @@
     <a href="/recomendados?tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}">Pelis</a>
 </div>
 <div class="page-actions">
-    <a class="btn secondary" href="/recomendados{{ '?tipo=' + tipo if tipo }}">Otra tanda</a>
+    {% if pages > 1 %}
+    <a class="btn secondary" href="/recomendados?tanda={{ (tanda + 1) % pages }}{{ '&tipo=' + tipo if tipo }}">{{ "Volver a las mejores" if tanda + 1 == pages else "Otra tanda" }}</a>
+    <span class="page-hint">Tanda {{ tanda + 1 }} de {{ pages }}</span>
+    {% endif %}
 </div>
 
 {% if not recs %}
@@ -37,7 +40,7 @@
     <div class="card-body">
         <a class="card-title" href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">{{ r.title }}</a>
         <div class="card-year">{{ r.year or "—" }} · {{ "Serie" if r.type == "show" else "Película" }}{% if r.vote_average %} · Internet: {{ r.vote_average|fmt_rating(1) }}{% endif %}</div>
-        {% if r.seeds %}<div class="rec-seeds">Porque te gustó {{ r.seeds|join(", ") }}</div>{% endif %}
+        {% if r.seeds %}<div class="rec-seeds">Porque te gustó {{ r.seeds[:3]|join(", ") }}{% if r.seeds|length > 3 %} y {{ r.seeds|length - 3 }} más{% endif %}</div>{% endif %}
         {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = "new" %}
         {% include "partials/entry_actions.html" %}
         <form hx-post="/recomendados/rechazar" hx-target="#rec-{{ r.tmdb_id }}" hx-swap="outerHTML" style="margin:0">

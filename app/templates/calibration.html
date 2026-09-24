@@ -1,7 +1,38 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Calibración de la predicción</h1>
-<p class="page-hint">Fase 6 del índice de afinidad: cuánto se acerca "% que te gustará" a la nota real, solo sobre títulos predichos Y ya puntuados.</p>
+<p class="page-hint">Cuánto se acerca "% que te gustará" a tu nota.</p>
+
+{% if acc %}
+<h2>Cuánto acierta</h2>
+<p class="page-hint">Cada título que has puntuado, predicho como si aún no lo hubieras visto. Si un cambio deja el acierto dentro del margen de azar, no ha mejorado nada de verdad.</p>
+<div class="stat-tiles">
+    <div class="stat-tile">
+        <span class="stat-num">{{ "%.2f"|format(acc.spearman) if acc.spearman is not none else "—" }}</span>
+        <span class="stat-label">acierto (0 = azar, 1 = perfecto){% if acc.spearman_lo is not none %}<br>por azar podría ir de {{ "%.2f"|format(acc.spearman_lo) }} a {{ "%.2f"|format(acc.spearman_hi) }}{% endif %}</span>
+    </div>
+    <div class="stat-tile">
+        <span class="stat-num">{{ acc.masterpieces_hit }}/{{ acc.masterpieces }}</span>
+        <span class="stat-label">obras maestras con 50% o más</span>
+    </div>
+    <div class="stat-tile">
+        <span class="stat-num">{{ acc.n }}</span>
+        <span class="stat-label">títulos puntuados</span>
+    </div>
+</div>
+{% if acc_history|length > 1 %}
+<div class="stat-bars section-gap">
+    {% for h in acc_history %}
+    <div class="stat-bar-row">
+        <span class="stat-bar-label wide">{{ h.date }}</span>
+        <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ ((h.spearman or 0) * 100)|round }}%"></div></div>
+        <span class="stat-bar-count">{{ "%.2f"|format(h.spearman) if h.spearman is not none else "—" }} · {{ h.masterpieces_hit }}/{{ h.masterpieces }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+<h2>Predicciones antes de puntuar</h2>
+{% endif %}
 
 {% if not cal.n %}
 <div class="empty-state">
@@ -21,8 +52,7 @@
     </div>
 </div>
 
-{# Mismo layout en 2 bloques que /resumen (cuarto analisis, 2026-08-21: barras de
-   560px sin nada que llene el resto en QHD). #}
+{# Mismo layout en 2 bloques que /resumen. #}
 <div class="yearly-layout section-gap">
 <div class="yearly-bars">
 <h2 style="margin-top:0">Error por franja de predicción</h2>

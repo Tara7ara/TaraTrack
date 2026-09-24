@@ -2,7 +2,7 @@ import os
 
 os.environ.setdefault("TARATRACK_SECRET_KEY", "test-secret-para-tests")
 os.environ.setdefault("TARATRACK_PASSWORD", "test-password")
-os.environ.setdefault("TARATRACK_ADMIN_USERNAME", "tara")
+os.environ.setdefault("TARATRACK_ADMIN_USERNAME", "principal")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,14 +14,12 @@ from app import db, main
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     with TestClient(main.app, base_url="https://testserver") as c:
-        c.post("/login", data={"username": "tara", "password": "test-password", "next": "/"})
+        c.post("/login", data={"username": "principal", "password": "test-password", "next": "/"})
         yield c
 
 
 def test_crear_usuario_con_nombre_invalido_no_revienta(client):
-    """Bug real (AGY, 2026-09-18): create_user ahora valida usuario (regex/
-    reservados) y contraseña (min. 8) - sin capturar el ValueError, un alta desde
-    /ajustes con un nombre invalido tumbaba la peticion con un 500."""
+    """Un alta desde /ajustes con un nombre inválido da un aviso, no un 500."""
     r = client.post(
         "/ajustes/usuarios", data={"username": "admin", "password": "unaclave123"}, follow_redirects=False
     )
@@ -46,8 +44,7 @@ def test_crear_usuario_valido_funciona(client):
 
 
 def test_calendario_anime_toggle(client):
-    """El usuario, 2026-09-18: 'deberia de haber una etiqueta en conf que permita ver
-    todo esto' - forzar a mano si se ve o no el calendario de temporada de anime."""
+    """Se puede forzar a mano si se ve el calendario de temporada."""
     r = client.post("/ajustes/perfil/calendario-anime", data={"mostrar": "1"}, follow_redirects=False)
     assert r.status_code == 303
     r2 = client.get("/calendario")
@@ -59,15 +56,14 @@ def test_calendario_anime_toggle(client):
 
 
 def test_non_static_responses_are_not_cached(client):
-    """El usuario, 2026-09-18: varios 'he tenido que recargar la web' tras quitar un
-    pendiente o añadir un favorito - Cache-Control: no-store evita que el
-    navegador (sobre todo Safari/iOS) enseñe una version vieja de la pagina."""
+    """Las páginas van con Cache-Control: no-store, para que el navegador (sobre todo
+    Safari/iOS) no enseñe una versión vieja al volver atrás."""
     r = client.get("/pendientes")
     assert r.headers["cache-control"] == "no-store"
 
 
 def test_admin_puede_resetear_password_de_otro(client):
-    """El usuario, 2026-09-18: recuperacion de acceso via admin, sin email."""
+    """Un admin puede restablecer la contraseña de otra cuenta."""
     from app import repo
 
     with db.get_connection() as conn:
@@ -105,7 +101,7 @@ def test_mensaje_de_error_con_tildes_no_rompe_el_redirect(client):
     tildes y espacios - confirma que el redirect no revienta con eso (Starlette
     ya quotea la URL entera, pero se comprueba end-to-end de todas formas)."""
     with db.get_connection() as conn:
-        admin_id = conn.execute("SELECT id FROM users WHERE username = 'tara'").fetchone()["id"]
+        admin_id = conn.execute("SELECT id FROM users WHERE username = 'principal'").fetchone()["id"]
     r = client.post(f"/ajustes/usuarios/{admin_id}/admin", data={"valor": "0"}, follow_redirects=False)
     assert r.status_code == 303
     assert r.headers["location"].startswith("/ajustes?usuario_error=")

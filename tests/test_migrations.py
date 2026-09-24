@@ -17,13 +17,9 @@ EXPECTED_SEASON_RATINGS_COLUMNS = {
 
 
 def test_fresh_db_has_every_migrated_column(tmp_path, monkeypatch):
-    """Regresion de un bug real: _migrate_rating_scale_0_10 reconstruye
-    entries/season_ratings con una lista de columnas hardcodeada aparte de
-    MIGRATIONS - si alguien añade una columna nueva
-    via MIGRATIONS y se olvida de replicarla ahi, una instalacion NUEVA (o los
-    tests) pierde esa columna en el primer arranque, aunque produccion (que ya
-    tiene el flag rating_scale_0_10 puesto) nunca lo note. Este test falla alto y
-    claro si eso vuelve a pasar, en vez de descubrirse semanas despues."""
+    """_migrate_rating_scale_0_10 reconstruye entries/season_ratings con su propia
+    lista de columnas: si una columna nueva de MIGRATIONS no se replica ahí, una
+    instalación nueva la pierde. Este test lo detecta."""
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "fresh.db"))
     db.init_db()
     with db.get_connection() as conn:

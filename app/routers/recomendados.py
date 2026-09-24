@@ -1,4 +1,4 @@
-"""app.routers.recomendados - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.recomendados - recomendados y BAN."""
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
@@ -13,11 +13,14 @@ router = APIRouter()
 
 
 @router.get("/recomendados", response_class=HTMLResponse)
-def recomendados(request: Request, tipo: str = ""):
+def recomendados(request: Request, tipo: str = "", tanda: int = 0):
     with get_connection() as conn:
-        recs = repo.list_recommendations(conn, request.state.user_id, tipo=tipo)
+        recs, pages = repo.list_recommendations(
+            conn, request.state.user_id, tipo=tipo, tanda=tanda, with_pages=True
+        )
     return templates.TemplateResponse(
-        request, "recommendations.html", {"recs": recs, "tipo": tipo}
+        request, "recommendations.html",
+        {"recs": recs, "tipo": tipo, "tanda": tanda % pages, "pages": pages},
     )
 
 

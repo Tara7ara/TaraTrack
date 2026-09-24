@@ -1,4 +1,4 @@
-"""app.routers.ajustes - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.ajustes - ajustes, cuentas, pesos de afinidad y exportación."""
 import asyncio
 import json
 import os
@@ -29,9 +29,7 @@ def ajustes(
         rechazados = repo.list_rejected_recommendations(conn, request.state.user_id)
         profile_history = repo.get_profile_history(conn, request.state.user_id)
         affinity_config = repo.get_affinity_config(conn, request.state.user_id)
-        # Solo admin ve/gestiona cuentas (2026-09-17, multiusuario Fase 1) - de
-        # momento tu (la primera cuenta, migrada desde TARATRACK_PASSWORD) eres la
-        # unica admin, nadie mas lo es salvo que lo decidas a mano en el futuro.
+        # Solo un admin ve y gestiona las cuentas.
         usuarios = repo.list_users(conn) if request.state.is_admin else []
         show_anime_calendar = repo.get_show_anime_calendar(
             conn, request.state.user_id, default=repo.user_has_anime(conn, request.state.user_id)
@@ -50,9 +48,7 @@ def ajustes(
             "perfil_error": perfil_error,
             "perfil_ok": perfil_ok,
             "show_anime_calendar": show_anime_calendar,
-            # Valor de referencia junto a cada input de peso (auditoria visual
-            # 2026-08-20) - de las constantes reales de repo.py, no numeros
-            # duplicados a mano en la plantilla.
+            # Valor por defecto junto a cada peso, sacado de las constantes de repo.
             "affinity_defaults": {
                 "appetite_weights": repo.APPETITE_WEIGHTS,
                 "quality_weights": repo.QUALITY_WEIGHTS,
@@ -71,10 +67,8 @@ def ajustes(
 
 @router.post("/ajustes/perfil/calendario-anime", response_class=HTMLResponse)
 def ajustes_calendario_anime(request: Request, mostrar: str = Form("0")):
-    """El usuario, 2026-09-18: "deberia de haber una etiqueta en conf que permita ver
-    todo esto (ej Otaku o Anime)" - ensena/oculta el "Calendario de temporada"
-    (todo el anime de la temporada, no solo lo que sigues) segun preferencia
-    explicita, no solo la deteccion automatica de repo.user_has_anime."""
+    """Muestra u oculta el enlace al calendario de temporada, por encima de la
+    detección automática de repo.user_has_anime."""
     with get_connection() as conn:
         repo.set_show_anime_calendar(conn, request.state.user_id, mostrar == "1")
     return RedirectResponse("/ajustes", status_code=303)
@@ -84,8 +78,7 @@ def ajustes_calendario_anime(request: Request, mostrar: str = Form("0")):
 
 @router.post("/ajustes/perfil/nombre", response_class=HTMLResponse)
 def ajustes_cambiar_nombre(request: Request, username: str = Form(...)):
-    """Cambiar tu propio nombre de usuario (El usuario, 2026-09-18: "si quiero cambiar
-    el nombre") - cada uno el suyo, no hace falta ser admin."""
+    """Cambia tu propio nombre de usuario."""
     with get_connection() as conn:
         try:
             repo.set_username(conn, request.state.user_id, username)
@@ -103,8 +96,7 @@ def ajustes_cambiar_password(
     password_nueva: str = Form(...),
     password_nueva2: str = Form(...),
 ):
-    """Gap real (AGY, 2026-09-18): faltaba forma de cambiar tu propia contraseña
-    una vez creada la cuenta."""
+    """Cambia tu propia contraseña."""
     if password_nueva != password_nueva2:
         return RedirectResponse(
             f"/ajustes?perfil_error={quote_plus('Las contraseñas nuevas no coinciden')}", status_code=303
@@ -121,9 +113,8 @@ def ajustes_cambiar_password(
 
 @router.post("/ajustes/perfil/foto", response_class=HTMLResponse)
 async def ajustes_cambiar_foto(request: Request, imagen: UploadFile = File(...)):
-    """Foto de perfil propia (El usuario, 2026-09-18: "como pongo fotos de usr") - mismo
-    patron de validacion por trozos que cambiar_portada (app/routers/titulo.py):
-    tipo de contenido + tope de tamaño, sin leer el fichero entero de una vez."""
+    """Foto de perfil propia. Valida tipo y tamaño leyendo por trozos, igual que
+    cambiar_portada."""
     if imagen.content_type not in config.POSTER_CONTENT_TYPES:
         raise StarletteHTTPException(400, "Ese archivo no es una imagen JPEG/PNG/WebP.")
     data = bytearray()
@@ -146,9 +137,7 @@ async def ajustes_cambiar_foto(request: Request, imagen: UploadFile = File(...))
 
 @router.post("/ajustes/usuarios", response_class=HTMLResponse)
 def ajustes_crear_usuario(request: Request, username: str = Form(...), password: str = Form(...)):
-    """Alta de cuenta nueva (2026-09-17, multiusuario Fase 1) - solo admin, formulario
-    simple usuario+contraseña. Post normal + redirect (no htmx), mismo patron que
-    "crear_lista" en listas.py."""
+    """Alta de cuenta nueva (solo admin). POST normal + redirect, como crear_lista."""
     if not request.state.is_admin:
         raise StarletteHTTPException(status_code=403, detail="Solo un administrador puede crear cuentas.")
     username = username.strip()
@@ -157,9 +146,8 @@ def ajustes_crear_usuario(request: Request, username: str = Form(...), password:
     with get_connection() as conn:
         if repo.get_user_by_username(conn, username):
             return RedirectResponse("/ajustes?usuario_error=Ese+usuario+ya+existe", status_code=303)
-        # Bug real (AGY, 2026-09-18): create_user valida usuario (regex/reservados)
-        # y ahora tambien contraseña (min. 8) - sin capturar el ValueError, un alta
-        # con un nombre invalido tumbaba la peticion con un 500 en vez de un aviso.
+        # create_user valida usuario y contraseña: un ValueError se enseña como aviso,
+        # no como 500.
         try:
             repo.create_user(conn, username, password)
         except ValueError as e:
@@ -171,9 +159,8 @@ def ajustes_crear_usuario(request: Request, username: str = Form(...), password:
 
 @router.post("/ajustes/usuarios/{user_id}/admin", response_class=HTMLResponse)
 def ajustes_toggle_admin(request: Request, user_id: int, valor: str = Form(...)):
-    """Fase 5 (El usuario, 2026-09-18: "yo como administrador debería de poder poner admin
-    a quien quiera") - solo admin, y no se puede dejar la instancia sin ningun admin
-    (ver repo.set_admin)."""
+    """Da o quita admin (solo admin; nunca deja la instancia sin ninguno, ver
+    repo.set_admin)."""
     if not request.state.is_admin:
         raise StarletteHTTPException(status_code=403, detail="Solo un administrador puede gestionar roles.")
     with get_connection() as conn:
@@ -188,9 +175,7 @@ def ajustes_toggle_admin(request: Request, user_id: int, valor: str = Form(...))
 
 @router.post("/ajustes/usuarios/{user_id}/password", response_class=HTMLResponse)
 def ajustes_resetear_password(request: Request, user_id: int, password: str = Form(...)):
-    """Recuperar el acceso (El usuario, 2026-09-18: "si pierdo la pass como lo recupero,
-    un fallo para el usr final") - sin email en este self-host, la via real es que
-    tu (admin) le pongas una contraseña nueva a quien se haya quedado fuera."""
+    """Un admin pone una contraseña nueva a quien se haya quedado fuera."""
     if not request.state.is_admin:
         raise StarletteHTTPException(status_code=403, detail="Solo un administrador puede resetear contraseñas.")
     with get_connection() as conn:
@@ -216,10 +201,8 @@ def afinidad_estado(request: Request):
 
 @router.post("/ajustes/afinidad", response_class=HTMLResponse)
 async def ajustes_afinidad(request: Request):
-    """Guarda los pesos del indice de afinidad (Fase 2 del encargo: "configurables
-    desde /ajustes") y relanza el recalculo completo en background - mismo patron que
-    "Actualizar perfil de gustos", no se espera desde la peticion HTTP (recompute_taste_profile
-    tarda del orden de un minuto)."""
+    """Guarda los pesos del índice de afinidad y relanza el recálculo en segundo plano
+    (tarda del orden de un minuto)."""
     form = await request.form()
     with get_connection() as conn:
         cfg = repo.get_affinity_config(conn, request.state.user_id)
@@ -254,13 +237,8 @@ async def ajustes_afinidad(request: Request):
 
 @router.post("/ajustes/afinidad/restablecer", response_class=HTMLResponse)
 async def ajustes_afinidad_restablecer(request: Request):
-    """`async def` a proposito, no `def`: FastAPI corre las rutas `def` normales en un
-    hilo de threadpool sin event loop propio, y `asyncio.create_task` (para lanzar el
-    recalculo sin esperarlo) revienta ahi con `RuntimeError: no running event loop` -
-    bug real encontrado en pruebas 2026-08-14 al verificar el indicador de
-    /afinidad/estado, preexistente (mismo fallo que tendria antes de este indicador,
-    solo que nadie lo habia disparado). Mismo patron que la ruta gemela `ajustes_afinidad`
-    (guardar pesos), que ya era `async def` y por eso nunca fallaba."""
+    """`async def` a propósito: FastAPI corre las rutas `def` en un hilo sin event
+    loop y ahí asyncio.create_task falla con "no running event loop"."""
     with get_connection() as conn:
         repo.reset_affinity_config(conn, request.state.user_id)
 
@@ -274,7 +252,12 @@ async def ajustes_afinidad_restablecer(request: Request):
 def afinidad_calibracion(request: Request):
     with get_connection() as conn:
         cal = repo.get_prediction_calibration(conn, request.state.user_id)
-    return templates.TemplateResponse(request, "calibration.html", {"cal": cal})
+        accuracy = repo.get_accuracy_history(conn, request.state.user_id)
+    return templates.TemplateResponse(
+        request, "calibration.html",
+        {"cal": cal, "acc": accuracy[-1] if accuracy else None, "acc_first": accuracy[0] if accuracy else None,
+         "acc_history": accuracy[-10:][::-1]},
+    )
 
 
 

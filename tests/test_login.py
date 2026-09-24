@@ -2,23 +2,21 @@ import os
 
 os.environ.setdefault("TARATRACK_SECRET_KEY", "test-secret-para-tests")
 os.environ.setdefault("TARATRACK_PASSWORD", "test-password")
-os.environ.setdefault("TARATRACK_ADMIN_USERNAME", "tara")
+os.environ.setdefault("TARATRACK_ADMIN_USERNAME", "principal")
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import db, main, repo
 
-USERNAME = "tara"
+USERNAME = "principal"
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    """TestClient real contra una BBDD sqlite temporal - init_db() bootstrapea la
-    cuenta admin "tara"/test-password (db._migrate_multiuser) igual que en produccion.
-    base_url en https:// a proposito (no http://) - la cookie de sesion es Secure=True
-    y un cliente hablando por http nunca la reenviaria en peticiones siguientes, igual
-    que un navegador real jamas la manda salvo por HTTPS (el dominio real fuerza SSL)."""
+    """TestClient contra una BBDD sqlite temporal; init_db() crea la cuenta admin de
+    prueba. base_url en https:// porque la cookie de sesión es Secure y un cliente por
+    http no la reenviaría."""
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     main._login_failures_by_user.clear()
     main._registro_attempts.clear()
@@ -57,8 +55,7 @@ def test_unauthenticated_request_redirects_to_login(client):
 
 
 def test_open_redirect_next_is_rejected():
-    """Ronda 2026-08-21: 'next' solo puede ser una ruta interna - un link
-    manipulado con ?next=https://evil.com no debe poder redirigir ahi tras el login."""
+    """'next' solo puede ser una ruta interna: ?next=https://evil.com no redirige."""
     from app.main import _safe_next
 
     assert _safe_next("https://evil.com") == "/"
@@ -68,8 +65,7 @@ def test_open_redirect_next_is_rejected():
 
 
 def test_login_locks_out_after_max_failed_attempts(client):
-    """Ronda 2026-08-21: 5 fallos en la ventana bloquean incluso la contraseña
-    correcta - freno a fuerza bruta contra el unico punto de entrada de la app."""
+    """5 fallos en la ventana bloquean incluso la contraseña correcta."""
     for _ in range(main.LOGIN_MAX_ATTEMPTS):
         r = client.post("/login", data={"username": USERNAME, "password": "mala", "next": "/"})
         assert r.status_code == 401
@@ -80,9 +76,7 @@ def test_login_locks_out_after_max_failed_attempts(client):
 
 
 def test_login_rate_limit_is_per_username(client):
-    """Ronda 2026-09-17 (multiusuario): 5 fallos contra un usuario NO deben bloquear
-    el login de otro usuario distinto - antes de esto, el contador era global y
-    cualquiera bloqueaba a todos."""
+    """Los fallos contra un usuario no bloquean el login de otro."""
     for _ in range(main.LOGIN_MAX_ATTEMPTS):
         client.post("/login", data={"username": "otra-cuenta", "password": "mala", "next": "/"})
 
@@ -92,13 +86,11 @@ def test_login_rate_limit_is_per_username(client):
 
 
 def test_registro_creates_account_and_logs_in(client):
-    """Ronda 2026-09-18: 'lo tienen que hacer ellos' - autoregistro publico desde
-    /login (sin invitacion, la red WireGuard ya filtra quien llega hasta aqui),
-    crea la cuenta y deja logueado directamente, como el login normal."""
+    """El registro público desde /login crea la cuenta y deja la sesión iniciada."""
     r = client.post(
         "/registro",
         data={
-            "username": "hermana", "password": "una-pass-cualquiera",
+            "username": "invitada", "password": "una-pass-cualquiera",
             "password2": "una-pass-cualquiera", "next": "/pendientes",
         },
         follow_redirects=False,
@@ -123,8 +115,7 @@ def test_registro_rejects_short_password(client):
 
 
 def test_registro_rejects_mismatched_passwords(client):
-    """Ronda 2026-09-18: 'registro mas fuerte' - confirmacion de contraseña para
-    pillar erratas antes de crear la cuenta, no en el primer login fallido."""
+    """La confirmación de contraseña tiene que coincidir."""
     r = client.post(
         "/registro", data={"username": "amigo", "password": "una-pass-larga", "password2": "otra-distinta", "next": "/"}
     )
@@ -133,9 +124,7 @@ def test_registro_rejects_mismatched_passwords(client):
 
 
 def test_registro_new_user_data_isolated_from_admin(client):
-    """La cuenta autoregistrada arranca vacia - no ve pendientes/entries de tara
-    solo por compartir la misma instancia (mismo criterio de aislamiento que el
-    resto del multiusuario, Fase 2)."""
+    """Una cuenta recién registrada arranca vacía: no ve las entries de otras."""
     client.post(
         "/registro",
         data={"username": "amigo", "password": "una-pass-cualquiera", "password2": "una-pass-cualquiera", "next": "/"},
@@ -145,8 +134,7 @@ def test_registro_new_user_data_isolated_from_admin(client):
 
 
 def test_registro_locks_out_after_max_attempts(client):
-    """Gap real (AGY, 2026-09-18): /login ya tenia freno de fuerza bruta, /registro
-    no - un script en bucle podia crear cientos de cuentas sin ningun limite."""
+    """/registro tiene su propio freno contra altas en bucle."""
     for i in range(main.REGISTRO_MAX_ATTEMPTS):
         client.post(
             "/registro",
@@ -161,8 +149,7 @@ def test_registro_locks_out_after_max_attempts(client):
 
 
 def test_missing_secret_key_fails_fast(monkeypatch):
-    """Ronda 2026-08-21: sin TARATRACK_SECRET_KEY, arrancar debe fallar alto y
-    claro en vez de caer a un valor por defecto conocido en el codigo."""
+    """Sin TARATRACK_SECRET_KEY, el arranque falla en vez de usar un valor por defecto."""
     monkeypatch.delenv("TARATRACK_SECRET_KEY", raising=False)
     with pytest.raises(RuntimeError):
         main._auth_serializer()

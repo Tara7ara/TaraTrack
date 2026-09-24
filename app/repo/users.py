@@ -1,13 +1,7 @@
-"""app.repo.users - cuentas de verdad (2026-09-17, arranque del multiusuario).
+"""app.repo.users - cuentas de usuario.
 
-Antes TaraTrack no tenia ningun concepto de usuario: la cookie de sesion era un
-candado compartido ("autenticado si/no", ni siquiera llevaba quien eres) y
-TARATRACK_PASSWORD era una unica contraseña para "todos". Con la hermana y un
-amigo del usuario queriendo su propio seguimiento, hace falta identidad de verdad.
-
-Hash con hashlib.pbkdf2_hmac + salt aleatorio por usuario (sin añadir una
-dependencia nueva tipo passlib/bcrypt, mismo criterio de "sin dependencias de
-mas" que ya sigue el proyecto en el resto de sitios)."""
+Contraseñas con hashlib.pbkdf2_hmac y salt aleatorio por usuario, sin dependencias
+extra."""
 import hashlib
 import hmac
 import os
@@ -15,11 +9,9 @@ import re
 
 _PBKDF2_ITERATIONS = 200_000
 
-# Validacion de nombre de usuario (AGY, 2026-09-18: "validacion profesional") - una
-# sola fuente de verdad para create_user/set_username/registro, en vez de 3 criterios
-# ligeramente distintos repetidos en cada sitio. Solo minusculas/digitos/guion/guion
-# bajo: evita nombres con espacios o simbolos que luego se ven raros en menciones,
-# URLs o el nombre de fichero del avatar.
+# Validación de nombre de usuario, única para create_user, set_username y registro.
+# Solo minúsculas, dígitos, guion y guion bajo: se usa en URLs y en el nombre del
+# fichero del avatar.
 USERNAME_REGEX = re.compile(r"^[a-z0-9_-]{3,20}$")
 RESERVED_USERNAMES = frozenset({"admin", "administrador", "sistema", "root", "null", "api", "taratrack"})
 
@@ -51,9 +43,7 @@ def create_user(conn, username: str, password: str, is_admin: bool = False):
     la app de siempre, ahora por-usuario en vez de una unica global) - para que
     un usuario nuevo no aterrice sin ningun sitio donde guardar favoritos."""
     username = validate_username(username)
-    # AGY, 2026-09-18: "exigir minlength=8 tanto en /registro como en
-    # /ajustes/usuarios" - centralizado aqui para que las dos vias (y cualquier
-    # otra futura) compartan la misma regla sin duplicarla.
+    # Mínimo de 8 caracteres, compartido por todas las vías de alta.
     if len(password) < 8:
         raise ValueError("La contraseña debe tener al menos 8 caracteres")
     password_hash, password_salt = hash_password(password)
@@ -86,8 +76,7 @@ def list_users(conn):
 
 
 def set_username(conn, user_id: int, new_username: str):
-    """Cambiar el nombre de usuario (El usuario, 2026-09-18: "si quiero cambiar el
-    nombre") - misma normalizacion/validacion que el alta (create_user/registro)."""
+    """Cambia el nombre de usuario, con la misma validación que el alta."""
     new_username = validate_username(new_username)
     existing = get_user_by_username(conn, new_username)
     if existing and existing["id"] != user_id:
@@ -100,9 +89,7 @@ def set_avatar_path(conn, user_id: int, avatar_path: str | None):
 
 
 def change_password(conn, user_id: int, old_password: str, new_password: str):
-    """Gap real (AGY, 2026-09-18): se podia cambiar nombre y foto pero no la propia
-    contraseña. Pide la actual (mismo criterio que cualquier app real - un movil
-    dejado en la mesa no debe bastar para cambiarla)."""
+    """Cambia la propia contraseña; pide la actual."""
     user = get_user(conn, user_id)
     if not user:
         raise ValueError("Usuario no encontrado")
@@ -118,11 +105,8 @@ def change_password(conn, user_id: int, old_password: str, new_password: str):
 
 
 def admin_reset_password(conn, user_id: int, new_password: str):
-    """Recuperar el acceso cuando alguien pierde su contraseña (El usuario, 2026-09-18:
-    "si pierdo la pass como lo recupero, un fallo para el usr final") - sin email/SMS
-    en un self-host de 2-3 personas de confianza, la via real es que un admin te la
-    resetee a mano, no un flujo de "olvidé mi contraseña" automatizado. A diferencia
-    de change_password, no pide la actual - es justo el caso de no tenerla."""
+    """Un admin pone una contraseña nueva a quien la haya perdido (no hay email en un
+    self-host pequeño). A diferencia de change_password, no pide la actual."""
     user = get_user(conn, user_id)
     if not user:
         raise ValueError("Usuario no encontrado")
@@ -140,10 +124,7 @@ def count_admins(conn) -> int:
 
 
 def set_admin(conn, user_id: int, is_admin: bool):
-    """Fase 5 (El usuario, 2026-09-18: "yo como administrador debería de poder poner admin
-    a quien quiera"). No deja quitarle el admin al ULTIMO admin que queda - sin esto,
-    un despiste (o el propio admin quitandose el rol a si mismo sin querer) dejaria
-    la instancia entera sin nadie que pueda gestionar cuentas."""
+    """Da o quita el rol de admin. No deja quitárselo al último admin que queda."""
     if not is_admin and count_admins(conn) <= 1:
         row = conn.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
         if row and row["is_admin"]:

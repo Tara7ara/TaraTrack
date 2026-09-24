@@ -1,10 +1,9 @@
-"""app.repo.affinity - extraido de repo.py en el split de modulos (ronda 2026-08-21).
-Ver app/repo/__init__.py para el mapa completo de que vive en cada fichero -
-el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
-exactamente igual que antes, este split es puramente interno."""
+"""app.repo.affinity - índice de afinidad, predicción "% que te gustará" y backfill de
+AniList. El resto del proyecto usa `from app import repo; repo.funcion(...)`."""
 import bisect
 import json
 import math
+import random
 import statistics
 import time
 from datetime import date, datetime, timezone
@@ -20,9 +19,19 @@ from app.repo._shared import (
 # boton, no en la misma), se deja de reintentar un titulo - casi siempre es una
 # recopilatoria/especial sin entrada propia en AniList, no un fallo transitorio de
 # red. 5 y no menos: un 429 de AniList ya reintentado sin exito (ver
-# anime.match_anilist_basic) se cuenta igual que un "no existe" de verdad, y varias
+# anime.match_anilist_basic) cuenta igual que un "no existe", y varias
 # pasadas en dias distintos dan margen a que fuera solo mala suerte de rate-limit.
 MAX_ANILIST_MATCH_ATTEMPTS = 5
+
+
+# El atajo "No me acuerdo, 5 y ya" de /puntuar deja 5.0 con comentario "-": vacía la
+# cola, pero no es una opinión sobre el título. El motor de afinidad la trata como sin
+# nota; el resto de la app (vistas, estadísticas, duelos) la ve tal cual.
+def _real_rating_sql(table: str) -> str:
+    return (
+        f"CASE WHEN {table}.rating = 5.0 AND TRIM(COALESCE({table}.comment, '')) = '-' "
+        f"THEN NULL ELSE {table}.rating END"
+    )
 
 
 
@@ -36,34 +45,14 @@ _ANILIST_BACKFILL_FILTER_SQL = """
 
 
 def backfill_anilist_profile(conn):
-    """Rellena anilist_id/genero/estudio/tags/precuelas/recomendaciones para todo el
-    anime de la biblioteca (visto O pendiente) que aun no lo tiene. Visto hace falta
-    para el indice de afinidad (build_taste_profile, get_affinity_display);
-    pendiente hace falta para poder predecir "% que te
-    gustara" tambien sobre lo que YA tienes sin ver, no solo sobre el calendario de
-    temporada (El usuario, 2026-08-13: "aplicar la prediccion a mis pendientes"). Boton
-    manual en /calendario/anual, no automatico - son cientos de llamadas a AniList la
-    primera vez, no tiene sentido colarlo en la sync de fondo de 12h sin que el usuario sepa
-    que tarda. Filtra por `anilist_tags IS NULL OR anilist_title_romaji IS NULL` (no
-    solo `anilist_id IS NULL`) para que un titulo ya emparejado ANTES de que se
-    guardaran tags/relaciones/titulo-romaji tambien se reprocese una vez - sin esto se
-    habria quedado incompleto para siempre.
+    """Rellena los datos de AniList (id, géneros, estudio, tags, precuelas,
+    recomendaciones, títulos romaji/inglés) del anime visto o pendiente que aún no los
+    tiene. Botón manual en /calendario/anual: la primera vez son cientos de peticiones.
 
-    Busca primero por `original_title` (el name/title SIN traducir de TMDB) y solo si
-    eso falla prueba con `title` (el es-ES cacheado) - AniList no indexa titulos en
-    español, asi que un titulo cuyo unico nombre conocido fuera "Caballeros de
-    Sidonia" nunca encontraba "Knights of Sidonia" por mucho que se reintentase
-    (confirmado en vivo, 2026-08-14: search literal 404 con el nombre en español,
-    match perfecto con el nombre original). Si `original_title` aun no esta cacheado
-    (columna añadida despues de que estos titulos ya existieran), se pide a TMDB al
-    vuelo y se guarda, para no depender de esperar al siguiente refresh_metadata.
-
-    Cada fallo (los dos candidatos sin match) suma 1 a `anilist_match_attempts`; al
-    llegar a MAX_ANILIST_MATCH_ATTEMPTS el titulo deja de aparecer aqui - El usuario,
-    2026-08-14: "que si al intentar 5 veces no lo mete, pues que no lo mete y ya",
-    para no reintentar para siempre lo que genuinamente no tiene entrada en AniList
-    (recopilatorias/especiales con titulos japoneses muy especificos, altas manuales
-    sin AniList real)."""
+    Busca primero por `original_title` (TMDB sin traducir) y luego por `title`, porque
+    AniList no indexa títulos en español; si falta `original_title`, se pide a TMDB
+    y se guarda. Cada fallo suma 1 a `anilist_match_attempts` y, al llegar a
+    MAX_ANILIST_MATCH_ATTEMPTS, el título deja de reintentarse."""
     rows = conn.execute(
         f"""SELECT titles.id, titles.tmdb_id, titles.type, titles.title, titles.original_title
            FROM titles JOIN entries ON entries.title_id = titles.id
@@ -106,12 +95,14 @@ def backfill_anilist_profile(conn):
             conn.execute(
                 """UPDATE titles SET anilist_id = ?, anilist_genres = ?, anilist_studio = ?,
                    anilist_tags = ?, anilist_prequel_ids = ?, anilist_cross_rec_ids = ?,
+                   anilist_cross_rec_votes = ?,
                    anilist_title_romaji = ?, anilist_title_english = ? WHERE id = ?""",
                 (
                     match["anilist_id"], ",".join(match.get("genres") or []), match.get("studio"),
                     ",".join(match.get("tags") or []),
                     ",".join(str(i) for i in match.get("prequel_ids") or []),
                     ",".join(str(i) for i in match.get("cross_rec_ids") or []),
+                    ",".join(str(v) for v in match.get("cross_rec_votes") or []),
                     match.get("title_romaji"), match.get("title_english"),
                     row["id"],
                 ),
@@ -131,12 +122,9 @@ def backfill_anilist_profile(conn):
 
 
 def snapshot_profile_progress(conn, user_id):
-    """Foto diaria de cuanto perfil de gustos de ESTE usuario hay construido (El usuario,
-    2026-08-13: "que me gustaria ver como va evolucionando cada dia que use la
-    herramienta") - INSERT OR IGNORE por (usuario, fecha), asi que solo se guarda la
-    primera vez que se llama cada dia, no importa cuantas veces se visite la app.
-    Llamado desde /pendientes (la pantalla de siempre) para que quede una foto solo
-    con usar la app con normalidad, sin necesitar un cron aparte."""
+    """Foto diaria de cuánto perfil de gustos hay construido para este usuario.
+    INSERT OR IGNORE por (usuario, fecha): solo cuenta la primera llamada del día.
+    Se llama desde /pendientes, sin necesidad de un cron."""
     covered = conn.execute(
         """SELECT count(*) FROM titles JOIN entries ON entries.title_id = titles.id
            WHERE entries.rating IS NOT NULL AND entries.user_id = ? AND titles.anilist_id IS NOT NULL""",
@@ -167,12 +155,9 @@ def get_profile_history(conn, user_id, limit: int = 30):
 
 
 def count_anilist_backfill_pending(conn) -> int:
-    """Cuantos titulos de la biblioteca (anime, vistos o pendientes) le falta al boton
-    "Actualizar perfil de gustos" de /calendario/anual por hacer. Mismo filtro exacto
-    que backfill_anilist_profile (_ANILIST_BACKFILL_FILTER_SQL), incluido el tope de
-    intentos - sin esto el contador se quedaba pegado en un numero que nunca bajaba
-    (El usuario, 2026-08-14: "me pone que faltan 97 pero no baja nunca") con titulos que
-    genuinamente no tienen match en AniList y se reintentaban para siempre."""
+    """Cuántos títulos le quedan al botón "Actualizar perfil de gustos". Mismo filtro
+    que backfill_anilist_profile, incluido el tope de intentos, para que el contador
+    no se quede pegado."""
     return conn.execute(
         f"""SELECT count(*) FROM titles JOIN entries ON entries.title_id = titles.id
            WHERE {_ANILIST_BACKFILL_FILTER_SQL} AND {_IS_ANIME_SQL}"""
@@ -182,21 +167,13 @@ def count_anilist_backfill_pending(conn) -> int:
 
 
 
-# ============================================================================
-# INDICE DE AFINIDAD (encargo 2026-08-14, sustituye al perfil de "nota media"
-# de mas arriba) - ver PROMPTtaratrackimplementacion.md, Bloque 2.
+# Índice de afinidad. Dos ejes por atributo (género/tag/estudio): APETITO (cuánto lo
+# buscas: volumen, lift, ritmo, día 1, rewatch, curación) y CALIDAD (cuánto te llega:
+# techo, suelo, disfrute, media, corrección Elo). Se combinan con media geométrica y
+# castigo al desfase, no con suma ponderada, para desinflar lo que ves por costumbre.
 #
-# Dos ejes por atributo (genero/tag/estudio): APETITO (cuanto lo buscas: volumen,
-# lift, ritmo, dia1, rewatch, curacion) y CALIDAD (cuanto te llega cuando acierta:
-# techo/suelo/disfrute/media/correccion Elo). Se combinan con media geometrica y
-# castigo al desfase, NO con suma ponderada - un shonen larguisimo con nota media
-# (apetito alto, calidad baja) debe desinflarse, no promediarse hacia arriba.
-#
-# El calculo completo (franquicias, ritmo con fechas reales, elo...) es pesado y
-# vive en `recompute_taste_profile`, llamado SOLO desde la sync de fondo (cada 12h)
-# y el boton manual - las paginas normales solo LEEN la tabla `taste_profile` via
-# `build_taste_profile`, nunca recalculan en caliente.
-# ============================================================================
+# El cálculo completo vive en recompute_taste_profile (sync de fondo y botón manual);
+# las páginas solo leen taste_profile vía build_taste_profile.
 
 FRANCHISE_EPISODE_CAP = 300  # tope de "episodios vistos" contados por franquicia
 
@@ -239,14 +216,9 @@ PREDICT_SIGNAL_WEIGHTS = {
 }
 
 
-# Confianza minima para que un titulo cuente como "Candidato a obra maestra" en el
-# calendario de temporada (no solo para el numero, tambien para el marco dorado y la
-# etiqueta). Un titulo con SOLO señal de genero (el mas generico y debil, peso 1.0 de
-# 13.5 = ~7.4% de confianza) puede llegar a 100% si su unico genero coincide con el
-# que mas le gusta al usuario - eso no es un "candidato a obra maestra" de verdad, es una
-# coincidencia de un solo dato. 10 excluye limpiamente genero-solo (~7%) pero deja
-# pasar estudio-solo (~15%), tags-solo (~26%) o precuela (~37%) - "soporte real" tal
-# como lo pidio el usuario (2026-08-14, "que no sea solo un genero suelto").
+# Confianza mínima para el marco de "Candidato a obra maestra". Un título con solo
+# señal de género (~7% de confianza) puede llegar al 100% por coincidir en un género;
+# 10 lo excluye y deja pasar estudio (~15%), tags (~26%) o precuela (~37%).
 MASTERPIECE_MIN_CONFIDENCE = 10
 
 
@@ -265,13 +237,9 @@ _AFFINITY_CONFIG_DEFAULTS = {
 
 
 def get_affinity_config(conn, user_id):
-    """Pesos del indice de afinidad de ESTE usuario - constantes con nombre de arriba
-    como default, con override opcional guardado en app_settings (JSON, una clave por
-    usuario - `app_settings` ya era clave/valor generico, namespacing por user_id evita
-    tocar el schema) editable desde /ajustes (Fase 2 del encargo: "deben quedar en
-    constantes con nombre, en un unico sitio, y ser configurables desde /ajustes").
-    Multiusuario Fase 3 (2026-09-18): antes una unica clave global compartida por
-    todos."""
+    """Pesos del índice de afinidad de este usuario: las constantes de arriba por
+    defecto, con override opcional en app_settings (una clave por usuario), editable
+    desde /ajustes."""
     cfg = {k: (dict(v) if isinstance(v, dict) else v) for k, v in _AFFINITY_CONFIG_DEFAULTS.items()}
     raw = get_setting(conn, f"affinity_config:{user_id}")
     if not raw:
@@ -332,7 +300,7 @@ def _title_attrs(t) -> list[tuple[str, str]]:
 
 def _percentile(values: list[float], p: int) -> float:
     """Percentil p (1-99) de una lista de notas. Con menos de 4 valores el percentil
-    no tiene apoyo estadistico real, se usa la media de los 3 valores mas extremos en
+    no tiene apoyo estadistico, se usa la media de los 3 valores mas extremos en
     la direccion de p (top 3 para p>=50 como el techo, bottom 3 para p<50 como el
     suelo)."""
     if len(values) < 4:
@@ -344,9 +312,8 @@ def _percentile(values: list[float], p: int) -> float:
 
 
 def _percentile_rank(raw: dict) -> dict:
-    """Normaliza cada señal a percentil COMPARANDO EL ATRIBUTO CON EL RESTO DE
-    ATRIBUTOS del usuario (Fase 2, paso 1) - un 6.67 no dice nada solo, "percentil 35
-    en nota, percentil 98 en consumo" si. Rango promedio en empates."""
+    """Normaliza cada señal a percentil comparando el atributo con el resto de
+    atributos del usuario. Rango promedio en empates."""
     if not raw:
         return {}
     if len(raw) == 1:
@@ -399,16 +366,11 @@ def _franchise_roots(known_ids: set, prequel_map: dict) -> dict:
 
 
 def _load_affinity_raw(conn, user_id):
-    """Toda la materia prima del indice de afinidad de ESTE usuario en memoria, en una
-    sola pasada de SQL - asi el backtesting de la Fase 4 (recalcular el perfil una vez
-    POR TITULO puntuado, excluyendolo de si mismo) no golpea la base de datos cientos
-    de veces, solo reagrega en Python sobre estos mismos datos.
-
-    Multiusuario Fase 3 (2026-09-18): todo filtrado por `entries.user_id = ?` (o via
-    episode_watches.user_id para episodios) - antes mezclaba el consumo de cualquiera
-    que tuviera datos en la instancia."""
+    """Carga en memoria, en una sola pasada de SQL, todo lo que necesita el índice de
+    afinidad de este usuario: así el backtesting (recalcular el perfil una vez por
+    título puntuado) reagrega en Python sin volver a la BBDD."""
     titles = conn.execute(
-        """SELECT entries.id AS entry_id, entries.rating, entries.cat_disfrute,
+        f"""SELECT entries.id AS entry_id, {_real_rating_sql("entries")} AS rating, entries.cat_disfrute,
                   entries.elo, entries.status, entries.is_habit,
                   titles.id AS title_id, titles.type, titles.show_status,
                   titles.anilist_id, titles.anilist_genres, titles.anilist_tags,
@@ -465,10 +427,11 @@ def _load_affinity_raw(conn, user_id):
 
     last_season_rating = {}
     for r in conn.execute(
-        """SELECT season_ratings.entry_id, season_ratings.season_number, season_ratings.rating
+        f"""SELECT season_ratings.entry_id, season_ratings.season_number, season_ratings.rating
            FROM season_ratings JOIN entries ON entries.id = season_ratings.entry_id
            JOIN titles ON titles.id = entries.title_id
-           WHERE titles.anilist_id IS NOT NULL AND entries.user_id = ? AND season_ratings.rating IS NOT NULL""",
+           WHERE titles.anilist_id IS NOT NULL AND entries.user_id = ?
+             AND ({_real_rating_sql("season_ratings")}) IS NOT NULL""",
         (user_id,),
     ):
         prev = last_season_rating.get(r["entry_id"])
@@ -531,13 +494,12 @@ def _compute_tag_idf(raw) -> dict:
 
 
 def _aggregate_affinity(raw, cfg, exclude_entry_id=None):
-    """El nucleo del indice de afinidad: agrega las señales crudas de apetito/calidad
-    por atributo, las percentiliza, suaviza calidad hacia el neutro por confianza, y
-    combina con media geometrica + castigo al desfase (Fases 1-2 del encargo).
+    """Núcleo del índice: agrega las señales de apetito y calidad por atributo, las
+    pasa a percentil, suaviza calidad hacia el neutro según la confianza y combina con
+    media geométrica y castigo al desfase.
 
-    `exclude_entry_id`, si se da, saca ese titulo de TODOS los conteos - es el
-    leave-one-out del backtesting (Fase 4): sin esto, predecir un titulo con su
-    propio perfil se "acordaria" de su propia nota."""
+    `exclude_entry_id` saca ese título de todos los conteos (leave-one-out del
+    backtesting), para que no se prediga a sí mismo con su propia nota."""
     titles = [t for t in raw["titles"] if t["entry_id"] != exclude_entry_id]
     title_by_id = {t["title_id"]: t for t in titles}
     known_ids = {t["anilist_id"] for t in titles}
@@ -545,11 +507,8 @@ def _aggregate_affinity(raw, cfg, exclude_entry_id=None):
     roots = _franchise_roots(known_ids, prequel_map)
     anilist_by_title = {t["title_id"]: t["anilist_id"] for t in titles}
 
-    # Bloque 3: lo marcado como habito sale del eje APETITO (volumen, lift, ritmo,
-    # dia1, rewatch, curacion) pero sigue contando en CALIDAD (techo/suelo/disfrute/
-    # media/elo, mas abajo, siguen iterando sobre `titles` sin filtrar) - el encargo
-    # es explicito: la nota de One Piece es informacion honesta sobre exigencia, lo
-    # que miente es el volumen como señal de deseo.
+    # Lo marcado como hábito sale del eje apetito pero sigue contando en calidad: la
+    # nota es información válida; el volumen, no, como señal de deseo.
     titles_appetite = [t for t in titles if not t["is_habit"]]
     appetite_title_ids = {t["title_id"] for t in titles_appetite}
 
@@ -630,10 +589,8 @@ def _aggregate_affinity(raw, cfg, exclude_entry_id=None):
     # el signo es lo unico que importa aqui.
     ritmo_raw = {key: -statistics.median(deltas) for key, deltas in deltas_by_attr.items()}
 
-    # Dia 1: solo cuenta si el titulo se seguia en emision de verdad - se aproxima con
-    # show_status = 'Returning Series' (misma señal que ya usa el proyecto para "no
-    # terminada"), no con la fecha de hoy. Un titulo ya terminado queda simplemente
-    # SIN señal de dia1 (nunca en negativo), tal como pide el encargo.
+    # Día 1: solo en títulos que siguen en emisión (show_status = 'Returning
+    # Series'). Uno ya terminado queda sin señal, nunca en negativo.
     dia1_hits, dia1_total = {}, {}
     for tid, eps in episodes_by_title.items():
         t = title_by_id.get(tid)
@@ -770,7 +727,10 @@ def _aggregate_affinity(raw, cfg, exclude_entry_id=None):
         base = (ap ** AFFINITY_APPETITE_EXP) * (ca ** AFFINITY_QUALITY_EXP)
         gap = max(0.0, ap - ca - cfg["gap_threshold"])
         confianza = n_titles / (n_titles + AFFINITY_CONFIDENCE_K) if n_titles else 0.0
-        afinidad = base * (1 - cfg["gap_factor"] * gap / 100) * confianza
+        # Con pocos títulos la afinidad se encoge hacia el neutro (50), no hacia 0:
+        # "pocos datos de este tag" no significa "este tag no te gusta".
+        afinidad = base * (1 - cfg["gap_factor"] * gap / 100)
+        afinidad = afinidad * confianza + 50.0 * (1 - confianza)
         result[key] = {
             "sig_volumen": volumen_raw.get(key), "sig_lift": lift_raw.get(key),
             "sig_ritmo": ritmo_raw.get(key), "sig_dia1": dia1_raw.get(key),
@@ -817,12 +777,9 @@ def _profile_dict_from_rows(rows: dict, raw, cfg, exclude_entry_id=None) -> dict
 
 
 def _backtest_leave_one_out(raw, cfg) -> list[tuple[float, float]]:
-    """Fase 4/6: para cada titulo puntuado, su score crudo predicho con SU PROPIO
-    perfil recalculado excluyendose a si mismo (si no, se prediria a si mismo via su
-    propia nota) - devuelve pares (score_crudo, nota_real_0_10). Usado tanto para
-    poblar `score_distribution` (recompute_taste_profile) como para medir el error de
-    una combinacion de pesos candidata (scripts/tune_affinity_weights.py, Fase 6:
-    "script que pruebe combinaciones de pesos por fuerza bruta")."""
+    """Para cada título puntuado, su score predicho con un perfil que lo excluye.
+    Devuelve pares (score_crudo, nota_real_0_10). Lo usan recompute_taste_profile
+    (score_distribution) y scripts/tune_affinity_weights.py."""
     pairs = []
     for t in raw["titles"]:
         if t["rating"] is None:
@@ -838,12 +795,8 @@ def _backtest_leave_one_out(raw, cfg) -> list[tuple[float, float]]:
 
 
 def get_recompute_status(conn, user_id):
-    """Estado del recalculo del indice de afinidad DE ESTE USUARIO, para el indicador
-    visible en /ajustes y /calendario/anual - lanzarlo (backfill de AniList +
-    recompute_taste_profile, hasta varios minutos) redirigia al instante sin ninguna
-    señal de que estuviera pasando algo (El usuario, 2026-08-14: "como se si realmente esta
-    trabajando"). Multiusuario Fase 3 (2026-09-18): namespacing por user_id en la
-    clave de app_settings, igual que affinity_config."""
+    """Estado del recálculo del índice de este usuario, para el indicador de /ajustes
+    y /calendario/anual."""
     return {
         "running": get_setting(conn, f"affinity_recompute_running:{user_id}") == "1",
         "finished_at": get_setting(conn, f"affinity_recompute_finished_at:{user_id}"),
@@ -864,12 +817,9 @@ def set_recompute_running(conn, user_id, running: bool):
 
 
 def recompute_taste_profile(conn, user_id):
-    """Recalculo COMPLETO del indice de afinidad DE ESTE USUARIO - pesado a proposito
-    (franquicias, ritmo con fechas reales, correccion Elo, backtesting Fase 4),
-    llamado solo desde la sync de fondo (cada 12h, ver sync_loop en main.py, que ahora
-    itera TODOS los usuarios) y el boton manual "Actualizar perfil de gustos". Las
-    paginas normales solo leen `taste_profile` via build_taste_profile - nunca
-    disparan este calculo desde una peticion HTTP."""
+    """Recálculo completo del índice de afinidad de este usuario (pesado). Solo se
+    lanza desde la sync de fondo y el botón "Actualizar perfil de gustos"; las páginas
+    leen taste_profile con build_taste_profile."""
     cfg = get_affinity_config(conn, user_id)
     raw = _load_affinity_raw(conn, user_id)
     rows = _aggregate_affinity(raw, cfg)
@@ -905,8 +855,88 @@ def recompute_taste_profile(conn, user_id):
     conn.executemany(
         "INSERT INTO score_distribution (user_id, raw_score) VALUES (?, ?)", [(user_id, s) for s in scores]
     )
+    _save_accuracy(conn, user_id, pairs, scores)
     conn.commit()
     return len(rows), len(scores)
+
+
+ACCURACY_MASTERPIECE_RATING = 9.5  # a partir de aqui una nota cuenta como "obra maestra"
+ACCURACY_HISTORY_DAYS = 90         # puntos (uno por dia) que se guardan del historico
+ACCURACY_BOOTSTRAP_ROUNDS = 200    # remuestreos para el margen de ruido del acierto
+
+
+def _spearman_band(pairs, rounds=ACCURACY_BOOTSTRAP_ROUNDS):
+    """Margen de ruido del acierto (percentiles 5-95 de un bootstrap): cuanto se
+    moveria el numero solo por azar con estas mismas notas. Un cambio del motor que
+    no saque el acierto de esta franja no se distingue del ruido. Semilla fija, asi
+    el margen no baila entre recalculos con los mismos datos."""
+    rng = random.Random(0)
+    values = []
+    for _ in range(rounds):
+        sample = [pairs[rng.randrange(len(pairs))] for _ in pairs]
+        rho = _spearman([s for s, _ in sample], [r for _, r in sample])
+        if rho is not None:
+            values.append(rho)
+    if len(values) < 10:
+        return None, None
+    values.sort()
+    return values[int(len(values) * 0.05)], values[int(len(values) * 0.95) - 1]
+
+
+def _spearman(xs, ys):
+    """Correlacion de rangos (con empates promediados): 0 = azar, 1 = mismo orden."""
+    def ranks(values):
+        order = sorted(range(len(values)), key=lambda i: values[i])
+        out = [0.0] * len(values)
+        i = 0
+        while i < len(order):
+            j = i
+            while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+                j += 1
+            for k in range(i, j + 1):
+                out[order[k]] = (i + j) / 2
+            i = j + 1
+        return out
+    if len(xs) < 3:
+        return None
+    rx, ry = ranks(xs), ranks(ys)
+    mx, my = sum(rx) / len(rx), sum(ry) / len(ry)
+    cov = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
+    var = (sum((a - mx) ** 2 for a in rx) * sum((b - my) ** 2 for b in ry)) ** 0.5
+    return cov / var if var else None
+
+
+def _save_accuracy(conn, user_id, pairs, scores):
+    """Cuánto acierta el motor, con el mismo leave-one-out que puebla
+    score_distribution (cada título predicho sin ver su propia nota). Un punto por día
+    en app_settings, para /afinidad/calibracion."""
+    if len(pairs) < 3:
+        return
+    pct = [bisect.bisect_right(scores, s) / len(scores) * 100 for s, _rating in pairs]
+    top = [p for p, (_s, rating) in zip(pct, pairs) if rating >= ACCURACY_MASTERPIECE_RATING]
+    rho = _spearman([s for s, _ in pairs], [r for _, r in pairs])
+    lo, hi = _spearman_band(pairs)
+    point = {
+        "date": date.today().isoformat(),
+        "n": len(pairs),
+        "spearman": round(rho, 3) if rho is not None else None,
+        "spearman_lo": round(lo, 3) if lo is not None else None,
+        "spearman_hi": round(hi, 3) if hi is not None else None,
+        "masterpieces": len(top),
+        "masterpieces_hit": sum(1 for p in top if p >= 50),
+    }
+    key = f"affinity_accuracy:{user_id}"
+    history = [h for h in json.loads(get_setting(conn, key) or "[]") if h.get("date") != point["date"]]
+    history.append(point)
+    set_setting(conn, key, json.dumps(history[-ACCURACY_HISTORY_DAYS:]))
+
+
+def get_accuracy_history(conn, user_id):
+    """Historico de _save_accuracy, del mas antiguo al mas reciente."""
+    try:
+        return json.loads(get_setting(conn, f"affinity_accuracy:{user_id}") or "[]")
+    except ValueError:
+        return []
 
 
 
@@ -932,16 +962,17 @@ def build_taste_profile(conn, user_id):
             conf_d[r["attr_name"]] = r["confianza"]
 
     ratings = conn.execute(
-        """SELECT entries.id AS entry_id, titles.anilist_id, entries.rating
+        f"""SELECT entries.id AS entry_id, titles.anilist_id, {_real_rating_sql("entries")} AS rating
            FROM entries JOIN titles ON titles.id = entries.title_id
-           WHERE entries.rating IS NOT NULL AND entries.user_id = ? AND titles.anilist_id IS NOT NULL""",
+           WHERE ({_real_rating_sql("entries")}) IS NOT NULL AND entries.user_id = ?
+             AND titles.anilist_id IS NOT NULL""",
         (user_id,),
     ).fetchall()
     last_season = {}
     for r in conn.execute(
-        """SELECT season_ratings.entry_id, season_ratings.season_number, season_ratings.rating
+        f"""SELECT season_ratings.entry_id, season_ratings.season_number, season_ratings.rating
            FROM season_ratings JOIN entries ON entries.id = season_ratings.entry_id
-           WHERE season_ratings.rating IS NOT NULL AND entries.user_id = ?""",
+           WHERE ({_real_rating_sql("season_ratings")}) IS NOT NULL AND entries.user_id = ?""",
         (user_id,),
     ):
         prev = last_season.get(r["entry_id"])
@@ -989,13 +1020,10 @@ def build_taste_profile(conn, user_id):
 
 
 def _raw_predict_score(item: dict, profile: dict):
-    """Combina las señales del candidato en escala 0-100 (AFINIDAD, no nota media) -
-    misma jerarquia de siempre (precuela > cross-rec = estudio > tags > genero), ver
-    PREDICT_SIGNAL_WEIGHTS. Tags ponderados tambien por IDF (Fase 3: un tag raro pesa
-    mas que uno que esta en medio catalogo). Devuelve (score_crudo o None,
-    confianza_del_titulo 0-1 = cuanto peso jerarquico tenian las señales que SI
-    existian para este titulo, un 90% con precuela puntuada no vale lo mismo que un
-    90% a base de dos generos genericos)."""
+    """Combina las señales del candidato en escala 0-100 (precuela > cross-rec =
+    estudio > tags > género, ver PREDICT_SIGNAL_WEIGHTS; tags ponderados por IDF).
+    Devuelve (score_crudo o None, confianza 0-1 = qué parte del peso total tenían las
+    señales disponibles)."""
     w = profile["predict_weights"]
     parts = []  # (valor_0_100, peso)
 
@@ -1038,11 +1066,9 @@ def _raw_predict_score(item: dict, profile: dict):
 
 
 def _calibrate_percentile(profile: dict, raw_score: float) -> int:
-    """Fase 4: el score crudo no se enseña - se mapea contra la distribucion de
-    scores backtested de la propia biblioteca (score_distribution, calculada en
-    recompute_taste_profile), asi un 95% significa "por encima del 95% de lo que has
-    visto en tu vida", estable, no depende de si la temporada viene buena. Sin
-    distribucion aun (recien desplegado) cae al score crudo redondeado."""
+    """Pasa el score crudo a percentil de la distribución backtesteada de la propia
+    biblioteca: un 95% significa "por encima del 95% de lo que has visto". Sin
+    distribución todavía, devuelve el score crudo redondeado."""
     dist = profile.get("score_distribution")
     if not dist:
         return round(raw_score)
@@ -1053,8 +1079,7 @@ def _calibrate_percentile(profile: dict, raw_score: float) -> int:
 
 
 def predict_score(item: dict, profile: dict):
-    """'% que te gustara', ya calibrado a percentil de tu propia biblioteca. None si
-    no hay NINGUNA señal - nada inventado tipo 50% a ciegas."""
+    """'% que te gustará', calibrado a percentil. None si no hay ninguna señal."""
     raw_score, _confidence = _raw_predict_score(item, profile)
     if raw_score is None:
         return None
@@ -1064,8 +1089,7 @@ def predict_score(item: dict, profile: dict):
 
 
 def predict_score_detail(item: dict, profile: dict):
-    """Igual que predict_score pero con la confianza del titulo (Fase 3: "debe verse
-    en pantalla") - para las tarjetas que quieran mostrar el desglose."""
+    """Como predict_score, pero también devuelve la confianza del título."""
     raw_score, confidence = _raw_predict_score(item, profile)
     if raw_score is None:
         return None
@@ -1094,12 +1118,9 @@ def _cached_predict_item(title_row) -> dict:
 
 
 def add_predictions(conn, user_id, entries, profile=None):
-    """Añade `predict` (0-100 o None) a cada entry, calculado sobre el perfil de gustos
-    DE ESTE USUARIO y los campos anilist_* ya cacheados en titles - para poder
-    predecir sobre pendientes, no solo sobre el calendario de temporada (El usuario,
-    2026-08-13: "aplicar la prediccion a mis pendientes"). `entries` debe traer las
-    columnas anilist_* (ver list_pending). Devuelve una lista NUEVA de dicts
-    (sqlite3.Row no admite asignar claves nuevas)."""
+    """Añade `predict` (0-100 o None) a cada entry con el perfil de este usuario y los
+    campos anilist_* ya cacheados. `entries` debe traer esas columnas (ver
+    list_pending). Devuelve dicts nuevos (sqlite3.Row no admite claves nuevas)."""
     profile = profile or build_taste_profile(conn, user_id)
     out = []
     for e in entries:
@@ -1114,12 +1135,8 @@ def add_predictions(conn, user_id, entries, profile=None):
 
 
 def get_affinity_display(conn, user_id, min_titles: int = 3, limit: int = 15):
-    """Desglose del indice de afinidad de ESTE usuario para /estadisticas (sustituye a
-    la antigua "nota media por genero/tag/estudio" - ver Bloque 2 del encargo
-    2026-08-14, Fase 7: "ningun numero sin su desglose al lado"). Solo LEE
-    `taste_profile`, ya precalculado por recompute_taste_profile - nunca recalcula en
-    caliente. min_titles filtra el ruido de un atributo con 1-2 titulos sueltos,
-    igual que hacia min_count en el desglose anterior."""
+    """Desglose del índice de afinidad de este usuario para /estadisticas. Solo lee
+    taste_profile. min_titles descarta atributos con muy pocos títulos."""
     rows = conn.execute(
         "SELECT * FROM taste_profile WHERE user_id = ? AND n_titulos >= ? ORDER BY afinidad DESC",
         (user_id, min_titles),
@@ -1151,11 +1168,8 @@ def get_affinity_display(conn, user_id, min_titles: int = 3, limit: int = 15):
     for r in rows:
         if r["attr_type"] in by_type:
             by_type[r["attr_type"]].append(_fmt(r))
-    # Orden por |inercia| en vez de afinidad: para "donde tiendo a la costumbre /
-    # infravaloro" lo interesante es la MAGNITUD del desequilibrio apetito-calidad,
-    # no el score combinado (2026-08-15, tras el intento de dispersion - con datos
-    # reales la mayoria de generos se apelotona cerca de la diagonal, ilegible como
-    # grafico; en lista ordenada por lo que mas destaca si se lee de un vistazo).
+    # Orden por |inercia|: aquí interesa la magnitud del desequilibrio entre apetito y
+    # calidad, no el score combinado.
     for tipo in by_type:
         by_type[tipo].sort(key=lambda a: abs(a["inercia"]), reverse=True)
 
@@ -1165,11 +1179,7 @@ def get_affinity_display(conn, user_id, min_titles: int = 3, limit: int = 15):
         (user_id,),
     ).fetchone()[0]
 
-    # Grafica de un vistazo (El usuario, 2026-08-15: "no veo una grafica, le falta algo"):
-    # apetito y calidad ya se calculan por separado, pero la lectura util - "esto lo
-    # veo por costumbre" vs "esto me gusta mas de lo que lo persigo" - es su diferencia
-    # (inercia), no cada numero suelto. Barra divergente con los TOP por |inercia| de
-    # las 3 categorias juntas, para no repetir la misma grafica 3 veces.
+    # Top por |inercia| de las tres categorías juntas, para la barra divergente.
     TIPO_ES = {"genre": "Género", "tag": "Tag", "studio": "Estudio"}
     combinados = [_fmt(r) for r in rows if r["attr_type"] in TIPO_ES]
     top_inercia = sorted(combinados, key=lambda a: abs(a["inercia"]), reverse=True)[:12]

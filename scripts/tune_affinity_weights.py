@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
-"""Fase 6 del indice de afinidad (encargo 2026-08-14): prueba combinaciones de los
-pesos de combinacion (exponente de apetito/calidad y castigo por desfase) por fuerza
-bruta contra el historial real, y propone la que menos error de prediccion da. Sin
-modelos ni librerias de optimizacion - un grid pequeño y una medida de error honesta
-(leave-one-out, cada titulo puntuado predicho con un perfil que lo excluye a si
-mismo, igual que hace recompute_taste_profile).
-
-Cada combinacion evaluada relanza el pipeline completo de afinidad (~1 min con la
-biblioteca actual del usuario) - el grid por defecto (9 combinaciones) tarda del orden de
-10-15 minutos. NO toca la base de datos ni los pesos guardados en /ajustes; solo
-imprime el resultado. Si el resultado convence, aplicar los valores a mano desde
-/ajustes.
+"""Prueba por fuerza bruta combinaciones de pesos del índice de afinidad (exponente
+de apetito/calidad y castigo por desfase) y propone la de menor error, medido con
+leave-one-out igual que recompute_taste_profile. No toca la BBDD: solo imprime el
+resultado, que se aplica a mano desde /ajustes.
 
 Uso: python3 scripts/tune_affinity_weights.py [usuario]
-El indice de afinidad es por-usuario (multiusuario Fase 3, 2026-09-18) - sin
-argumento, prueba contra el primer usuario admin de la instancia.
+Sin argumento usa el primer usuario admin.
 """
 import os
 import sys

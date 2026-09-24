@@ -1,10 +1,7 @@
-"""app.repo.comments - debate por episodio (2026-09-18, Fase 4 multiusuario).
+"""app.repo.comments - debate por episodio, visible entre usuarios.
 
-Unico modulo de repo pensado para datos VISIBLES ENTRE usuarios: un hilo
-cronologico de comentarios por episodio. El resto de "comentario de episodio"
-(episode_user_state, ver repo/titles.py) sigue siendo privado, un mini-diario
-por usuario - esto es distinto, es la funcion que pidio el amigo del usuario para
-poder comentar y debatir episodio a episodio."""
+Distinto del comentario privado de cada episodio (episode_user_state, en
+repo/titles.py): esto es un hilo cronológico compartido."""
 
 
 def list_episode_comments(conn, episode_id: int):
@@ -36,7 +33,7 @@ def add_episode_comment(conn, episode_id: int, user_id: int, body: str):
 
 
 def delete_episode_comment(conn, comment_id: int, user_id: int, is_admin: bool):
-    """Fase 5 (El usuario, 2026-09-18): cada uno borra el suyo, admin borra el de cualquiera."""
+    """Cada uno borra el suyo; el admin, cualquiera."""
     if is_admin:
         conn.execute("DELETE FROM episode_comments WHERE id = ?", (comment_id,))
     else:
@@ -49,10 +46,8 @@ def _comments_seen_at(conn, user_id: int) -> str | None:
 
 
 def count_unseen_comments(conn, user_id: int) -> int:
-    """Aviso en el nav (El usuario, 2026-09-18: "estilo tvtime") - comentarios de OTROS
-    usuarios desde la ultima vez que este usuario "se puso al dia" (ver
-    mark_comments_seen). Los propios no cuentan, no hace falta avisarte de lo que
-    tu mismo has escrito."""
+    """Comentarios de otros usuarios desde la última vez que este se puso al día (ver
+    mark_comments_seen). Los propios no cuentan."""
     seen_at = _comments_seen_at(conn, user_id)
     if not seen_at:
         return 0

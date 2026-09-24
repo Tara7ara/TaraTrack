@@ -2,8 +2,8 @@ from app import repo
 
 
 def test_compute_weighted_rating_ignores_unset_categories():
-    """Una categoria en None no debe contar ni en la nota ni en el peso - si contara
-    como 0 la media saldria mal por debajo sin que el usuario lo pidiera."""
+    """Una categoría en None no cuenta ni en la nota ni en el peso (como 0 bajaría la
+    media)."""
     categories = {"historia": 8, "animacion": None, "personajes": 9, "musica": None, "disfrute": 7}
     expected = round((8 * 1.0 + 9 * 1.0 + 7 * 1.5) / (1.0 + 1.0 + 1.5), 2)
     assert repo.compute_weighted_rating(categories) == expected
@@ -57,10 +57,9 @@ def test_move_in_ranking_swaps_neighbours(conn, user_id):
 
 
 def test_remove_pending_entry_deletes_orphan_title(conn):
-    """El bug real que se quejaba el usuario: abrir la ficha de una recomendacion crea
-    title+entry; al deshacer el pendiente, el titulo huerfano debe desaparecer tambien
-    - si no, list_recommendations lo trata como 'ya conocido' para siempre sin haberlo
-    baneado nunca (una recomendacion mirada por curiosidad se quemaba en silencio)."""
+    """Abrir la ficha de una recomendación crea título y entry; al deshacer el
+    pendiente, el título huérfano también desaparece. Si no, list_recommendations lo
+    trataría como conocido para siempre."""
     title = repo.ensure_manual_title(conn, "movie", "Curioseada", 2020)
     conn.execute("INSERT INTO entries (title_id, status) VALUES (?, 'pending')", (title["id"],))
     entry_id = conn.execute("SELECT id FROM entries WHERE title_id = ?", (title["id"],)).fetchone()["id"]
@@ -72,11 +71,9 @@ def test_remove_pending_entry_deletes_orphan_title(conn):
 
 
 def test_start_rewatch_unmarks_episodes_but_keeps_rating(conn, user_id):
-    """start_rewatch estilo Trakt (2026-08-20): ya NO borra el historial de
-    episode_watches (esa fecha vieja no se pierde nunca) - en vez de eso, guarda
-    CUANDO empezo la ronda nueva (entries.rewatch_started_at) y next_unwatched_episode
-    trata como pendiente lo visto ANTES de esa fecha. Confirma que el marcado viejo
-    sigue intacto, que se guarda la fecha de la ronda, y que no toca nota ni comentario."""
+    """start_rewatch no borra el historial de episode_watches: guarda cuándo empieza la
+    ronda y next_unwatched_episode trata como pendiente lo visto antes. Tampoco toca
+    nota ni comentario."""
     title = repo.ensure_manual_title(conn, "show", "Rewatch Show", 2020)
     conn.execute(
         """INSERT INTO entries (title_id, user_id, status, rating, watched_at)
@@ -108,10 +105,8 @@ def test_start_rewatch_unmarks_episodes_but_keeps_rating(conn, user_id):
 
 
 def test_set_season_rating_updates_entry_average(conn, user_id):
-    """Bug real (El usuario, 2026-09-20): puntuar por temporada nunca tocaba entries.rating,
-    asi que una serie puntuada solo asi se quedaba sin nota general (y atascada en
-    /puntuar para siempre, ver el test de abajo). La nota general debe ser la media
-    simple de las temporadas puntuadas, actualizada en cada guardado."""
+    """La nota general de una serie puntuada por temporadas es la media simple de sus
+    temporadas, actualizada en cada guardado."""
     title = repo.ensure_manual_title(conn, "show", "Serie por temporadas", 2020)
     conn.execute(
         "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')",
@@ -131,13 +126,9 @@ def test_set_season_rating_updates_entry_average(conn, user_id):
 
 
 def test_mark_watched_seeds_season_rating_when_show_ongoing_with_one_season(conn, user_id):
-    """Bug real (El usuario, 2026-09-22, generalizacion de Hell Mode): puntuar por el examen
-    general (no 'Puntuar temp.') una serie EN EMISION que solo tiene una temporada
-    ('voy al dia') no dejaba ninguna fila en season_ratings - igual que Hell Mode, si
-    sale una temporada 2 nunca volveria a aparecer en /puntuar. mark_watched ahora
-    tambien siembra season_ratings[1] cuando la serie sigue en emision y solo hay una
-    temporada cacheada - confirmado contra produccion antes del fix: 44 entries reales
-    en este estado (Frieren, Jujutsu Kaisen, Dan Da Dan...)."""
+    """Puntuar con el examen general una serie en emisión con una sola temporada
+    siembra season_ratings[1], para que vuelva a /puntuar cuando se complete la
+    temporada 2."""
     title = repo.ensure_manual_title(conn, "show", "Serie en emision, S1", 2020)
     conn.execute("UPDATE titles SET show_status = 'Returning Series' WHERE id = ?", (title["id"],))
     conn.execute(
@@ -201,14 +192,8 @@ def test_shift_date_applies_signed_offset():
 
 
 def test_sync_episodes_applies_air_date_offset(conn, monkeypatch):
-    """Bug real (El usuario, 2026-09-22): 'lunes y no ha salido el ep de Grand Blue... no
-    estaba arreglado ya?' - Grand Blue emite el lunes en Japon pero TMDB cachea el
-    episodio con fecha de martes. El fix de dia de emision del 2026-09-08
-    (weekday_overrides) solo corrige el TEXTO del calendario de temporada por
-    AniList, un sistema aparte de episodes.air_date (lo que de verdad usan
-    /pendientes y Continuar viendo para decidir 'ya emitio'). set_air_date_offset +
-    el desfase aplicado en sync_episodes corrige la fecha real, y se reaplica en
-    CADA sync (no solo una vez a mano)."""
+    """El desfase de set_air_date_offset se aplica en sync_episodes a la fecha real de
+    los episodios, y se reaplica en cada sync."""
     from app.repo import titles as titles_mod
 
     title = repo.ensure_manual_title(conn, "show", "Serie con desfase", 2020)
@@ -235,12 +220,8 @@ def test_sync_episodes_applies_air_date_offset(conn, monkeypatch):
 
 
 def test_next_review_item_ignores_stale_next_episode_date_already_past(conn, user_id):
-    """Bug real (El usuario, 2026-09-20): 'he acabado un par de series de estos semanales,
-    no me han salido a puntuar'. next_episode_air_date es un cache que solo se
-    refresca con la sync de 12h - si ese campo sigue apuntando a la fecha de HOY (el
-    episodio que el usuario acaba de ver) porque el sync todavia no ha corrido, el criterio
-    viejo (solo IS NULL) excluia la serie de /puntuar aunque no quedara nada
-    pendiente de verdad. Una fecha de 'proximo episodio' ya pasada no debe bloquear."""
+    """Una fecha de "próximo episodio" ya pasada (caché sin refrescar) no saca la serie
+    de /puntuar si no queda nada pendiente."""
     title = repo.ensure_manual_title(conn, "show", "Serie semanal", 2020)
     conn.execute("UPDATE titles SET next_episode_air_date = date('now') WHERE id = ?", (title["id"],))
     conn.execute(
@@ -261,12 +242,8 @@ def test_next_review_item_ignores_stale_next_episode_date_already_past(conn, use
 
 
 def test_new_completed_season_resurfaces_in_review_queue(conn, user_id):
-    """Bug real (El usuario, 2026-09-20): 'solo ha sido Hell Mode, si sale una tercera
-    temporada no puedo puntuar, hay que dar una vuelta a la tuerca'. Una vez
-    set_season_rating rellena entries.rating con la media (test de arriba), la
-    entry deja de tener rating NULL - sin este mecanismo, una temporada nueva que
-    se complete despues no volveria a avisar nunca en /puntuar. Debe resurgir con
-    `season_number` puesto al numero de la temporada nueva, no la vieja ya puntuada."""
+    """Una serie ya puntuada por temporadas vuelve a /puntuar cuando se completa una
+    temporada nueva, con `season_number` de la nueva."""
     title = repo.ensure_manual_title(conn, "show", "Serie con temporada nueva", 2020)
     conn.execute(
         "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')",

@@ -12,10 +12,7 @@ document.addEventListener("htmx:afterSwap", (e) => {
 
 function setupSwipe(row) {
     const content = row.querySelector(".swipe-content");
-    // Bug real (AGY, 2026-09-18): sin esta guarda, una fila .swipeable sin
-    // .swipe-content dentro (markup distinto en algun render parcial) tiraba un
-    // TypeError aqui - forEach no tiene try/catch propio, asi que abortaba el
-    // resto de filas de la pagina sin dejarles el gesto de swipe montado.
+    // Una fila .swipeable sin .swipe-content no debe romper el montaje del resto.
     if (!content) return;
     const btn = row.querySelector('button[hx-post^="/vista/"]');
     const threshold = 90;
@@ -64,7 +61,7 @@ function setupSwipe(row) {
     content.addEventListener("touchmove", (e) => {
         if (!dragging) return;
         dx = Math.max(0, Math.min(140, e.touches[0].clientX - startX));
-        // El fondo verde solo se ensena mientras hay gesto de verdad.
+        // El fondo verde solo se enseña mientras hay gesto.
         row.classList.toggle("swiping", dx > 0);
         content.style.transform = `translateX(${dx}px)`;
     }, { passive: true });

@@ -2,6 +2,8 @@
 filtros/globales custom. Separado de main.py para que los routers puedan importar
 `templates` sin crear un import circular (main.py incluye los routers, los routers
 no pueden importar de vuelta desde main.py)."""
+import base64
+import os
 import re
 import time
 from datetime import date, datetime, timezone
@@ -16,10 +18,8 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 def avatar(username: str, avatar_path: str | None = None) -> Markup:
-    """Foto de perfil si el usuario ha subido una, si no iniciales con un color
-    estable derivado del nombre (El usuario, 2026-09-18: "como pongo fotos de usr").
-    Un solo sitio para el marcado - antes cada plantilla repetia el mismo
-    `<span class="avatar avatar-N">` a mano con criterios de color distintos."""
+    """Foto de perfil si la hay; si no, iniciales con un color estable derivado del
+    nombre. Único sitio que genera este marcado."""
     username = username or "?"
     if avatar_path:
         return Markup(f'<img class="avatar avatar-img" src="{escape(avatar_path)}" alt="{escape(username)}">')
@@ -39,12 +39,8 @@ def fmt_rating(value, decimals=2):
 
 
 _SHOW_STATUS_ES = {
-    # "Returning Series" de TMDB NO significa "en emision ahora mismo" (sigue
-    # activo entre temporadas, ver _NO_EN_EMISION_SQL en repo) - "Continua" es
-    # la traduccion que no promete un proximo episodio inminente que puede no
-    # existir todavia. El usuario, 2026-09-20: "algo para saber si hay mas temporada,
-    # si esta finalizada cancelada" - el dato ya se guardaba pero se enseñaba
-    # en ingles crudo, facil de pasar por alto en una ficha en español.
+    # 'Returning Series' no significa "en emisión" (sigue activo entre temporadas):
+    # "Continúa" no promete un próximo episodio inminente.
     "Returning Series": "Continúa",
     "In Production": "En producción",
     "Planned": "Anunciada",
@@ -56,6 +52,25 @@ _SHOW_STATUS_ES = {
 
 def fmt_show_status(value):
     return _SHOW_STATUS_ES.get(value, value or "")
+
+
+def show_status_ribbon(title_row):
+    """(texto, clase) de la tira de estado en la esquina del póster, o None. "En
+    emisión" sale de que haya próximo episodio con fecha, no del estado de TMDB."""
+    if title_row["type"] != "show" or not title_row["show_status"]:
+        return None
+    status = title_row["show_status"]
+    if status in ("Returning Series", "In Production") and title_row["next_episode_air_date"]:
+        # Próximo episodio = el 1 de una temporada: aún no ha empezado.
+        label = title_row["next_episode_label"] if "next_episode_label" in title_row.keys() else None
+        if re.match(r"T\d+E1\b", label or ""):
+            return "Próximamente", "ribbon-planned"
+        return "En emisión", "ribbon-airing"
+    if status == "Returning Series":
+        # Sin proximo episodio con fecha: entre temporadas ("Continua" no le gustaba)
+        return "En pausa", "ribbon-returning"
+    css = {"Ended": "ribbon-ended", "Canceled": "ribbon-canceled"}.get(status, "ribbon-planned")
+    return fmt_show_status(status), css
 
 
 
@@ -113,11 +128,8 @@ def fmt_month(mm: str) -> str:
 
 
 def fmt_ago(iso_str):
-    """'2026-08-21T12:00:00Z' o '2026-08-21 12:00:00' (datetime('now') de SQLite,
-    sin T ni Z) -> 'hace 3 min' / 'hace 2 h' / 'hace 5 días'. Antes solo entendia
-    el primer formato (fromisoformat crudo revienta con el de SQLite) - bug real
-    encontrado por AGY (2026-09-18) antes de que llegara a usarse en comentarios,
-    donde created_at siempre viene de SQLite."""
+    """'2026-08-21T12:00:00Z' o '2026-08-21 12:00:00' (datetime('now') de SQLite) ->
+    'hace 3 min' / 'hace 2 h' / 'hace 5 días'."""
     if not iso_str:
         return ""
     try:
@@ -162,10 +174,8 @@ _TMDB_SIZE_RE = re.compile(r"/t/p/w\d+/")
 
 
 def poster_size(url, size):
-    """Cambia la resolucion de una URL de TMDB (siempre guardada en w500) a `size`
-    (p.ej. 'w185'). Los posters locales (/static/posters/...) y el placeholder
-    sin-portada no llevan ese patron, se devuelven tal cual - El usuario: pantallas sin
-    Retina (27"/23.8") no necesitan pedir siempre la version mas pesada."""
+    """Cambia la resolución de una URL de TMDB (guardada en w500) a `size` (p. ej.
+    'w185'). Los pósters locales y el placeholder se devuelven tal cual."""
     if not url or "image.tmdb.org" not in url:
         return url
     return _TMDB_SIZE_RE.sub(f"/t/p/{size}/", url)
@@ -175,6 +185,7 @@ def poster_size(url, size):
 
 templates.env.filters["fmt_rating"] = fmt_rating
 templates.env.filters["fmt_show_status"] = fmt_show_status
+templates.env.filters["show_status_ribbon"] = show_status_ribbon
 templates.env.filters["fmt_duration"] = fmt_duration
 templates.env.filters["fmt_day"] = fmt_day
 templates.env.filters["fmt_month"] = fmt_month
@@ -183,19 +194,18 @@ templates.env.filters["fmt_sync_duration"] = fmt_sync_duration
 templates.env.filters["poster_size"] = poster_size
 templates.env.filters["elo_confidence"] = repo.elo_confidence_label
 templates.env.filters["avatar"] = avatar
-# Cache-busting de estaticos propios: /static se cachea 7 dias, asi que sin esto un
-# cambio de CSS tarda una semana en llegar al movil del usuario. Cambia en cada arranque.
+# Cache-busting de estáticos propios: /static se cachea 7 días. Cambia en cada arranque.
 templates.env.globals["static_v"] = int(time.time())
+
+# El icono de "Añadir a pantalla de inicio" va en la propia página (data URI): iOS lo
+# descarga en un proceso aparte que no acepta un certificado autofirmado.
+with open(os.path.join(os.path.dirname(__file__), "static/img/apple-touch-icon.png"), "rb") as _f:
+    templates.env.globals["touch_icon_data_uri"] = "data:image/png;base64," + base64.b64encode(_f.read()).decode()
 
 
 def _puntuar_queue_count(user_id: int) -> int:
-    """Contador vivo para el nav (topnav agrupado). Registrado como global de Jinja
-    en vez de context_processor a proposito: un context_processor correria en CADA
-    TemplateResponse, incluidos los partials de htmx (marcar episodio, favorito...),
-    sumando una conexion/query de mas a cada micro-interaccion - aqui solo se paga
-    el coste cuando base.html la llama de verdad (paginas completas, no partials).
-    `user_id` obligatorio desde el multiusuario (2026-09-17) - la cola es por-usuario,
-    base.html la llama como `puntuar_queue_count(request.state.user_id)`."""
+    """Contador del nav. Es un global de Jinja y no un context_processor para que solo
+    se consulte en páginas completas (base.html), no en cada partial de htmx."""
     try:
         with get_connection() as conn:
             return repo.count_review_queue(conn, user_id)
@@ -207,8 +217,8 @@ templates.env.globals["puntuar_queue_count"] = _puntuar_queue_count
 
 
 def _comments_badge_count(user_id: int) -> int:
-    """Aviso de comentarios nuevos en el nav (El usuario, 2026-09-18: "estilo tvtime") -
-    mismo criterio de coste que _puntuar_queue_count de arriba."""
+    """Contador de comentarios nuevos del nav, con el mismo criterio que
+    _puntuar_queue_count."""
     try:
         with get_connection() as conn:
             return repo.count_unseen_comments(conn, user_id)
@@ -220,10 +230,7 @@ templates.env.globals["comments_badge_count"] = _comments_badge_count
 
 
 def _waifus_label(user_id: int) -> str:
-    """"Waifus" tiene sentido para el usuario (anime de sobra), pero es jerga de nicho para
-    quien no ve anime (El usuario, 2026-09-18: "que a las personas normales le salga
-    'personajes fav', a la que haya un anime puesto en la lista se transforme a lista
-    de waifus") - un termino u otro segun tenga o no anime en su biblioteca."""
+    """"Waifus" o "Personajes favoritos" según el usuario tenga anime en su biblioteca."""
     try:
         with get_connection() as conn:
             return "Waifus" if repo.user_has_anime(conn, user_id) else "Personajes favoritos"
@@ -252,16 +259,10 @@ def render_nav_cola_oob(conn, user_id: int) -> str:
 
 
 def _recompute_with_status(user_id, extra=None):
-    """Envuelve recompute_taste_profile marcando running=True/False en app_settings
-    (repo.set_recompute_running) - sin esto, lanzar el recalculo desde /ajustes o
-    /calendario/anual redirigia al instante sin ninguna señal de que estuviera
-    pasando algo (El usuario, 2026-08-14). `extra`, si se da, corre ANTES del recalculo y
-    cuenta dentro de la misma ventana de "running" (el backfill de AniList de
-    /calendario/anual/perfil, que puede tardar varios minutos el solo). `finally`
-    para que un fallo a medias no deje el indicador pegado en "recalculando" para
-    siempre. Compartida por routers/ajustes.py y routers/calendario.py, ver ahi.
-    `user_id` obligatorio desde el multiusuario Fase 3 (2026-09-18) - el recalculo
-    manual solo recalcula TU perfil, no el de todos (eso lo hace la sync de fondo)."""
+    """Envuelve recompute_taste_profile marcando running en app_settings, para el
+    indicador de /ajustes y /calendario/anual. `extra` corre antes dentro de la misma
+    ventana (el backfill de AniList). `finally` para que un fallo no deje el indicador
+    pegado. Solo recalcula el perfil de este usuario."""
     with get_connection() as conn:
         repo.set_recompute_running(conn, user_id, True)
     try:

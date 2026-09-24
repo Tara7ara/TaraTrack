@@ -1,4 +1,4 @@
-"""app.routers.titulo - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.titulo - ficha técnica y todas sus acciones."""
 import os
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -23,11 +23,8 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
         entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         title_row = repo.get_title(conn, tmdb_id)
         if type == "show" and not repo.list_episodes(conn, title_row["id"]):
-            # Un solo intento fallaba en silencio dejando la entry "watched" sin
-            # ningun episodio marcado (pasado real: Tougen Anki, 2026-08-13, un hipo
-            # puntual de TMDB). Un reintento cubre la inmensa mayoria de esos hipos sin
-            # perder la proteccion original - si el segundo tambien falla, la entry se
-            # marca vista igual (mejor eso que un 500 en un boton tan simple).
+            # Un reintento cubre la mayoría de fallos puntuales de TMDB. Si el segundo
+            # también falla, la entry se marca vista igual (mejor que un 500).
             for _intento in range(2):
                 try:
                     repo.sync_episodes(conn, title_row)
@@ -35,26 +32,13 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
                 except Exception:
                     continue
         repo.mark_watched_quick(conn, entry["id"], title_row)
-        # Bug real (2026-09-17, el usuario: "marco vista y no se pone en continuar viendo,
-        # tengo que refrescar"): marcar el primer episodio desde /pendientes quita la
-        # fila de ahi (swipe.js, via htmx:afterRequest) pero nunca inyectaba la
-        # tarjeta nueva en el carrusel de "Continuar viendo" - solo un reload la traia.
-        # Mismo patron OOB que render_nav_cola_oob: si la entry ya califica para el
-        # carrusel (get_home_card, None si no), se manda de mas junto a la respuesta
-        # normal. Si /pendientes no esta abierto (llamado desde /buscar, una ficha...)
-        # el hx-swap-oob simplemente no encuentra "#continuar-carousel" y no hace nada.
+        # Si la entry ya entra en "Continuar viendo", se manda también la tarjeta por
+        # OOB para que aparezca sin recargar; si /pendientes no está abierto, el
+        # hx-swap-oob no encuentra "#continuar-carousel" y no hace nada.
         #
-        # Bug real encontrado en pruebas ANTES de desplegar a produccion (pillado con
-        # una captura del usuario: la tarjeta salia "hiper mega grande", portada y titulo
-        # sueltos en vez de dentro de la tarjeta): con estilos de swap distintos de
-        # "outerHTML" (aqui "afterbegin"), htmx DESCARTA el propio elemento que lleva
-        # hx-swap-oob y solo inserta sus HIJOS (confirmado leyendo htmx.min.js: la
-        # funcion de insercion recorre childNodes del "contenido" y tira el wrapper) -
-        # poner hx-swap-oob directo en el <div class="home-card"> perdia ese div entero
-        # y dejaba la portada/info sueltas como hijos directos de .carousel, sin la
-        # clase que les da tamaño/flex-basis. Fix: hx-swap-oob va en un <div> "portador"
-        # de usar y tirar que envuelve la tarjeta real - ese portador es el que se
-        # descarta, la tarjeta de dentro llega intacta con su clase "home-card".
+        # hx-swap-oob va en un <div> envoltorio desechable: con un estilo distinto de
+        # outerHTML (aquí "afterbegin"), htmx descarta el elemento que lleva el
+        # atributo e inserta solo sus hijos, y la tarjeta perdería su clase.
         oob = ""
         if type == "show":
             card = repo.get_home_card(conn, entry["id"], request.state.user_id)
@@ -223,21 +207,15 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0,
                 episodes = repo.list_episodes(conn, title_row["id"])
             except Exception:
                 episodes = repo.list_episodes(conn, title_row["id"])
-        # Bug real encontrado en pruebas (multiusuario, 2026-09-17): sin filtrar por
-        # user_id, la ficha de un titulo que OTRO usuario ya tiene en su biblioteca
-        # renderizaria botones ("Puntuar", "Deshacer vista", favorito...) atados al
-        # entry_id AJENO - pulsarlos actuaria sobre los datos de otra cuenta.
+        # Filtrado por user_id: si no, los botones de la ficha actuarían sobre la
+        # entry de otro usuario que tenga el mismo título.
         entry = conn.execute(
             "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",
             (title_row["id"], request.state.user_id),
         ).fetchone()
-        # "Visto AHORA" es round-aware (Volver a ver estilo Trakt, 2026-08-20): un
-        # episodio con marcado ANTERIOR a la ronda de rewatch en curso cuenta como
-        # pendiente de re-ver otra vez - dict() porque sqlite3.Row no admite claves
-        # nuevas. Multiusuario Fase 2 (2026-09-17): "visto"/"veces"/comentario/favorito
-        # son de ESTE usuario (episode_watches/episode_user_state), no columnas
-        # compartidas de `episodes` - una sola pasada por los ids de la serie en vez
-        # de una query por episodio.
+        # "Visto ahora" tiene en cuenta el rewatch en curso. Visto, veces, comentario y
+        # favorito son de este usuario; se cargan en una sola pasada por los ids de la
+        # serie. dict() porque sqlite3.Row no admite claves nuevas.
         rewatch_started_at = entry["rewatch_started_at"] if entry else None
         episodes = [dict(ep) for ep in episodes]
         ep_ids = [ep["id"] for ep in episodes]
@@ -259,9 +237,7 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0,
                 (*ep_ids, request.state.user_id),
             ):
                 state_by_ep[row["episode_id"]] = row
-            # Debate por episodio (Fase 4, visible entre usuarios) - una sola query
-            # para toda la ficha, mismo criterio que el resto de datos por episodio
-            # de aqui arriba (evitar una query por episodio con series de miles).
+            # Debate por episodio: una sola query para toda la ficha.
             for row in conn.execute(
                 f"""SELECT episode_comments.id, episode_comments.episode_id, episode_comments.body,
                            episode_comments.created_at, episode_comments.user_id, users.username,
@@ -285,12 +261,8 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0,
             # pendientes.py) - abre solo el hilo de ESE episodio, con el enlace
             # llevando ademas a "#ep-{id}" para que el navegador haga scroll solo.
             ep["open_debate"] = comentar == ep["id"]
-            # "Comentar" del aviso "¿comentas?" (Continuar viendo/Pendientes) - El usuario,
-            # 2026-09-22: prefiere que abra el comentario PRIVADO primero, no el debate
-            # publico (comparten la ficha pero son cosas distintas, ver episode_row.html).
-            # Parametro separado de "comentar" a proposito: ese lo usa tambien
-            # /comentarios/siguiente (aviso de comentarios AJENOS sin leer), que si debe
-            # seguir abriendo el debate.
+            # `apunte` abre el comentario privado del episodio (lo usa el aviso
+            # "¿comentas?"); `comentar` abre el debate y lo usa /comentarios/siguiente.
             ep["open_note"] = apunte == ep["id"]
         is_favorite = repo.is_entry_favorite(conn, entry["id"], request.state.user_id) if entry else False
 
@@ -353,10 +325,8 @@ POSTER_CONTENT_TYPES = config.POSTER_CONTENT_TYPES
 
 @router.post("/titulo/{tmdb_id}/{type}/portada", response_class=HTMLResponse)
 async def cambiar_portada(request: Request, tmdb_id: int, type: str, imagen: UploadFile = File(...)):
-    """Portada propia subida a mano (El usuario: TMDB no siempre tiene la que quiere, o
-    ninguna) - sobrescribe el fichero en disco con el mismo convenio de nombre que ya
-    usan ensure_title/create_manual_entry, para que el resto del codigo no necesite
-    saber que esta portada es manual."""
+    """Portada propia subida a mano. Sobrescribe el fichero con el mismo convenio de
+    nombre que ensure_title/create_manual_entry, así el resto del código no distingue."""
     if imagen.content_type not in POSTER_CONTENT_TYPES:
         raise StarletteHTTPException(400, "Ese archivo no es una imagen JPEG/PNG/WebP.")
     # Leido en trozos con tope en vez de un unico .read() sin limite - un archivo
@@ -377,19 +347,15 @@ async def cambiar_portada(request: Request, tmdb_id: int, type: str, imagen: Upl
 
 @router.post("/titulo/{tmdb_id}/{type}/dia-emision", response_class=HTMLResponse)
 def corregir_dia_emision(request: Request, tmdb_id: int, type: str, weekday: str = Form("")):
-    """Pisa a mano el dia de la semana que enseña /calendario/anual para este titulo
-    (El usuario, notas.txt: "lunes Grand Blue pero en el calendario sale los martes") - el
-    calculo automatico (app/anime.py) usa UTC, que puede desplazar un dia respecto al
-    dia de emision real en Japon para animes de madrugada. weekday vacio = quitar la
-    correccion y volver al calculo automatico."""
+    """Corrige a mano el día de la semana de este título en /calendario/anual: el
+    cálculo automático usa UTC y puede desplazar un día los animes de madrugada.
+    weekday vacío = volver al cálculo automático."""
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
         if title_row and title_row["anilist_id"]:
             if weekday.strip() == "":
                 repo.clear_weekday_override(conn, title_row["anilist_id"])
-            # Bug real (AGY, 2026-09-18): int(weekday) sin validar tumbaba la peticion
-            # con un 500 si llegaba algo no numerico (un POST manipulado a mano; el
-            # <select> real solo manda 0-6, pero eso no protege el endpoint en si).
+            # Un valor no numérico (POST manipulado) se ignora en vez de dar un 500.
             elif weekday.strip().lstrip("-").isdigit():
                 repo.set_weekday_override(conn, title_row["anilist_id"], int(weekday))
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
@@ -397,14 +363,10 @@ def corregir_dia_emision(request: Request, tmdb_id: int, type: str, weekday: str
 
 @router.post("/titulo/{tmdb_id}/{type}/desfase-emision", response_class=HTMLResponse)
 def corregir_desfase_emision(request: Request, tmdb_id: int, type: str, dias: str = Form("0")):
-    """Corrige a mano el desfase entre la fecha de emision que cachea TMDB y la fecha
-    real (El usuario, 2026-09-22: "queria que saliera en pendiente de forma normal los
-    lunes en vez de los martes" - Grand Blue emite el lunes en Japon pero TMDB lo
-    guarda con fecha de martes). Distinto de "Corregir dia de emision" de arriba, que
-    solo pisa el TEXTO del calendario de temporada por AniList (una pagina aparte);
-    esto corrige la fecha real que usan /pendientes, Continuar viendo y el resto de
-    la app para decidir cuando algo "ya emitio". Resync inmediato tras guardar, para
-    no esperar hasta 12h a que la sync de fondo recalcule con la fecha corregida."""
+    """Corrige el desfase entre la fecha de emisión de TMDB y la real. A diferencia de
+    la corrección de día de arriba (solo el calendario de temporada), esto cambia la
+    fecha que usa toda la app para decidir si algo ya ha emitido. Resincroniza al
+    guardar para no esperar a la sync de fondo."""
     dias_str = dias.strip()
     if not dias_str.lstrip("-").isdigit():
         return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
@@ -432,8 +394,8 @@ def _owned_entry_or_404(conn, entry_id: int, user_id: int):
 
 @router.post("/entrada/{entry_id}/volver-a-ver", response_class=HTMLResponse)
 def volver_a_ver(request: Request, entry_id: int):
-    """Empieza una ronda de rewatch: en series desmarca los episodios y la serie vuelve
-    a "Continuar viendo"; en pelis solo suma un visionado. La nota original no se toca."""
+    """Empieza una ronda de rewatch: en series vuelve a "Continuar viendo" sin borrar el
+    historial; en pelis solo suma un visionado. La nota original no se toca."""
     with get_connection() as conn:
         entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.start_rewatch(conn, entry_id)
@@ -468,9 +430,7 @@ def quitar_nota(request: Request, entry_id: int):
 
 @router.post("/entrada/{entry_id}/fecha-visionado", response_class=HTMLResponse)
 def corregir_fecha_visionado(request: Request, entry_id: int, fecha: str = Form(...)):
-    """Corrige la fecha de visionado de algo YA marcado como vista, sin tocar nota ni
-    comentario - para series encontradas con la fecha de hoy en vez de cuando se vieron
-    de verdad (El usuario: 'mis estadisticas se han disparado en 2026 cuando no es cierto')."""
+    """Corrige la fecha de visionado de algo ya visto, sin tocar nota ni comentario."""
     with get_connection() as conn:
         entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.set_watched_at(conn, entry_id, fecha)
@@ -535,25 +495,17 @@ def favorito_toggle(request: Request, entry_id: int):
 
 
 def _episode_watched_now(watched_at, rewatch_started_at) -> bool:
-    """"Visto AHORA" (round-aware, Volver a ver estilo Trakt 2026-08-20): un episodio
-    con fecha ANTERIOR a la ronda de rewatch en curso cuenta como pendiente de re-ver,
-    aunque episodes.watched_at siga con la fecha vieja (ya no se borra nunca). Mismo
-    criterio que repo._pending_clause, aqui en Python porque se aplica sobre filas ya
-    traidas, no dentro de una query SQL."""
+    """"Visto ahora": un visionado anterior al rewatch en curso cuenta como pendiente.
+    Mismo criterio que repo._pending_clause, en Python sobre filas ya cargadas."""
     return bool(watched_at) and (not rewatch_started_at or watched_at >= rewatch_started_at)
 
 
 
 
 def _episode_row_response(request: Request, conn, episode_id: int, oob: str = "", open_debate: bool = False):
-    """`oob` (hx-swap-oob del indicador de Puntuar, ver web.render_nav_cola_oob) solo lo
-    pasa episodio_toggle - las otras rutas que reusan este helper (rewatch, favorito)
-    no cambian entries.status, no hace falta pagar la query de mas ahi.
-
-    Multiusuario Fase 2 (2026-09-17): "visto"/"cuantas veces"/comentario/favorito son
-    todos POR USUARIO ahora (episode_watches/episode_user_state con user_id) - antes
-    eran columnas compartidas en `episodes`, la misma fila se veia igual para
-    cualquiera que abriera la ficha."""
+    """`oob` (indicador de Puntuar, ver web.render_nav_cola_oob) solo lo pasa
+    episodio_toggle; rewatch y favorito no cambian entries.status. Visto, veces,
+    comentario y favorito son de este usuario."""
     user_id = request.state.user_id
     episode = dict(conn.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,)).fetchone())
     rewatch_started_at = conn.execute(
@@ -586,9 +538,7 @@ def _episode_row_response(request: Request, conn, episode_id: int, oob: str = ""
 @router.post("/episodio/{episode_id}/toggle", response_class=HTMLResponse)
 def episodio_toggle(request: Request, episode_id: int):
     with get_connection() as conn:
-        # El usuario, 2026-09-18 ("estilo tvtime"): al marcar visto (no al desmarcar), el
-        # hilo de debate de ESE episodio se abre solo - es el momento en que se te
-        # ocurre el comentario, no una vuelta a por el despues.
+        # Al marcar visto (no al desmarcar) se abre el debate de ese episodio.
         just_watched = repo.toggle_episode(conn, episode_id, request.state.user_id)
         oob = web.render_nav_cola_oob(conn, request.state.user_id)
         return _episode_row_response(request, conn, episode_id, oob=oob, open_debate=just_watched)
@@ -630,11 +580,9 @@ def episodio_comentario(request: Request, episode_id: int, comment: str = Form("
 
 @router.post("/episodio/{episode_id}/debate", response_class=HTMLResponse)
 def episodio_debate(request: Request, episode_id: int, body: str = Form("")):
-    """Debate por episodio (Fase 4 multiusuario, 2026-09-18: "le interesaria comentar
-    y que pudieramos debatir") - a diferencia de /comentario (privado, uno por
-    usuario), esto es un hilo publico entre todos los usuarios de la instancia. La
-    ficha (partials/episode_row.html) ya lo enseña difuminado hasta que CADA usuario
-    ha marcado ese episodio visto, asi que no hace falta ningun check de spoiler aqui."""
+    """Debate por episodio, visible para todos los usuarios (a diferencia de
+    /comentario, que es privado). La ficha lo difumina hasta que cada usuario ha visto
+    el episodio, así que aquí no hace falta control de spoilers."""
     with get_connection() as conn:
         repo.add_episode_comment(conn, episode_id, request.state.user_id, body)
         return _episode_row_response(request, conn, episode_id, open_debate=True)
@@ -642,10 +590,8 @@ def episodio_debate(request: Request, episode_id: int, body: str = Form("")):
 
 @router.get("/comentarios/siguiente")
 def comentarios_siguiente(request: Request):
-    """A donde lleva el aviso del nav (El usuario, 2026-09-18: "estilo tvtime") - salta al
-    comentario ajeno mas antiguo que aun no has visto y marca todo como visto de
-    golpe (mismo criterio simple que el resto de contadores de la app, un "ponerse al
-    dia", no seguimiento fino comentario a comentario)."""
+    """Destino del aviso del nav: salta al comentario ajeno más antiguo sin ver y marca
+    todos como vistos."""
     with get_connection() as conn:
         target = repo.get_oldest_unseen_comment(conn, request.state.user_id)
         repo.mark_comments_seen(conn, request.state.user_id)
@@ -659,8 +605,7 @@ def comentarios_siguiente(request: Request):
 
 @router.post("/episodio/{episode_id}/debate/{comment_id}/borrar", response_class=HTMLResponse)
 def episodio_debate_borrar(request: Request, episode_id: int, comment_id: int):
-    """Fase 5 (El usuario, 2026-09-18): cada uno borra su propio comentario de debate;
-    con `is_admin`, tambien el de cualquiera (moderacion basica del hilo)."""
+    """Cada uno borra su propio comentario; un admin, cualquiera."""
     with get_connection() as conn:
         repo.delete_episode_comment(conn, comment_id, request.state.user_id, request.state.is_admin)
         return _episode_row_response(request, conn, episode_id, open_debate=True)
@@ -700,10 +645,8 @@ def marcar_temporada(request: Request, tmdb_id: int, type: str, season_number: i
     """Marca vista una temporada entera de golpe (los episodios ya emitidos) - para
     tragarse una temporada de una sentada sin ir episodio a episodio."""
     with get_connection() as conn:
-        # Bug real (AGY, 2026-09-18): si el usuario entra directo a la ficha y le da a
-        # "Temp. completa" sin haber pulsado antes "+ Pendientes", esto no encontraba
-        # entry y no marcaba nada, sin avisar. ensure_entry la crea si hace falta, mismo
-        # patron que marcar_vista_rapido.
+        # Si aún no hay entry (ficha abierta sin "+ Pendientes"), ensure_entry la crea,
+        # igual que marcar_vista_rapido.
         entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         repo.mark_season_watched(conn, entry["id"], season_number)
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
@@ -763,9 +706,7 @@ def puntuar_temporada_submit(
         "historia": cat_historia, "animacion": cat_animacion, "personajes": cat_personajes,
         "musica": cat_musica, "disfrute": cat_disfrute,
     }
-    # Bug real (AGY, 2026-09-18): a diferencia de marcar_vista_submit (que si valida
-    # con try/except), esto convertia a float sin red - un valor no numerico
-    # tumbaba la peticion entera con un 500 en vez de simplemente ignorarlo.
+    # Un valor no numérico se ignora en vez de dar un 500.
     def _parse_float(raw: str) -> float | None:
         if not raw.strip():
             return None

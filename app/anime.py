@@ -58,7 +58,7 @@ query ($search: String) {
         node { id type }
       }
     }
-    recommendations(sort: RATING_DESC, perPage: 10) {
+    recommendations(sort: RATING_DESC, perPage: 25) {
       nodes { rating mediaRecommendation { id } }
     }
   }
@@ -66,16 +66,53 @@ query ($search: String) {
 """
 
 
+# Recomendaciones de la comunidad guardadas por título (anilist_cross_rec_ids). El
+# calendario de temporada se queda en 10: pide 50 animes por página y con 25 supera el
+# límite de complejidad de AniList.
+ANILIST_RECS_PER_TITLE = 25
+
+ANILIST_RECS_BY_ID_QUERY = """
+query ($ids: [Int], $perRec: Int) {
+  Page(page: 1, perPage: 50) {
+    media(id_in: $ids, type: ANIME) {
+      id
+      recommendations(sort: RATING_DESC, perPage: $perRec) {
+        nodes { rating mediaRecommendation { id } }
+      }
+    }
+  }
+}
+"""
+
+
+def get_anilist_recommendations(ids: list[int], chunk_size: int = 10) -> dict[int, tuple[list[int], list[int]]]:
+    """Recomendaciones de la comunidad por id de AniList ya conocido, en lotes - para
+    refrescar anilist_cross_rec_ids sin repetir la busqueda por texto de cada titulo
+    (que podria emparejar distinto). Lotes pequeños por el limite de complejidad.
+    Devuelve {anilist_id: (ids_recomendados, votos)}, alineados."""
+    out = {}
+    for start in range(0, len(ids), chunk_size):
+        chunk = ids[start:start + chunk_size]
+        for attempt in range(4):
+            resp = httpx.post(
+                ANILIST_URL,
+                json={"query": ANILIST_RECS_BY_ID_QUERY,
+                      "variables": {"ids": chunk, "perRec": ANILIST_RECS_PER_TITLE}},
+                timeout=20,
+            )
+            if resp.status_code != 429:
+                break
+            time.sleep(float(resp.headers.get("Retry-After", 3 * (attempt + 1))))
+        resp.raise_for_status()
+        for m in ((resp.json().get("data") or {}).get("Page") or {}).get("media") or []:
+            out[m["id"]] = (_extract_relations(m)[1], _extract_rec_votes(m))
+        time.sleep(0.7)
+    return out
+
+
 def _extract_tags(media: dict) -> list[tuple[str, int]]:
-    """Tags de AniList relevantes (Isekai, Time Travel...) - mas finos que los generos
-    fijos (Action/Fantasy/...), pedido por el usuario: "genero fav es romance e isekai... no
-    lo veo reflejado" - Isekai no existe como genero en AniList, solo como tag.
-    Filtrado a rank>=60 (AniList da un % de cuanto aplica el tag, muchos son ruido de
-    <20%) y sin spoilers generales (serian señal de trama, no de gusto), tope 8 por
-    titulo para no disparar el numero de columnas del perfil con tags rarisimos.
-    Devuelve (nombre, rank) - el rank hace falta en el candidato del calendario para
-    ponderar cada tag por lo relevante que es en ESE titulo (repo.predict_score), no
-    solo si aparece o no."""
+    """Tags relevantes de AniList (rank >= 60, sin spoilers, máximo 8 por título).
+    Devuelve (nombre, rank): el rank pondera cada tag en la predicción."""
     relevant = [
         t for t in (media.get("tags") or [])
         if t.get("rank", 0) >= 60 and not t.get("isGeneralSpoiler")
@@ -100,18 +137,20 @@ def _extract_relations(media: dict) -> tuple[list[int], list[int]]:
     return prequel_ids, cross_rec_ids
 
 
-def match_anilist_basic(title: str) -> dict | None:
-    """Id, generos y estudio principal de AniList para un titulo YA en la biblioteca -
-    construye el perfil de gustos del usuario (genero/estudio vs sus notas, ver
-    repo.build_taste_profile) para la prediccion "% que te gustara" del calendario de
-    temporada. Solo el mejor match por texto - mismo riesgo de despiste de idioma que
-    search_anime/search_characters (ver notas ahi); aceptable porque el perfil no
-    necesita cobertura del 100% para ser util, solo la mayoria.
+def _extract_rec_votes(media: dict) -> list[int]:
+    """Votos netos de la comunidad de cada recomendacion, alineados con los
+    cross_rec_ids de _extract_relations (mismo filtro, mismo orden). AniList puede
+    devolver votos netos negativos o 0; se guardan tal cual."""
+    return [
+        n.get("rating") or 0 for n in (media.get("recommendations") or {}).get("nodes", [])
+        if n.get("mediaRecommendation")
+    ]
 
-    AniList limita a ~90 peticiones/minuto (a veces menos, "degradado") - un backfill
-    de ~200 titulos dispara ese limite facil, y el 429 se veia como "no lo conoce"
-    (perfil real: 13/122 con solo 8 workers en paralelo, 2026-08-13). Reintenta
-    respetando el header Retry-After en vez de tragarse el fallo."""
+
+def match_anilist_basic(title: str) -> dict | None:
+    """Id, géneros, estudio, tags y relaciones de AniList para un título de la
+    biblioteca, emparejado por texto. AniList limita a ~90 peticiones/minuto, así que
+    reintenta respetando Retry-After."""
     for attempt in range(4):
         resp = httpx.post(
             ANILIST_URL, json={"query": ANILIST_MATCH_QUERY, "variables": {"search": title}}, timeout=10
@@ -130,30 +169,64 @@ def match_anilist_basic(title: str) -> dict | None:
         "anilist_id": media["id"],
         "genres": media.get("genres") or [],
         "studio": studios[0] if studios else None,
-        # Titulo romaji/ingles de AniList - subtitulo en la ficha tecnica para poder
-        # buscar el anime en jkanime/tioanime/etc, que no conocen el titulo en
-        # español de TMDB ni tienen por que tener el kanji a mano (El usuario, 2026-08-14).
+        # Romaji/inglés para el subtítulo de la ficha: sirve para buscar el anime en
+        # webs que no conocen el título en español.
         "title_romaji": title.get("romaji"),
         "title_english": title.get("english"),
         # Solo nombres aqui - esto va al perfil (titulos YA puntuados), el rank de
         # relevancia solo hace falta del lado del candidato (get_seasonal_anime).
         "tags": [name for name, _rank in _extract_tags(media)],
-        # Para poder predecir sobre pendientes (no solo sobre el calendario de
-        # temporada): con esto guardado no hace falta re-consultar AniList cada vez
-        # que se calcula la prediccion de un pendiente (El usuario, 2026-08-13: "aplicar la
-        # prediccion a mis pendientes").
+        # Guardado para predecir también sobre pendientes sin volver a consultar AniList.
         "prequel_ids": prequel_ids,
         "cross_rec_ids": cross_rec_ids,
+        "cross_rec_votes": _extract_rec_votes(media),
     }
 
 
+ANILIST_TITLES_QUERY = """
+query ($ids: [Int], $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
+    media(id_in: $ids, type: ANIME) {
+      id
+      title { romaji english }
+      isAdult
+    }
+  }
+}
+"""
+
+
+def get_anilist_titles(ids: list[int]) -> dict[int, dict]:
+    """Titulo romaji/ingles de varios anime por id de AniList, en lotes de 50 - para
+    poder emparejar con TMDB las recomendaciones de la comunidad (repo.recommendations),
+    que solo se guardan como ids. Mismo reintento ante 429 que match_anilist_basic."""
+    out = {}
+    for start in range(0, len(ids), 50):
+        chunk = ids[start:start + 50]
+        for attempt in range(4):
+            resp = httpx.post(
+                ANILIST_URL,
+                json={"query": ANILIST_TITLES_QUERY, "variables": {"ids": chunk, "page": 1}},
+                timeout=15,
+            )
+            if resp.status_code != 429:
+                break
+            time.sleep(float(resp.headers.get("Retry-After", 3 * (attempt + 1))))
+        resp.raise_for_status()
+        for m in ((resp.json().get("data") or {}).get("Page") or {}).get("media") or []:
+            title = m.get("title") or {}
+            out[m["id"]] = {
+                "romaji": title.get("romaji"),
+                "english": title.get("english"),
+                "is_adult": bool(m.get("isAdult")),
+            }
+    return out
+
+
 def get_seasonal_anime(season: str, year: int) -> list[dict]:
-    """Todo el anime de esa temporada/año segun AniList - calendario de descubrimiento
-    (El usuario: "para no tener que buscarlo en calendarioanime.com", 2026-08-13), no
-    limitado a lo que ya sigue en su biblioteca. Solo formatos serializados (TV/
-    TV_SHORT/ONA) - las peliculas y specials no tienen "dia de la semana" y son ruido
-    para este calendario en concreto. Pagina hasta 3 tandas (150 titulos) de sobra
-    para una temporada entera ya filtrada a solo TV."""
+    """Todo el anime de una temporada según AniList (TV, TV_SHORT y ONA; películas y
+    especiales no tienen día de emisión). Hasta 3 páginas de 50."""
     results = []
     for page in range(1, 4):
         resp = httpx.post(
@@ -180,12 +253,8 @@ def get_seasonal_anime(season: str, year: int) -> list[dict]:
                 {
                     "anilist_id": m.get("id"),
                     "title": title.get("english") or title.get("romaji"),
-                    # Titulo romaji aparte del de arriba (que prefiere ingles para
-                    # mostrar): TMDB muchas veces solo indexa el romaji/original de
-                    # animes sin licencia occidental, nunca la traduccion al ingles
-                    # de AniList - sin este segundo candidato, /calendario/abrir no
-                    # encontraba nada bajo ningun titulo calculado desde el ingles
-                    # (caso real, el usuario: "You and I Are Polar Opposites Season 2").
+                    # Romaji aparte: TMDB a menudo solo indexa el romaji de los animes
+                    # sin licencia occidental.
                     "title_romaji": title.get("romaji"),
                     "tags": _extract_tags(m),
                     "image": (m.get("coverImage") or {}).get("large"),
@@ -196,13 +265,8 @@ def get_seasonal_anime(season: str, year: int) -> list[dict]:
                     "site_url": m.get("siteUrl"),
                     "prequel_ids": prequel_ids,
                     "cross_rec_ids": cross_rec_ids,
-                    # 0=Lunes...6=Domingo. nextAiringEpisode solo existe mientras esta
-                    # en emision - una serie YA TERMINADA (frecuente en la temporada de
-                    # invierno cuando ya estamos en verano) se queda sin él y caía
-                    # siempre en "Sin día fijo" aunque sí tuviera un día fijo real
-                    # (bug real, el usuario 2026-08-13). De respaldo, el día del estreno
-                    # (startDate) - el día de la semana no cambia entre el primer
-                    # episodio y el resto salvo pausas puntuales.
+                    # 0=lunes...6=domingo. Una serie terminada no tiene
+                    # nextAiringEpisode: se usa el día de la semana del estreno.
                     "weekday": (
                         datetime.fromtimestamp(airing_at, tz=timezone.utc).weekday() if airing_at
                         else date(start["year"], start["month"], start["day"]).weekday()
@@ -230,8 +294,8 @@ query ($search: String) {
 """
 
 ANILIST_CHARACTERS_QUERY = """
-query ($search: String) {
-  Media(search: $search, type: ANIME) {
+query ($search: String, $id: Int) {
+  Media(search: $search, id: $id, type: ANIME) {
     characters(sort: [ROLE, RELEVANCE], perPage: 25) {
       edges {
         role
@@ -332,14 +396,18 @@ def _search_jikan_characters(query: str, limit: int = 5) -> list[dict]:
     return results
 
 
-def get_characters(query: str) -> list[dict]:
-    """Personajes del anime (con su imagen de personaje, no del actor real), via AniList.
-    Lista vacia si AniList no conoce el titulo - el caller decide el fallback (TMDB)."""
+def get_characters(query: str | None = None, anilist_id: int | None = None) -> list[dict]:
+    """Personajes del anime (con su imagen de personaje, no del actor real), via AniList,
+    por id si ya se conoce (exacto) o por busqueda de titulo. Lista vacia si AniList no
+    lo conoce - el caller decide que hacer."""
+    variables = {"id": anilist_id} if anilist_id else {"search": query}
     resp = httpx.post(
         ANILIST_URL,
-        json={"query": ANILIST_CHARACTERS_QUERY, "variables": {"search": query}},
+        json={"query": ANILIST_CHARACTERS_QUERY, "variables": variables},
         timeout=10,
     )
+    if resp.status_code == 404:  # AniList responde 404 cuando la busqueda no encuentra nada
+        return []
     resp.raise_for_status()
     media = (resp.json().get("data") or {}).get("Media")
     if not media:

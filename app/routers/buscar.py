@@ -1,4 +1,4 @@
-"""app.routers.buscar - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.buscar - búsqueda en TMDB y alta manual."""
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -23,8 +23,7 @@ def buscar(request: Request, q: str = ""):
     ya relleno y dispara la busqueda solo con "load" en el hx-trigger, sin duplicar la
     logica de busqueda de /buscar/resultados."""
     with get_connection() as conn:
-        # 6 dejaba una fila corta con hueco muerto grande a la derecha en pantallas
-        # anchas (El usuario, monitor QHD: "se ve vacía") - 11 a peticion explicita suya.
+        # 11 sugerencias: con menos queda un hueco grande en pantallas anchas.
         recs = repo.list_recommendations(conn, request.state.user_id, limit=11)
     for r in recs:
         r["state"] = "new"
@@ -40,13 +39,8 @@ def buscar_resultados(request: Request, q: str = ""):
     se reintenta con el. tmdb.search() sin proteger tumbaba la ruta entera (500, sin
     resultados en pantalla) si un solo timeout de TMDB reventaba - "Black Clover" a
     veces desaparecia del buscador sin más explicación por esto."""
-    # Bug real (El usuario, 2026-08-21): "al buscar una cosa se me desaparecen los
-    # recomendados" - al escribir y luego borrar el buscador hasta dejarlo vacio,
-    # este endpoint devolvia un partial en blanco (search_results.html no pinta
-    # nada si results=[] y query=""), perdiendo para siempre los recomendados que
-    # /buscar puso al entrar - htmx solo sabe pedir resultados de busqueda, nunca
-    # "vuelve" sola a la vista inicial. Con q vacio, se devuelven los mismos
-    # recomendados que ya se ven al entrar en la pagina.
+    # Con el buscador vacío se devuelven las mismas sugerencias que al entrar: si no,
+    # al borrar lo escrito desaparecían para siempre.
     if not q.strip():
         with get_connection() as conn:
             recs = repo.list_recommendations(conn, request.state.user_id, limit=11)

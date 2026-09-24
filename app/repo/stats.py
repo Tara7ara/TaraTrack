@@ -1,13 +1,6 @@
-"""app.repo.stats - extraido de repo.py en el split de modulos (ronda 2026-08-21).
-Ver app/repo/__init__.py para el mapa completo de que vive en cada fichero -
-el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
-exactamente igual que antes, este split es puramente interno.
-
-Multiusuario Fase 2 (2026-09-17): toda funcion de aqui filtra por user_id - antes
-las estadisticas mezclaban el consumo de TODOS los usuarios de la instancia. Las
-referencias a episodes.watched_at/is_favorite (columnas compartidas, ya no
-actualizadas desde el motor de episodios) se sustituyen por episode_watches/
-episode_user_state, ambas con user_id."""
+"""app.repo.stats - estadísticas y resumen anual, siempre filtrados por usuario
+(episode_watches y episode_user_state). El resto del proyecto usa
+`from app import repo; repo.funcion(...)`."""
 from datetime import datetime, timezone
 
 from app.repo._shared import (
@@ -16,10 +9,7 @@ from app.repo._shared import (
 
 
 def list_favorite_episodes(conn, user_id):
-    """Episodios marcados con estrella por ESTE usuario (episode_user_state), agrupados
-    por titulo - en /estadisticas solo se veia el CONTADOR (fav_episodes de get_stats),
-    sin forma de ver CUALES eran (El usuario, notas.txt: "poder ver los eps favoritos que
-    tengo... que no se cuales son")."""
+    """Episodios marcados con estrella por este usuario, agrupados por título."""
     return conn.execute(
         """SELECT episodes.season_number, episodes.episode_number, episodes.name,
                   titles.title, titles.tmdb_id, titles.type
@@ -52,10 +42,8 @@ def get_stats(conn, user_id):
         (user_id,) * 8,
     ).fetchone()
 
-    # Tiempo total: episodios vistos x minutos/ep de su serie + duracion de las pelis vistas.
-    # Cada visionado real (incluidas las re-vistas de un episodio suelto, 2026-08-21)
-    # suma su propio tiempo - episode_watches tiene una fila por vez, no por episodio
-    # unico.
+    # Tiempo total: episodios vistos x minutos por episodio + duración de las películas.
+    # Cada visionado suma (episode_watches tiene una fila por vez).
     minutes = conn.execute(
         """SELECT
              COALESCE((SELECT sum(COALESCE(titles.runtime_minutes, 22))
@@ -90,12 +78,8 @@ def get_stats(conn, user_id):
             genre_counts[genre] = genre_counts.get(genre, 0) + 1
     top_genres = sorted(genre_counts.items(), key=lambda g: g[1], reverse=True)[:10]
 
-    # Excluye episodios de titulos marcados como habito (Shin Chan, Pokemon...) - El usuario,
-    # tras ver un pico real de 7317 en un mes: eran 5528 episodios de series de habito
-    # sincronizadas de golpe un mismo dia, no visionado real ese mes. Mismo criterio que
-    # ya usa el motor de afinidad para excluir habito del eje apetito (ver
-    # _aggregate_affinity) - aqui aplicado al grafico "Episodios por mes" por el mismo
-    # motivo: refleja mejor CUANDO viste algo de verdad, no cuando se sincronizo.
+    # Sin las series marcadas como hábito: suelen sincronizarse en bloque un mismo día
+    # y dispararían un mes que no refleja cuándo se vieron.
     monthly = conn.execute(
         """SELECT substr(episode_watches.watched_at, 1, 7) AS month, count(*) AS c
            FROM episode_watches
@@ -128,10 +112,8 @@ def get_available_years(conn, user_id) -> list[int]:
            ) WHERE y >= '1980' ORDER BY y DESC""",
         (user_id, user_id),
     ).fetchall()
-    # Bug real (AGY, 2026-09-18): int(r["y"]) sin proteger revienta /resumen entero
-    # con un 500 si algun watched_at viene malformado (fecha escrita a mano invalida
-    # via /entrada/{id}/fecha-visionado, import viejo...) y sus primeros 4 caracteres
-    # no son un año de verdad, aunque pasen el filtro de comparacion de texto ">= '1980'".
+    # Un watched_at malformado no puede tumbar /resumen: se ignora si no empieza por
+    # un año válido.
     return [int(r["y"]) for r in rows if r["y"] and r["y"].isdigit()]
 
 

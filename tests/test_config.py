@@ -8,8 +8,7 @@ def test_validate_passes_when_everything_present():
 
 
 def test_validate_fails_listing_every_missing_var():
-    """Ronda 2026-08-21, config centralizada: on_startup ahora falla alto y claro
-    si falta CUALQUIERA de las 3 variables obligatorias, no solo el secret de sesion."""
+    """El arranque falla si falta cualquiera de las 3 variables obligatorias."""
     with pytest.raises(RuntimeError) as exc_info:
         config.validate(env={"TARATRACK_SECRET_KEY": "y"})
     assert "TMDB_API_KEY" in str(exc_info.value)

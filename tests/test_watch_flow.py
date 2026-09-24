@@ -27,8 +27,7 @@ def _episode(conn, episode_id):
 
 
 def _watched_at(conn, episode_id, user_id):
-    """Multiusuario Fase 2: 'la fecha' de un episodio ya no vive en episodes.watched_at
-    (columna compartida, ya no se actualiza) - hay que mirar episode_watches por-usuario."""
+    """La fecha de un episodio se mira en episode_watches, por usuario."""
     row = conn.execute(
         "SELECT max(watched_at) AS w FROM episode_watches WHERE episode_id = ? AND user_id = ?",
         (episode_id, user_id),
@@ -37,8 +36,7 @@ def _watched_at(conn, episode_id, user_id):
 
 
 def test_toggle_episode_returns_true_only_when_marking_watched(conn, user_id):
-    """El usuario, 2026-09-18 ('estilo tvtime'): la señal de 'esto se acaba de marcar
-    visto ahora' (no un desmarcado) decide si se abre solo el hilo de debate."""
+    """toggle_episode indica si se acaba de marcar visto (no desmarcado)."""
     _, _, episode = _make_show_with_episode(conn, user_id)
 
     assert repo.toggle_episode(conn, episode["id"], user_id) is True
@@ -46,9 +44,8 @@ def test_toggle_episode_returns_true_only_when_marking_watched(conn, user_id):
 
 
 def test_marking_episode_directly_promotes_pending_to_watched(conn, user_id):
-    """Bug real: marcar un episodio suelto sin pasar por el boton 'Marcar vista'
-    dejaba la entry en pending para siempre, aunque la serie estuviera vista
-    entera. _promote_if_first_watch debe pasarla a watched."""
+    """Marcar un episodio suelto sin "Marcar vista" pasa la entry a watched
+    (_promote_if_first_watch)."""
     title, entry, episode = _make_show_with_episode(conn, user_id)
     repo.toggle_episode(conn, episode["id"], user_id)
     assert _entry(conn, entry["id"])["status"] == "watched"
@@ -107,9 +104,8 @@ def test_mark_watched_quick_is_noop_if_already_watched(conn, user_id):
 
 
 def test_undo_mark_watched_only_reverts_episodes_from_that_moment(conn, user_id):
-    """Ronda 2026-08-20: undo_mark_watched ya NO desmarca todos los episodios del
-    titulo a ciegas - solo los que comparten el watched_at exacto que puso
-    mark_watched_quick, para no perder episodios vistos de verdad de antes."""
+    """undo_mark_watched solo desmarca los episodios con el watched_at exacto que puso
+    mark_watched_quick."""
     title, entry, ep1 = _make_show_with_episode(conn, user_id, air_date="2020-01-01")
     conn.execute(
         "INSERT INTO episodes (title_id, season_number, episode_number, air_date) VALUES (?, 1, 2, '2020-01-08')",
@@ -119,12 +115,12 @@ def test_undo_mark_watched_only_reverts_episodes_from_that_moment(conn, user_id)
         "SELECT * FROM episodes WHERE title_id = ? AND episode_number = 2", (title["id"],)
     ).fetchone()
 
-    # ep1 ya estaba visto de verdad, con su propia fecha, ANTES del marcado por error.
+    # ep1 ya estaba visto, con su propia fecha, antes del marcado por error.
     repo._log_episode_watch(conn, ep1["id"], user_id, "2019-06-01T00:00:00Z")
     conn.execute("UPDATE entries SET status = 'watched', watched_at = '2019-06-01T00:00:00Z' WHERE id = ?", (entry["id"],))
 
     # Marcado por error via mark_watched_quick: como la entry YA estaba watched, no hace nada -
-    # simulamos el caso real (Tougen Anki) marcando el entry watched a mano con un instante nuevo
+    # se simula marcando la entry watched a mano con un instante nuevo
     # y el propio mark_watched_quick habria marcado un episodio en ese mismo instante.
     conn.execute("UPDATE entries SET status = 'pending', watched_at = NULL WHERE id = ?", (entry["id"],))
     title_row = dict(title)
@@ -138,13 +134,12 @@ def test_undo_mark_watched_only_reverts_episodes_from_that_moment(conn, user_id)
     assert _entry(conn, entry["id"])["status"] == "pending"
     # ep2 (marcado por error) se desmarca...
     assert _watched_at(conn, ep2["id"], user_id) is None
-    # ...pero ep1 (visto de verdad antes) no se toca.
+    # ...pero ep1 (visto antes) no se toca.
     assert _watched_at(conn, ep1["id"], user_id) == "2019-06-01T00:00:00Z"
 
 
 def test_start_rewatch_does_not_erase_watched_at(conn, user_id):
-    """Estilo Trakt (2026-08-20): 'Volver a ver' nunca borra el historial de
-    episode_watches - solo guarda cuando empezo la ronda nueva."""
+    """"Volver a ver" no borra el historial de episode_watches."""
     title, entry, episode = _make_show_with_episode(conn, user_id)
     repo.toggle_episode(conn, episode["id"], user_id)
     original_watched_at = _watched_at(conn, episode["id"], user_id)
@@ -158,18 +153,16 @@ def test_start_rewatch_does_not_erase_watched_at(conn, user_id):
 
 
 def _mark_old_watch(conn, title_id, episode_id, user_id, when="2020-06-01T00:00:00Z"):
-    """Marca un episodio visto en una fecha claramente pasada (no 'ahora') - para los
-    tests de rewatch, donde hace falta que el visionado original sea de forma
-    inequivoca ANTERIOR al inicio de la ronda nueva (start_rewatch usa la hora real
-    del sistema); con dos marcados en el mismo segundo, _pending_clause ('>=') no
-    distinguiria cual es cual."""
+    """Marca un episodio visto en una fecha claramente pasada, para que en los tests de
+    rewatch sea inequívocamente anterior al inicio de la ronda (start_rewatch usa la
+    hora del sistema; en el mismo segundo _pending_clause no los distinguiría)."""
     repo._log_episode_watch(conn, episode_id, user_id, when)
     repo._promote_if_first_watch(conn, title_id, user_id)
 
 
 def test_rewatch_makes_old_episode_pending_again(conn, user_id):
-    """Tras 'Volver a ver', el episodio visto antes de la ronda debe volver a
-    contar como pendiente de re-ver (_pending_clause), aunque su fecha vieja siga ahi."""
+    """Tras "Volver a ver", lo visto antes de la ronda cuenta como pendiente, sin perder
+    su fecha."""
     title, entry, episode = _make_show_with_episode(conn, user_id)
     _mark_old_watch(conn, title["id"], episode["id"], user_id)
     assert repo.next_unwatched_episode(conn, title["id"], None, user_id) is None  # nada pendiente todavia
@@ -218,9 +211,7 @@ def test_rewatch_unmark_recent_restores_old_date_not_null(conn, user_id):
 
 
 def test_episode_watch_is_isolated_per_user(conn, user_id):
-    """Multiusuario Fase 2 (2026-09-17): marcar un episodio visto NO debe marcarlo
-    como visto para otro usuario que tambien sigue el mismo titulo (bug real
-    encontrado en pruebas antes de desplegar - toggle_episode/promote eran globales)."""
+    """Marcar un episodio no lo marca como visto para otro usuario del mismo título."""
     other = repo.create_user(conn, "otro", "unaclave123")
     title, entry_a, episode = _make_show_with_episode(conn, user_id)
     conn.execute(

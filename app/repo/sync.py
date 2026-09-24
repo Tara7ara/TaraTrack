@@ -1,7 +1,5 @@
-"""app.repo.sync - extraido de repo.py en el split de modulos (ronda 2026-08-21).
-Ver app/repo/__init__.py para el mapa completo de que vive en cada fichero -
-el resto del proyecto sigue usando `from app import repo; repo.funcion(...)`
-exactamente igual que antes, este split es puramente interno."""
+"""app.repo.sync - sincronización de la biblioteca con TMDB y estado del último sync.
+El resto del proyecto usa `from app import repo; repo.funcion(...)`."""
 import logging
 import time
 from datetime import datetime, timezone
@@ -17,10 +15,8 @@ from app.repo.users import list_users
 
 
 def get_sync_status(conn):
-    """Estado del ultimo sync completado (boton "Sincronizar" o tarea de fondo cada
-    12h) - El usuario, tras la revision externa del codigo: "guardar y mostrar ultimo sync
-    correcto, duracion y si fallo... es pequeño pero util cuando algo externo deja de
-    responder". Mismo patron app_settings clave/valor que get_recompute_status."""
+    """Estado del último sync (botón "Sincronizar" o tarea de fondo): cuándo, cuánto
+    tardó y si falló. En app_settings, como get_recompute_status."""
     raw_duration = get_setting(conn, "sync_last_duration_seconds")
     return {
         "running": get_setting(conn, "sync_running") == "1",
@@ -51,9 +47,8 @@ def sync_library():
     try:
         errors = _sync_library_body(titles)
     except Exception as e:
-        # Fallo de verdad, no el "por titulo" ya capturado dentro (ese solo suma a
-        # errors) - se re-lanza igual (calendario_sincronizar no lo captura, sync_loop
-        # si) pero antes queda registrado para que /calendario lo enseñe.
+        # Fallo general (los de cada título ya se capturan dentro y solo suman a
+        # errors): se registra para que /calendario lo enseñe y se relanza.
         sync_error = str(e)[:500]
         raise
     finally:
@@ -76,32 +71,19 @@ def _sync_library_body(titles) -> int:
     errors = 0
     for title_row in titles:
         try:
-            # Dos conexiones (= dos transacciones) por titulo, no una: refresh_metadata
-            # ya escribe (UPDATE titles) antes de que sync_episodes haga sus propias
-            # llamadas de red (get_details + episodios por temporada) - con todo en la
-            # MISMA transaccion, el lock de escritura que agarra ese primer UPDATE se
-            # quedaba sujeto durante esas llamadas de red tambien, no solo durante los
-            # INSERT finales. Bug real (El usuario: "/pendientes tarda mucho a veces, pero
-            # Docker no consume nada" - encaja exacto con estar bloqueado esperando el
-            # lock, no computando): `snapshot_profile_progress` (la unica otra escritura
-            # de la app, llamada en cada carga de /pendientes) fallaba con "database is
-            # locked" en los logs de produccion, siempre en mitad de una sync de fondo.
-            # Partiendo en dos transacciones cortas, cada una solo agarra el lock justo
-            # antes de sus INSERT/UPDATE ya con los datos de red en mano, nunca durante
-            # la espera de red en si.
+            # Dos transacciones cortas por título: si refresh_metadata y sync_episodes
+            # compartieran una, el lock de escritura del primer UPDATE se mantendría
+            # durante las llamadas de red y el resto de la app vería "database is
+            # locked".
             with get_connection() as conn:
                 refresh_metadata(conn, title_row)
             if title_row["type"] == "show":
                 with get_connection() as conn:
                     fresh = get_title(conn, title_row["tmdb_id"])
                     airing = fresh["show_status"] == "Returning Series" or fresh["next_episode_air_date"]
-                    # Series empezadas (historial importado) pero sin fechas de emision
-                    # cacheadas: una sincronizacion unica para que "Continuar viendo"
-                    # sepa cuantos episodios faltan. Las terminadas no cambian, no se repite.
-                    # Multiusuario Fase 2 (2026-09-17): "empezada" ya no mira
-                    # episodes.watched_at (columna compartida, ya no se actualiza) -
-                    # mira si ALGUIEN (cualquier usuario) tiene algun marcado real via
-                    # episode_watches, que es lo que de verdad indica "esto se sigue".
+                    # Series empezadas sin fechas de emisión cacheadas: se sincronizan una
+                    # vez para que "Continuar viendo" sepa cuántos episodios faltan.
+                    # "Empezada" = algún usuario tiene un visionado en episode_watches.
                     started_without_dates = conn.execute(
                         """SELECT EXISTS(SELECT 1 FROM episode_watches
                                          JOIN episodes ON episodes.id = episode_watches.episode_id
@@ -112,13 +94,8 @@ def _sync_library_body(titles) -> int:
                     ).fetchone()[0]
                     if airing or started_without_dates:
                         sync_episodes(conn, fresh)
-                        # Autover: episodios recien sincronizados que ya emitieron se
-                        # marcan vistos solos, reusando el mismo "doble tick" manual -
-                        # asi nunca se acumulan esperando un click en Continuar viendo.
-                        # Es un flag POR USUARIO (entries.auto_watch) - se aplica a cada
-                        # entry que lo tenga activado, no solo a "la" entry del titulo
-                        # (bug real de la primera version multiusuario: solo cogia una
-                        # entry cualquiera, sin mirar de quien era ni si habia mas).
+                        # Autover: los episodios recién sincronizados que ya emitieron se
+                        # marcan vistos para cada entry que lo tenga activado.
                         auto_entries = conn.execute(
                             "SELECT id FROM entries WHERE title_id = ? AND auto_watch = 1", (fresh["id"],)
                         ).fetchall()
@@ -130,10 +107,8 @@ def _sync_library_body(titles) -> int:
             continue
     logging.info("sync_library: %d titulos, %d fallos", len(titles), errors)
 
-    # Multiusuario Fase 3 (2026-09-18): el indice de afinidad es por-usuario - la sync
-    # de fondo recalcula el de CADA usuario con al menos una nota puesta (saltarse a
-    # los que no tienen ninguna evita un recalculo vacio inutil). Un fallo en el
-    # perfil de un usuario no debe impedir que se recalculen los demas.
+    # Recalcula el índice de afinidad de cada usuario con al menos una nota. Un fallo
+    # en uno no impide los demás.
     with get_connection() as conn:
         user_ids = [u["id"] for u in list_users(conn)]
     for user_id in user_ids:

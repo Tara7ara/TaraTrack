@@ -9,10 +9,7 @@ def test_fmt_ago_parses_python_iso_format():
 
 
 def test_fmt_ago_parses_sqlite_format():
-    """Bug real (AGY, 2026-09-18): fmt_ago solo entendia el formato con T/Z que
-    genera Python - los created_at de episode_comments vienen de datetime('now')
-    de SQLite ('YYYY-MM-DD HH:MM:SS', sin T ni Z) y caian al fallback (fecha en
-    crudo) en vez de dar "hace X min"."""
+    """fmt_ago entiende también el formato de datetime('now') de SQLite (sin T ni Z)."""
     from datetime import datetime, timedelta, timezone
 
     hace_5_min = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")

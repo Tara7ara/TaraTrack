@@ -7,7 +7,7 @@
             hx-get="/pendiente/{{ tmdb_id }}/{{ type }}/confirmar" hx-target="closest .actions" hx-swap="outerHTML">✓ En pendientes</button>
     <button class="btn" hx-post="/vista/{{ tmdb_id }}/{{ type }}" hx-target="closest .actions" hx-swap="outerHTML">Marcar vista</button>
 {% elif state == "pending_confirm" %}
-    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
+    {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
     <button class="secondary" title="Sí, quitarlo de pendientes"
             hx-post="/pendiente/{{ tmdb_id }}/{{ type }}" hx-target="closest .actions" hx-swap="outerHTML">¿Quitar? Sí</button>
     <button class="btn secondary" title="No, dejarlo"

@@ -1,26 +1,18 @@
 #!/bin/bash
-# Despliegue de TaraTrack: valida en local, saca un snapshot de seguridad del
-# servidor, sincroniza, reconstruye el contenedor y verifica que responde -
-# todo en un solo comando en vez del ritual manual de siempre
-# (rsync + build + docker rm -f + up -d), que ya ha fallado una vez de verdad
-# por un rsync mal apuntado que aplano rutas dentro de app/ (ronda 2026-08-21).
-#
-# Sin git en el proyecto (decision consciente del usuario), este script es la unica
-# red de seguridad real que existe hoy: antes de tocar nada en el servidor,
-# empaqueta el app/ actual del servidor en un .tar.gz fechado. Si el despliegue
-# sale mal, `scripts/deploy.sh --rollback` restaura ese snapshot y reconstruye.
+# Despliegue: valida en local, guarda un snapshot del app/ del servidor, sincroniza,
+# reconstruye el contenedor y comprueba que responde.
 #
 # Uso:
 #   scripts/deploy.sh                despliegue normal, con todas las comprobaciones
-#   scripts/deploy.sh --skip-tests   salta pytest/ruff (solo para iterar rapido - NUNCA para el despliegue real)
-#   scripts/deploy.sh --rollback     restaura el snapshot server-side mas reciente y reconstruye
+#   scripts/deploy.sh --skip-tests   salta pytest/ruff (solo para iterar rápido)
+#   scripts/deploy.sh --rollback     restaura el snapshot más reciente y reconstruye
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV="/home/tara/.venvs/taratrack/bin"
+VENV="$HOME/.venvs/taratrack/bin"
 SERVER="servidor"
-SERVER_APP_DIR="/home/tara/taratrack"
-SNAPSHOT_DIR="/home/tara/taratrack/deploy-snapshots"
+SERVER_APP_DIR="$HOME/taratrack"
+SNAPSHOT_DIR="$HOME/taratrack/deploy-snapshots"
 KEEP_SNAPSHOTS=5
 
 cd "$REPO_DIR"
@@ -105,11 +97,8 @@ ssh "$SERVER" "
 echo "-- rsync app/ -> servidor (con --delete: la estructura ya ha cambiado de raiz alguna vez) --"
 rsync -av --delete --exclude "__pycache__/" "$REPO_DIR/app/" "$SERVER:$SERVER_APP_DIR/app/"
 
-# Bug real (AGY, 2026-09-18): docker-compose.yml/Dockerfile viven en la raiz del repo,
-# FUERA de app/, asi que nunca se sincronizaban - un volumen nuevo (p.ej. avatars/,
-# ronda 2026-09-18) se quedaba solo en el repo local sin llegar jamas al servidor, sin
-# ningun aviso. El snapshot de arriba sigue sin cubrir estos dos ficheros (cambian muy
-# poco) - si algun rollback los necesitara, restaurarlos a mano es el unico camino hoy.
+# docker-compose.yml y Dockerfile viven fuera de app/: se sincronizan aparte. El
+# snapshot no los cubre.
 echo "-- Sincronizando docker-compose.yml y Dockerfile --"
 scp "$REPO_DIR/docker-compose.yml" "$REPO_DIR/Dockerfile" "$SERVER:$SERVER_APP_DIR/"
 

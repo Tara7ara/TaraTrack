@@ -1,4 +1,4 @@
-"""app.routers.waifus - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.waifus - personajes favoritos, orden y duelos."""
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -71,9 +71,8 @@ def waifus_anadir(
     estrella del tiron (que para eso lo estaba buscando)."""
     with get_connection() as conn:
         title_row = conn.execute("SELECT * FROM titles WHERE id = ?", (title_id,)).fetchone()
-        # Sin filtrar por user_id, esto engancharia el personaje favorito a la entry
-        # de OTRO usuario si ya tenia este titulo en su biblioteca (mismo tipo de bug
-        # ya arreglado en /pendiente y /titulo, ver notas del 2026-09-17).
+        # Filtrado por user_id: si no, el personaje se colgaría de la entry de otro
+        # usuario con el mismo título.
         entry = conn.execute(
             "SELECT id FROM entries WHERE title_id = ? AND user_id = ?", (title_id, request.state.user_id)
         ).fetchone()
@@ -127,7 +126,7 @@ def waifus_orden(request: Request, modo: str = Form(...)):
 @router.get("/waifus/duelo", response_class=HTMLResponse)
 def waifus_duelo(request: Request):
     """Ranking por duelos sobre TUS waifus: con 60 waifus las flechas nunca llegan a
-    dar un orden real - elegir A o B unas cuantas veces da un orden mas honesto (ver
+    dar un orden - elegir A o B unas cuantas veces da un orden mas honesto (ver
     repo.record_duel)."""
     with get_connection() as conn:
         ids = [w["fav_id"] for w in repo.list_waifus(conn, request.state.user_id)]

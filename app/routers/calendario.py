@@ -1,4 +1,4 @@
-"""app.routers.calendario - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.calendario - calendario semanal, calendario de temporada y sync."""
 import asyncio
 import logging
 from datetime import date
@@ -20,9 +20,13 @@ router = APIRouter()
 
 
 @router.get("/calendario/abrir", response_class=HTMLResponse)
-def calendario_abrir(request: Request, title: str = "", romaji: str = ""):
+def calendario_abrir(request: Request, title: str = "", romaji: str = "", anilist_id: int = 0):
     match = _resolve_calendar_match(title.strip(), romaji.strip()) if title.strip() else None
     if match:
+        if anilist_id:
+            with get_connection() as conn:
+                repo.ensure_title(conn, match["tmdb_id"], match["type"])
+                repo.link_calendar_card(conn, anilist_id, match["tmdb_id"], match["type"])
         return RedirectResponse(f"/titulo/{match['tmdb_id']}/{match['type']}", status_code=303)
     return RedirectResponse(f"/buscar?q={quote(title)}", status_code=303)
 
@@ -31,14 +35,12 @@ def calendario_abrir(request: Request, title: str = "", romaji: str = ""):
 
 @router.post("/calendario/anadir", response_class=HTMLResponse)
 def calendario_anadir(
-    request: Request, title: str = Form(...), romaji: str = Form(""), predict: str = Form("")
+    request: Request, title: str = Form(...), romaji: str = Form(""), predict: str = Form(""),
+    anilist_id: int = Form(0),
 ):
-    """+Pendientes desde la propia tarjeta del calendario de temporada, sin salir de
-    la pagina (htmx) - mismo mecanismo de busqueda que /calendario/abrir, y la entry
-    se crea pending igual que al abrir cualquier ficha nueva (repo.ensure_entry).
-    Guarda tambien la prediccion que se enseñaba en la tarjeta (`predicted_score`,
-    solo si la entry es nueva de verdad) para poder comparar mas tarde "expectativa
-    vs realidad" en la ficha una vez puntuada (El usuario, 2026-08-13)."""
+    """+ Pendientes desde la tarjeta del calendario de temporada, sin salir de la
+    página. Guarda también el % que enseñaba la tarjeta (solo si la entry es nueva),
+    para comparar después expectativa y nota."""
     r = _resolve_calendar_match(title.strip(), romaji.strip())
     if not r:
         return templates.TemplateResponse(
@@ -46,6 +48,7 @@ def calendario_anadir(
         )
     with get_connection() as conn:
         entry = repo.ensure_entry(conn, r["tmdb_id"], r["type"], request.state.user_id)
+        repo.link_calendar_card(conn, anilist_id, r["tmdb_id"], r["type"])
         if predict.strip().isdigit():
             repo.set_predicted_score(conn, entry["id"], int(predict))
     return templates.TemplateResponse(
@@ -130,22 +133,13 @@ async def _refresh_season_cache_async(season: str, year: int):
 async def calendario_anual(
     request: Request, year: int = 0, season: str = "", vista: str = "dia", afinidad_alta: str = ""
 ):
-    """Calendario tipo calendarioanime.com - TODO el anime TV/ONA de una temporada
-    segun AniList, no solo lo que ya sigue. Una temporada a la vez con pestañas
-    Invierno/Primavera/Verano/Otoño (vuelta atras tras probar el año entero de golpe -
-    "no me acaba de gustar ver todo en general"), por defecto la actual. Dos vistas:
-    por dia de emision (la de siempre) o por % de prediccion, de mayor a menor -
-    pedido para encontrar rapido lo que mas encaja sin mirar dia a dia.
+    """Calendario de temporada: todo el anime TV/ONA de una temporada según AniList,
+    una temporada a la vez (por defecto la actual), por día de emisión, por % o por
+    nota.
 
-    Cacheado en BBDD, ya NO pide a AniList en cada visita (El usuario, 2026-08-13: "el
-    calendario de anilist se cae mucho" - antes 2-3 peticiones en vivo por visita, un
-    solo hipo de AniList tumbaba la pagina entera). Primera vez que se pide una
-    temporada/año: fetch sincrono (no hay nada que enseñar todavia, hay que esperar).
-    Cache ya existente pero caducada (>24h): se enseña igual (mejor stale que nada) y
-    se refresca en segundo plano sin bloquear esta peticion - la siguiente visita ya
-    la ve fresca. Ademas hay un refresco automatico diario de la temporada actual
-    (ver season_cache_loop) para que ni haga falta visitarla para que se mantenga al
-    dia."""
+    Sale de la caché de la BBDD. La primera vez que se pide una temporada se espera a
+    AniList; si la caché tiene más de 24 h se enseña igual y se refresca en segundo
+    plano. La temporada actual se refresca sola cada día (season_cache_loop)."""
     year = year or date.today().year
     if season not in _SEASON_ORDER:
         season = _current_season()
@@ -167,22 +161,21 @@ async def calendario_anual(
         profile = repo.build_taste_profile(conn, request.state.user_id)
         pendientes_perfil = repo.count_anilist_backfill_pending(conn)
         weekday_overrides = repo.get_weekday_overrides(conn)
+        in_library = repo.library_status_for_cards(conn, request.state.user_id, items)
     for item in items:
-        # Dia de emision corregido a mano (El usuario: "lunes Grand Blue pero en el
-        # calendario sale los martes") - pisa el weekday calculado en UTC, ver
-        # app/anime.py y la tabla weekday_overrides.
+        # Día de emisión corregido a mano: pisa el calculado en UTC (tabla
+        # weekday_overrides).
         if item["anilist_id"] in weekday_overrides:
             item["weekday"] = weekday_overrides[item["anilist_id"]]
             item["weekday_overridden"] = True
         else:
             item["weekday_overridden"] = False
+        item["library_status"] = in_library.get(item["anilist_id"])
         detail = repo.predict_score_detail(item, profile)
         item["predict"] = detail["score"] if detail else None
         item["predict_confidence"] = detail["confidence"] if detail else None
-        # "Candidato a obra maestra" exige soporte real (tags/estudio/precuela), no
-        # solo una coincidencia de genero suelto - ver repo.MASTERPIECE_MIN_CONFIDENCE
-        # (El usuario, 2026-08-14: un short sin tags con Comedy como unico genero llegaba a
-        # 100% igual que un titulo con precuela puntuada de verdad).
+        # "Candidato a obra maestra" exige apoyo de tags, estudio o precuela, no solo
+        # un género (ver repo.MASTERPIECE_MIN_CONFIDENCE).
         item["masterpiece_candidate"] = (
             item["predict"] is not None and item["predict"] >= 95
             and item["predict_confidence"] is not None
@@ -195,9 +188,7 @@ async def calendario_anual(
     if vista == "porcentaje":
         por_porcentaje = sorted(items, key=lambda i: i["predict"] if i["predict"] is not None else -1, reverse=True)
     elif vista == "nota":
-        # "Nota de internet" = item["score"] (media de AniList, ya se enseña en cada
-        # tarjeta como "Nota: X") - mismo dato, solo un orden nuevo (El usuario, notas.txt:
-        # "calendario tambien ordenar por nota de internet").
+        # Orden por nota = item["score"], la media de AniList que ya enseña la tarjeta.
         por_nota = sorted(items, key=lambda i: i["score"] if i["score"] is not None else -1, reverse=True)
     else:
         vista = "dia"
@@ -225,12 +216,9 @@ async def calendario_anual(
 
 @router.post("/calendario/anual/perfil", response_class=HTMLResponse)
 async def calendario_anual_perfil(request: Request, year: int = 0, season: str = "", vista: str = "dia"):
-    """Rellena el perfil de gustos (repo.backfill_anilist_profile) para que la
-    prediccion "% que te gustara" tenga con que trabajar. Lanzado de verdad en
-    background (asyncio.create_task + to_thread, igual que sync_loop) y NO esperado -
-    con ~150 titulos y pausas de rate-limit puede tardar varios minutos, mas que el
-    timeout del proxy (visto en vivo: un 504 a los 90s). Redirige al instante; el
-    indicador de `/afinidad/estado` (htmx polling) cubre esta espera de verdad."""
+    """Rellena los datos de AniList del perfil de gustos (repo.backfill_anilist_profile)
+    en segundo plano y redirige al instante: puede tardar minutos, más que el timeout
+    del proxy. El indicador de /afinidad/estado cubre la espera."""
     def _backfill():
         with get_connection() as conn:
             repo.backfill_anilist_profile(conn)
@@ -242,7 +230,7 @@ async def calendario_anual_perfil(request: Request, year: int = 0, season: str =
 
 @router.post("/calendario/sincronizar")
 def calendario_sincronizar(request: Request):
-    """Post normal + redirect (no htmx): mismo motivo que crear_lista - el swap de
-    <body> entero via hx-select daba pantalla en negro en el movil del usuario."""
+    """POST normal + redirect, como crear_lista: sustituir el <body> entero con htmx
+    daba pantalla en negro en móvil."""
     repo.sync_library()
     return RedirectResponse("/calendario", status_code=303)

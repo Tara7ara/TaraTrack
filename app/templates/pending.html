@@ -1,46 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
-{# Sync suave movil->escritorio (El usuario, notas.txt: "le doy algo al telefono, abro el
-   ordenador, no se modifica al instante") - sin websockets ni polling en bucle, solo
-   vuelve a pedir esta pagina cuando la pestaña recupera el foco de verdad (evento
-   nativo `visibilitychange` del documento, filtrado a "visible"), htmx puro sin JS
-   nuevo. Envuelve TODO el contenido (no solo #pendientes-section) porque "Continuar
-   viendo"/"nuevas" tambien pueden quedar desactualizados, no solo la lista.
-   Bug real (2026-09-15): el doble tick de "Continuar viendo" ("¿Los X?" Si/No, ver
-   home_card.html) solo existe como swap local de esa tarjeta - si el movil cambia de
-   app o se bloquea la pantalla entre el primer toque (confirmar) y el segundo (Si),
-   este trigger recargaba TODA la pagina y devolvia la tarjeta a su estado normal antes
-   de que el segundo toque llegara, así que el "Si" nunca se pudo pulsar (confirmado en
-   logs: docenas de GET /todos/confirmar, cero POST /todos). Condicion extra: no
-   refrescar solo mientras haya una confirmacion de doble tick abierta en pantalla.
+{# Al volver a la pestaña (visibilitychange a "visible") se vuelve a pedir la página
+   entera, sin websockets ni polling. No se refresca mientras haya una confirmación de
+   doble tick abierta, o se perdería el segundo toque.
 
-   BUG REAL ENCONTRADO EL 2026-09-16 (El usuario: "le doy al tick y desaparece la tarjeta"):
-   `hx-select` es un atributo HEREDADO en htmx (se resuelve con getClosestAttributeValue,
-   caminando hacia arriba por el DOM igual que hx-target/hx-swap) - confirmado leyendo
-   el propio htmx.min.js, no solo la documentacion. Como NINGUN boton de dentro de esta
-   pagina (el tick de home_card.html, "Quitar de pendientes", "Marcar vista"...) declara
-   su propio hx-select, TODOS heredaban sin querer el `hx-select="#pendientes-page"` de
-   aqui - pensado solo para EL PROPIO refresco de esta caja al recuperar el foco. Cuando
-   cualquier otro boton hacia su swap normal, htmx filtraba su respuesta (un fragmento
-   suelto, sin ningun `#pendientes-page` dentro) a la nada, y hacia el swap con contenido
-   vacio - la tarjeta desaparecia sin ningun error, con la respuesta HTTP perfectamente
-   correcta. `hx-disinherit="hx-select"` corta esa herencia aqui mismo, sin tener que
-   tocar cada boton hijo uno a uno - los que SI quieren su propio hx-select (los filtros
-   de busqueda/orden/genero de mas abajo) ya lo declaran explicito, que siempre gana
-   sobre lo heredado, asi que no se ven afectados. #}
+   hx-select se hereda en htmx: hx-disinherit evita que los botones de dentro filtren
+   sus respuestas con "#pendientes-page" y acaben sustituyendo su contenido por nada.
+   Los filtros que necesitan hx-select lo declaran explícito. #}
 <div id="pendientes-page"
-     hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo={{ tipo }}"
+     hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo={{ tipo }}"
      hx-select="#pendientes-page" hx-disinherit="hx-select" hx-target="#pendientes-page" hx-swap="outerHTML"
      hx-trigger="visibilitychange[document.visibilityState=='visible' && !document.querySelector('.home-card-check.no')] from:document">
 
 {% if continuar %}
 <h1>Continuar viendo</h1>
-{# id fijo (2026-09-17): "Marcar vista" en /pendientes marca el primer episodio y
-   quita la fila de aqui via swipe.js, pero antes el titulo no aparecia en este
-   carrusel hasta recargar - marcar_vista_rapido ahora inyecta la tarjeta nueva aqui
-   con hx-swap-oob="afterbegin:#continuar-carousel" (ver titulo.py), por eso hace
-   falta un id estable en vez de depender solo de la clase .carousel (compartida con
-   "Animes pendientes de la temporada" mas abajo). #}
+{# id fijo para que marcar_vista_rapido inserte aquí la tarjeta nueva por OOB
+   (hx-swap-oob="afterbegin:#continuar-carousel", ver titulo.py). #}
 <div class="carousel" id="continuar-carousel">
     {% for c in continuar %}
     {% include "partials/home_card.html" %}
@@ -62,6 +37,7 @@
 <form class="filter-bar" action="/pendientes" method="get">
     <input type="hidden" name="tipo" value="{{ tipo }}">
     <input type="hidden" name="direccion" value="{{ direccion }}">
+    <input type="hidden" name="tags" value="{{ tags }}">
     <input type="text" name="q" value="{{ q }}" placeholder="Buscar en pendientes..." autocomplete="off"
            hx-get="/pendientes" hx-include="closest form"
            hx-trigger="input changed delay:400ms, search"
@@ -76,8 +52,8 @@
         <option value="prediccion" {{ "selected" if orden == "prediccion" }}>Predicción</option>
     </select>
     <a class="btn secondary sort-dir" title="Cambiar a {{ 'ascendente' if direccion == 'desc' else 'descendente' }}"
-       href="/pendientes?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
-       hx-get="/pendientes?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
+       href="/pendientes?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
+       hx-get="/pendientes?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
        hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
         {{ "↓" if direccion == "desc" else "↑" }}
     </a>
@@ -99,23 +75,50 @@
     </label>
     <a class="btn secondary" href="/sorprendeme?tipo={{ tipo }}">Sorpréndeme</a>
 </form>
+{% if tag_options or tag_chips %}
+{# Filtro por tags de AniList: cada tag se añade como "con" o "sin" y cada chip se
+   quita con un clic. Navegación normal (no htmx): chips y campo oculto `tags` cambian
+   a la vez. #}
+<div class="filter-bar tag-filter" data-base="/pendientes?{{ base_qs }}" data-tags="{{ tags }}">
+    <select data-prefix="">
+        <option value="">Con tag…</option>
+        {% for t, n in tag_options %}<option value="{{ t }}">{{ t }} ({{ n }})</option>{% endfor %}
+    </select>
+    <select data-prefix="-">
+        <option value="">Sin tag…</option>
+        {% for t, n in tag_options %}<option value="{{ t }}">{{ t }} ({{ n }})</option>{% endfor %}
+    </select>
+    {% for tok, resto in tag_chips %}
+    <a class="tag-chip {{ 'tag-chip-sin' if tok.startswith('-') else '' }}"
+       href="/pendientes?{{ base_qs }}&tags={{ resto|urlencode }}" title="Quitar">
+        {{ "sin " ~ tok[1:] if tok.startswith("-") else tok }} ×</a>
+    {% endfor %}
+</div>
+<script>
+document.querySelectorAll(".tag-filter select").forEach((sel) => {
+    sel.addEventListener("change", () => {
+        if (!sel.value) return;
+        const bar = sel.closest(".tag-filter");
+        const tags = [bar.dataset.tags, sel.dataset.prefix + sel.value].filter(Boolean).join(",");
+        location.href = bar.dataset.base + "&tags=" + encodeURIComponent(tags);
+    });
+});
+</script>
+{% endif %}
 <div id="pendientes-section">
 <div class="sort-bar">
-    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if not tipo }}"
-       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Todo</a>
-    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=series" class="{{ 'active' if tipo == 'series' }}"
-       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=series" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Series</a>
-    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}"
-       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=pelis" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Pelis</a>
-    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=anime" class="{{ 'active' if tipo == 'anime' }}"
-       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tipo=anime" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Anime</a>
+    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}" class="{{ 'active' if not tipo }}"
+       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Todo</a>
+    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=series" class="{{ 'active' if tipo == 'series' }}"
+       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=series" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Series</a>
+    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}"
+       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=pelis" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Pelis</a>
+    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=anime" class="{{ 'active' if tipo == 'anime' }}"
+       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=anime" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Anime</a>
 </div>
 <div id="pendientes-list">
 {% if not entries and not continuar %}
-{# Estado vacio "primera vez" con personalidad (auditoria visual 2026-08-20,
-   mismo componente .empty-state ya usado en /buscar) - distinto del filtrado de
-   abajo: icono de bandeja (nada añadido aun) en vez de lupa (nada con este
-   filtro). #}
+{# Estado vacío "primera vez" (bandeja), distinto del de filtro sin resultados (lupa). #}
 <div class="empty-state">
     <span class="empty-icon">
         <svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
@@ -143,11 +146,14 @@
         <span>Vista</span>
     </div>
     <div class="swipe-content">
+        <span class="poster-ribbon-host">
         {% if e.poster_path %}
         <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
         {% else %}
         <img src="/static/img/sin-portada.svg" alt="Sin portada" loading="lazy">
         {% endif %}
+        {% with row = e %}{% include "partials/status_ribbon.html" %}{% endwith %}
+        </span>
         <div class="info">
             <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">{{ e.title }}</a>
             <div class="meta-row">

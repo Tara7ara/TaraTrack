@@ -1,4 +1,4 @@
-"""app.routers.listas - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.listas - listas, orden manual y duelos por lista."""
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -12,9 +12,7 @@ router = APIRouter()
 
 
 def _owned_or_404(conn, list_id: int, user_id: int):
-    """Guarda de propiedad para cualquier ruta con list_id en la URL (multiusuario
-    Fase 2, 2026-09-17) - sin esto, un usuario podria renombrar/borrar/votar en la
-    lista de otro adivinando su id."""
+    """Guarda de propiedad para las rutas con list_id en la URL."""
     list_row = repo.get_owned_list(conn, list_id, user_id)
     if not list_row:
         raise StarletteHTTPException(status_code=404, detail="Lista no encontrada")
@@ -37,9 +35,8 @@ def listas(request: Request):
 
 @router.post("/listas", response_class=HTMLResponse)
 def crear_lista(request: Request, name: str = Form(...)):
-    """Post normal + redirect (no htmx): el swap de <body> entero via hx-select
-    daba pantalla en negro en el movil del usuario - swapear el body es fragil, mejor
-    una recarga normal como el resto de altas de la app."""
+    """POST normal + redirect: sustituir el <body> entero con htmx daba pantalla en
+    negro en móvil."""
     with get_connection() as conn:
         repo.create_list(conn, name, request.state.user_id)
     return RedirectResponse("/listas", status_code=303)
@@ -91,10 +88,8 @@ def lista_orden(request: Request, list_id: int, modo: str = Form(...)):
 
 @router.post("/lista/{list_id}/elo/reiniciar", response_class=HTMLResponse)
 def lista_elo_reiniciar(request: Request, list_id: int):
-    """Reinicia a 1500 el Elo de esta lista y borra su historial de duelos - por si
-    sale algo raro y el usuario prefiere empezar el ranking de cero. Solo esta lista, no
-    toca el Elo de otras listas ni de waifus. `elo_reset=1` en el redirect para el
-    aviso visible (ver duelo_general_elo_reiniciar)."""
+    """Reinicia el Elo de esta lista y borra su historial de duelos (solo esta lista).
+    `elo_reset=1` en el redirect para el aviso."""
     with get_connection() as conn:
         _owned_or_404(conn, list_id, request.state.user_id)
         ids = [item["item_id"] for item in repo.list_items_in_list(conn, list_id)]

@@ -3,27 +3,29 @@
 {% macro anime_card(item) %}
 <div class="char-card season-card{{ ' masterpiece-candidate' if item.masterpiece_candidate }}">
     {% if item.predict is not none %}<div class="predict-badge">{{ item.predict }}%</div>{% endif %}
-    <a href="/calendario/abrir?title={{ item.title|urlencode }}&romaji={{ (item.title_romaji or '')|urlencode }}">
+    <a href="/calendario/abrir?title={{ item.title|urlencode }}&romaji={{ (item.title_romaji or '')|urlencode }}&anilist_id={{ item.anilist_id or 0 }}">
         <img src="{{ item.image or '/static/img/sin-portada.svg' }}" alt="{{ item.title }}" loading="lazy">
         <div class="char-name">{{ item.title }}{% if item.weekday_overridden %} <span title="Día de emisión corregido a mano" style="opacity:0.6">✎</span>{% endif %}</div>
         {% if item.score %}<div class="year" style="padding:0 0.3rem">Nota: {{ item.score|fmt_rating(1) }}</div>{% endif %}
         {% if item.masterpiece_candidate %}<div class="masterpiece-label">Candidato a obra maestra</div>{% endif %}
     </a>
+    {% if item.library_status %}
+    <a class="btn secondary char-add" href="/calendario/abrir?title={{ item.title|urlencode }}&romaji={{ (item.title_romaji or '')|urlencode }}&anilist_id={{ item.anilist_id or 0 }}">{{ "✓ Pendiente" if item.library_status == "pending" else "✓ En tu lista" }}</a>
+    {% else %}
     <form hx-post="/calendario/anadir" hx-target="this" hx-swap="outerHTML">
         <input type="hidden" name="title" value="{{ item.title }}">
         <input type="hidden" name="romaji" value="{{ item.title_romaji or '' }}">
+        <input type="hidden" name="anilist_id" value="{{ item.anilist_id or 0 }}">
         <input type="hidden" name="predict" value="{{ item.predict if item.predict is not none else '' }}">
         <button class="secondary char-add">+ Pendientes</button>
     </form>
+    {% endif %}
 </div>
 {% endmacro %}
 <h1>Calendario de temporada</h1>
 
-{# Consolidado a 2 niveles (cuarto analisis, 2026-08-21: "demasiada interfaz antes
-   del contenido... 9 piezas de UI antes de poder ver anime"). Nivel 1 = cuando
-   (año + estacion), nivel 2 = como se mira (vista + filtro + actualizar). El resto
-   (cobertura del perfil, estado de recalculo) baja a informacion secundaria: un
-   tooltip en vez de su propia linea de texto. #}
+{# Dos niveles: cuándo (año y estación) y cómo se mira (vista, filtro, actualizar).
+   Cobertura del perfil y estado de recálculo quedan en un tooltip. #}
 <div class="season-nav">
     <div class="year-switch">
         <a class="year-arrow" href="/calendario/anual?year={{ prev_year }}&season={{ season }}&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" title="{{ prev_year }}">&larr;</a>

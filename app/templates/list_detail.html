@@ -8,7 +8,7 @@
             <input type="text" name="name" value="{{ list_row.name }}" required>
             <button class="secondary">Renombrar</button>
         </form>
-        {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
+        {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
         <details class="del-confirm">
             <summary class="btn secondary danger">Borrar lista</summary>
             <form method="post" action="/lista/{{ list_row.id }}/borrar">
@@ -19,9 +19,7 @@
     {% endif %}
 </div>
 {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para toda la lista.</p>{% endif %}
-{# Añadir títulos + Jugar duelos agrupados en una fila a partes iguales (El usuario,
-   2026-08-21: "en línea en vez de paralelo" - mismo patron .search-actions-row
-   que .hero-controls de /ajustes, "que sea profesional"). #}
+{# Añadir títulos y Jugar duelos en una fila a partes iguales (.search-actions-row). #}
 <div class="search-actions-row">
     <details class="manual-add">
         <summary>Añadir títulos</summary>
@@ -50,7 +48,7 @@
         <input type="hidden" name="modo" value="duelo">
         <button class="{{ 'active' if list_row.order_mode == 'duelo' }}">Duelos</button>
     </form>
-    {# Dos pasos en vez de confirm(): los dialogos del navegador no saltan en el movil del usuario. #}
+    {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
     <details class="del-confirm">
         <summary class="btn secondary danger">Reiniciar Elo</summary>
         <form method="post" action="/lista/{{ list_row.id }}/elo/reiniciar">
@@ -74,15 +72,14 @@
 {% for e in entries %}
 <div class="card">
     <div class="card-poster">
-        {# Bug real (El usuario, 2026-08-21): "pulso img y no me lleva a la ficha" - el
-           poster nunca tuvo un <a> propio, solo el titulo de texto de abajo
-           (.card-title) navegaba. Pasaba en cualquier lista, no solo Favoritos. #}
-        <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
+        {# El póster también enlaza a la ficha, no solo el título. #}
+        <a class="poster-ribbon-host" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
         {% if e.poster_path %}
         <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
         {% else %}
         <img src="/static/img/sin-portada.svg" alt="Sin portada">
         {% endif %}
+        {% with row = e, right = true %}{% include "partials/status_ribbon.html" %}{% endwith %}
         </a>
         <span class="rank-badge">#{{ loop.index }}</span>
     </div>

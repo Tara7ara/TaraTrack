@@ -12,11 +12,9 @@ def _insert_cache_row(conn, user_id, tmdb_id, title="Rec de prueba"):
 
 
 def test_list_recommendations_only_sees_own_cache(conn, user_id):
-    """Bug real (2026-09-18, el usuario: 'recomienda full anime a la cuenta random'):
-    recommendations_cache era una unica tabla global calculada de las entries de
-    TODA la instancia - una cuenta nueva veia los recomendados de otra."""
+    """La caché de recomendados es por usuario: una cuenta nueva no ve los de otra."""
     other = repo.create_user(conn, "amigo", "unaclave123")
-    _insert_cache_row(conn, user_id, 111, "Solo de tara")
+    _insert_cache_row(conn, user_id, 111, "Solo de principal")
     _insert_cache_row(conn, other["id"], 222, "Solo del amigo")
 
     mine = repo.list_recommendations(conn, user_id)
@@ -47,13 +45,10 @@ def test_refresh_with_no_seeds_only_clears_own_cache(conn, user_id):
 
 
 def test_known_titles_are_scoped_per_user_not_the_whole_catalog(conn, user_id):
-    """Bug real critico (AGY, 2026-09-18): "known" comprobaba TODO el catalogo
-    compartido (titles), no lo que ESTE usuario tiene en su biblioteca. Con el
-    catalogo del usuario lleno de cientos de titulos, una cuenta nueva se quedaba sin
-    poder recibir NINGUNO de ellos como recomendacion, solo por existir en `titles`,
-    aunque esa cuenta nunca los hubiera visto."""
+    """"Conocido" es lo que tiene este usuario, no todo el catálogo compartido: un
+    título que solo tiene otra cuenta sí se le puede recomendar."""
     other = repo.create_user(conn, "amigo", "unaclave123")
-    # El usuario tiene Frieren en su biblioteca (existe en el catalogo compartido `titles`).
+    # El primer usuario tiene Frieren en su biblioteca (existe en el catálogo compartido).
     title = repo.ensure_manual_title(conn, "show", "Frieren", 2023)
     conn.execute(
         "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')", (title["id"], user_id)
@@ -68,8 +63,8 @@ def test_known_titles_are_scoped_per_user_not_the_whole_catalog(conn, user_id):
 
 def test_rejecting_a_recommendation_does_not_hide_it_for_other_users(conn, user_id):
     other = repo.create_user(conn, "amigo", "unaclave123")
-    _insert_cache_row(conn, user_id, 444, "Compartido en cache pero rechazado por tara")
-    _insert_cache_row(conn, other["id"], 444, "Compartido en cache pero rechazado por tara")
+    _insert_cache_row(conn, user_id, 444, "Compartido en cache pero rechazado por principal")
+    _insert_cache_row(conn, other["id"], 444, "Compartido en cache pero rechazado por principal")
 
     repo.reject_recommendation(conn, 444, "show", "Titulo", None, user_id)
 

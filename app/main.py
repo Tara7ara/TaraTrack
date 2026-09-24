@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -34,10 +34,9 @@ from app.web import templates
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# main.py es la raiz de composicion (ronda 2026-08-21, split de modulos): crea la
-# app, monta estatico/middleware, incluye los routers por dominio (app/routers/*.py)
-# y se queda con lo que de verdad es transversal a toda la app - auth, arranque,
-# tareas de fondo, manejo de errores. El resto de rutas vive en su propio router.
+# Raíz de composición: crea la app, monta estáticos y middleware, incluye los routers
+# de app/routers/ y se queda con lo transversal (auth, arranque, tareas de fondo,
+# errores).
 app = FastAPI(title="TaraTrack")
 # Acceso remoto (fuera de LAN): comprimir HTML/JSON abarata mucho cada pagina.
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -60,8 +59,7 @@ async def http_error(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(Exception)
 async def unhandled_error(request: Request, exc: Exception):
-    """500 con la pinta de la app - la traza sigue yendo a los logs del contenedor
-    (docker logs taratrack), esto solo cambia lo que ve el usuario en el navegador."""
+    """500 con el aspecto de la app; la traza sigue yendo a los logs del contenedor."""
     traceback.print_exc()
     return templates.TemplateResponse(
         request, "error.html", {"code": 500, "message": "Algo se ha roto de verdad."}, status_code=500
@@ -70,15 +68,8 @@ async def unhandled_error(request: Request, exc: Exception):
 
 @app.middleware("http")
 async def static_cache_headers(request: Request, call_next):
-    """Posters/fotos/JS no cambian: cache larga en el navegador = menos viajes al servidor.
-
-    Todo lo demas (paginas reales, partials de htmx) es justo lo contrario: datos que
-    cambian con cada accion de cualquiera de los usuarios. Sin un Cache-Control
-    explicito, un navegador (sobre todo Safari/iOS, con el back-forward cache mas
-    agresivo) puede enseñar una version vieja de /pendientes o /waifus al volver
-    atras despues de una accion, dando la sensacion de "esto no se ha guardado" hasta
-    recargar a mano (El usuario, 2026-09-18: varios "he tenido que recargar la web" seguidos
-    tras quitar un pendiente o añadir un personaje favorito)."""
+    """Caché larga para estáticos. El resto (páginas y partials de htmx) va sin caché:
+    Safari/iOS puede enseñar una versión vieja al volver atrás tras una acción."""
     response = await call_next(request)
     if request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "public, max-age=604800"
@@ -87,22 +78,14 @@ async def static_cache_headers(request: Request, call_next):
     return response
 
 
-# ---------- Login (cookie larga, sustituye al Access List de NPM para tracker.midominio.com) ----------
-# El usuario, 2026-08-20: "el pass... se puede guardar en la coockie o algo? como hacen las
-# grandes apps?" - antes la unica auth era el Access List de Nginx Proxy Manager (basic
-# auth HTTP delante del proxy), sin "recuerdame", asi que el navegador volvia a pedirla
-# a menudo. Login propio con cookie firmada de un año - "como hacen las grandes apps".
-# Nombres/limites en app/config.py (ronda 2026-08-21, config centralizada).
+# ---------- Login (cookie firmada de larga duración) ----------
+# Nombres y límites en app/config.py.
 AUTH_COOKIE = config.AUTH_COOKIE
 AUTH_MAX_AGE = config.AUTH_MAX_AGE
 
-# Freno a fuerza bruta contra /login - antes (monousuario, sin cuentas) era un
-# contador GLOBAL en memoria: con una unica contraseña compartida no habia nada mas
-# fino que hacer. Con cuentas reales (2026-09-17, multiusuario) pasa a ser POR
-# USUARIO INTENTADO - 5 fallos contra "tara" no deben bloquear el login de su
-# hermana/amigo, que no han fallado ni una vez. Sigue sin ser por IP: detras de NPM
-# sin X-Forwarded-For de confianza configurado, request.client.host seria siempre la
-# misma IP del proxy.
+# Freno a la fuerza bruta en /login, por usuario intentado: los fallos contra una
+# cuenta no bloquean a las demás. No es por IP porque detrás del proxy inverso
+# request.client.host sería siempre la misma.
 LOGIN_MAX_ATTEMPTS = config.LOGIN_MAX_ATTEMPTS
 LOGIN_WINDOW_SECONDS = config.LOGIN_WINDOW_SECONDS
 _login_failures_by_user: dict[str, list[float]] = {}
@@ -128,12 +111,8 @@ def _clear_login_failures(username: str) -> None:
     _login_failures_by_user.pop(username, None)
 
 
-# Freno a /registro (gap real, AGY 2026-09-18): /login ya tenia freno de fuerza bruta,
-# /registro no tenia ninguno - un script en bucle podia crear cientos de cuentas.
-# Global (no por username, a diferencia del login) porque aqui lo que hay que frenar
-# es EL RITMO de altas nuevas, no los fallos contra una cuenta concreta - una ventana
-# generosa (no son intentos de acceso, son altas reales de gente de confianza detras
-# del WireGuard) que igualmente para en seco un bucle automatizado.
+# Freno a /registro: limita el ritmo global de altas nuevas para parar un bucle
+# automatizado.
 REGISTRO_MAX_ATTEMPTS = 20
 REGISTRO_WINDOW_SECONDS = 3600
 _registro_attempts: list[float] = []
@@ -164,10 +143,8 @@ def _safe_next(next_url: str) -> str:
 
 
 def _current_user_id(request: Request) -> int | None:
-    """Antes (monousuario) la cookie era un candado sin identidad, un simple string
-    "ok" firmado. Ahora (2026-09-17, multiusuario) el payload es el user_id - sigue
-    siendo solo un entero firmado, no hace falta guardar mas en la cookie en si, el
-    resto (username/is_admin) se lee de la BBDD en cada peticion via request.state."""
+    """La cookie firma solo el user_id; username/is_admin se leen de la BBDD en cada
+    petición vía request.state."""
     token = request.cookies.get(AUTH_COOKIE)
     if not token:
         return None
@@ -178,10 +155,20 @@ def _current_user_id(request: Request) -> int | None:
         return None
 
 
+# iOS pide el icono de la pantalla de inicio tambien en la raiz, sin sesion.
+_TOUCH_ICON_PATHS = ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png")
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+@app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
+def apple_touch_icon():
+    return FileResponse("app/static/img/apple-touch-icon.png", media_type="image/png")
+
+
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    if path in ("/login", "/registro") or path.startswith("/static/"):
+    if path in ("/login", "/registro", *_TOUCH_ICON_PATHS) or path.startswith("/static/"):
         return await call_next(request)
     user_id = _current_user_id(request)
     if user_id is None:
@@ -191,9 +178,7 @@ async def require_login(request: Request, call_next):
     with get_connection() as conn:
         user = repo.get_user(conn, user_id)
     if not user:
-        # Cookie valida (firma correcta) pero el usuario ya no existe - no debería
-        # pasar en uso normal (no hay borrado de cuentas todavía), pero si pasa,
-        # tratarlo como no autenticado en vez de petar en el resto de la ruta.
+        # Firma válida pero el usuario ya no existe: se trata como no autenticado.
         resp = RedirectResponse("/login", status_code=303)
         resp.delete_cookie(AUTH_COOKIE)
         return resp
@@ -241,12 +226,8 @@ def logout():
     return resp
 
 
-# ---------- Registro (El usuario, 2026-09-18: "lo tienen que hacer ellos, no quiero saber la
-# pass en ningun momento") - autoregistro publico desde /login, sin invitacion: el acceso
-# a /login ya esta acotado por su red WireGuard, asi que no hace falta un filtro aparte
-# aqui. Cuentas creadas asi siempre is_admin=False - el alta manual de /ajustes (Fase 1)
-# se queda para uso de la propia el usuario si algun dia le hace falta, pero deja de ser el
-# camino que usan su hermana/amigo.
+# ---------- Registro público desde /login ----------
+# Las cuentas creadas así nunca son admin. El acceso a la app ya está acotado por red.
 @app.get("/registro", response_class=HTMLResponse)
 def registro_form(request: Request, next: str = "/"):
     return templates.TemplateResponse(request, "registro.html", {"next": _safe_next(next), "error": None})
@@ -264,11 +245,8 @@ def registro_submit(
             status_code=429,
         )
     _record_registro_attempt()
-    # Registro mas exigente (El usuario, 2026-09-18: "registro mas fuerte") - contraseña de
-    # al menos 8 y confirmacion para pillar erratas al escribirla (antes no habia
-    # forma de saber si te habias equivocado hasta el primer intento de login
-    # fallido). El nombre de usuario se valida con repo.validate_username, la misma
-    # regla que create_user/set_username (AGY, 2026-09-18: "validacion profesional").
+    # Contraseña de al menos 8 caracteres con confirmación; el nombre se valida con
+    # repo.validate_username, la misma regla que create_user/set_username.
     error = None
     try:
         username_norm = repo.validate_username(username)
@@ -322,15 +300,9 @@ SEASON_CACHE_INTERVAL_HOURS = config.SEASON_CACHE_INTERVAL_HOURS
 
 
 async def season_cache_loop():
-    """Refresca la cache de las 4 temporadas del año actual una vez al dia (El usuario,
-    2026-08-13: "que solo lo actualice 1 vez al dia" + "¿qué tan costoso es que
-    guarde más tiempo?") - las 4 en vez de solo la actual porque el coste real es
-    minimo (4 peticiones a AniList una vez al dia, nada frente a su limite de ~90/min)
-    y asi cualquier pestaña de temporada esta siempre al dia sin depender de que el usuario
-    la visite primero. Los años/temporadas que NO son el año actual (fichas antiguas
-    que ya vio) no se tocan aqui - se quedan con lo ya cacheado la ultima vez que se
-    visitaron, sin caducar nunca solas (nada las borra); si algun dia hace falta
-    refrescarlas, se refrescan solas al visitarlas si estan caducadas (>24h)."""
+    """Refresca una vez al día la caché de las 4 temporadas del año actual (son 4
+    peticiones a AniList). Las temporadas de otros años se refrescan al visitarlas si
+    tienen más de 24 h."""
     while True:
         for season in _SEASON_ORDER:
             try:
@@ -346,10 +318,8 @@ async def season_cache_loop():
 
 @app.on_event("startup")
 def on_startup():
-    # Falla el arranque, no la primera peticion, si falta algo obligatorio (secret,
-    # contraseña, API key de TMDB) - mas facil de detectar en "docker logs" justo
-    # tras un despliegue que un 500 silencioso a medio usar (ronda 2026-08-21,
-    # config centralizada: antes esto solo comprobaba el secret, aqui a mano).
+    # Si falta alguna variable obligatoria, que falle el arranque y no la primera
+    # petición.
     config.validate()
     init_db()
     asyncio.create_task(sync_loop())

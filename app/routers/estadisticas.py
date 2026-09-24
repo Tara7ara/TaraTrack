@@ -1,4 +1,4 @@
-"""app.routers.estadisticas - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.estadisticas - estadísticas, resumen anual y discrepancias."""
 from datetime import date
 
 from fastapi import APIRouter, Request

@@ -1,4 +1,4 @@
-"""app.routers.historial - extraido de main.py en el split de modulos (ronda 2026-08-21)."""
+"""app.routers.historial - historial de visionado."""
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse

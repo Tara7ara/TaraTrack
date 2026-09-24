@@ -1,12 +1,7 @@
-"""Compila todas las plantillas Jinja2 en seco (sin renderizar), usando el
-Environment real de la app (con los filtros/globales de verdad registrados via
-app.web, no stubs a mano) - pilla errores de sintaxis en plantillas antes de
-desplegar, en vez de descubrirlos con un 500 en produccion.
+"""Compila todas las plantillas Jinja2 en seco con el Environment real de la app,
+para pillar errores de sintaxis antes de desplegar. Lo usa scripts/deploy.sh.
 
-Usado por scripts/deploy.sh antes de cada despliegue. Tambien se puede correr
-suelto:
-
-    /home/tara/.venvs/taratrack/bin/python scripts/check_templates.py
+    python scripts/check_templates.py
 """
 import os
 import sys

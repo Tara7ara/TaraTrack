@@ -2,7 +2,7 @@ import os
 
 os.environ.setdefault("TARATRACK_SECRET_KEY", "test-secret-para-tests")
 os.environ.setdefault("TARATRACK_PASSWORD", "test-password")
-os.environ.setdefault("TARATRACK_ADMIN_USERNAME", "tara")
+os.environ.setdefault("TARATRACK_ADMIN_USERNAME", "principal")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,23 +12,18 @@ from app import db, main, repo
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    """Mismo patron que tests/test_login.py - TestClient real logueado como tara,
-    para probar rutas de verdad via HTTP (no solo las funciones de repo por debajo),
-    que es la unica forma de cazar un router que se olvida de pasar un argumento
-    nuevo a una funcion de repo (bug real, ver test de abajo)."""
+    """TestClient con sesión iniciada, para probar las rutas por HTTP: así se detecta un
+    router que no pasa un argumento nuevo a repo."""
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     with TestClient(main.app, base_url="https://testserver") as c:
-        c.post("/login", data={"username": "tara", "password": "test-password", "next": "/"})
+        c.post("/login", data={"username": "principal", "password": "test-password", "next": "/"})
         yield c
 
 
 def test_marcar_vista_rapido_on_a_show_does_not_500(client):
-    """Bug real (2026-09-18, el usuario: 'no puedo marcar como vista pero si como
-    pendiente'): marcar_vista_rapido (POST /vista/{tmdb_id}/show) llamaba a
-    repo.get_home_card(conn, entry_id) sin el user_id que ya es obligatorio desde el
-    multiusuario (Fase 2) - TypeError, 500 en cualquier serie. Titulo manual (sin
-    tmdb real) para no depender de la red en el test - sync_episodes fallara (API key
-    de test) pero la ruta ya lo tolera (ver comentario de marcar_vista_rapido)."""
+    """POST /vista/{tmdb_id}/show no revienta: la ruta pasa el user_id a get_home_card.
+    Título manual para no depender de la red; sync_episodes falla (API key de test) y
+    la ruta lo tolera."""
     with db.get_connection() as conn:
         title = repo.ensure_manual_title(conn, "show", "Serie de prueba", 2020)
         tmdb_id, tipo = title["tmdb_id"], title["type"]
@@ -47,8 +42,7 @@ def test_marcar_vista_rapido_on_a_movie_does_not_500(client):
 
 
 def test_episodio_toggle_opens_debate_thread_when_marking_watched(client):
-    """El usuario, 2026-09-18 ('estilo tvtime'): marcar un episodio visto abre solo su
-    hilo de debate, sin tener que ir a buscarlo despues."""
+    """Marcar un episodio visto abre su hilo de debate."""
     with db.get_connection() as conn:
         title = repo.ensure_manual_title(conn, "show", "Serie con debate", 2020)
         conn.execute(
@@ -89,8 +83,7 @@ def test_titulo_detalle_opens_debate_thread_via_comentar_param(client):
 
 
 def test_marcar_siguiente_muestra_aviso_de_comentar(client):
-    """El usuario, 2026-09-18: el aviso "¿comentas?" tiene que salir en el sitio donde de
-    verdad se marcan episodios dia a dia (Continuar viendo en /pendientes)."""
+    """El aviso "¿comentas?" sale al marcar desde Continuar viendo en /pendientes."""
     with db.get_connection() as conn:
         title = repo.ensure_manual_title(conn, "show", "Serie de continuar viendo", 2020)
         conn.execute(
@@ -115,7 +108,7 @@ def _user_id(conn):
 
 def test_comentarios_siguiente_redirects_to_the_right_episode_and_marks_seen(client):
     with db.get_connection() as conn:
-        conn.execute("UPDATE users SET comments_seen_at = '2000-01-01 00:00:00' WHERE username = 'tara'")
+        conn.execute("UPDATE users SET comments_seen_at = '2000-01-01 00:00:00' WHERE username = 'principal'")
         other = repo.create_user(conn, "amigo", "unaclave123")
         title = repo.ensure_manual_title(conn, "show", "Serie con aviso", 2020)
         conn.execute(
@@ -140,9 +133,7 @@ def test_comentarios_siguiente_sin_novedades_va_a_pendientes(client):
 
 
 def test_puntuar_temporada_con_texto_no_numerico_no_revienta(client):
-    """Bug real (AGY, 2026-09-18): a diferencia de marcar_vista_submit, esto
-    convertia a float sin proteger - un valor no numerico tumbaba la peticion con
-    un 500 en vez de ignorarlo."""
+    """Un valor no numérico se ignora en vez de dar un 500."""
     with db.get_connection() as conn:
         title = repo.ensure_manual_title(conn, "show", "Serie con temporada", 2020)
         tmdb_id, tipo = title["tmdb_id"], title["type"]
@@ -156,8 +147,7 @@ def test_puntuar_temporada_con_texto_no_numerico_no_revienta(client):
 
 
 def test_corregir_dia_emision_con_valor_no_numerico_no_revienta(client):
-    """Bug real (AGY, 2026-09-18): int(weekday) sin validar tumbaba la peticion con
-    un 500 ante un POST manipulado con un valor no numerico."""
+    """Un weekday no numérico se ignora en vez de dar un 500."""
     with db.get_connection() as conn:
         title = repo.ensure_manual_title(conn, "show", "Serie con dia raro", 2020)
         conn.execute("UPDATE titles SET anilist_id = 12345 WHERE id = ?", (title["id"],))
@@ -170,8 +160,7 @@ def test_corregir_dia_emision_con_valor_no_numerico_no_revienta(client):
 
 
 def test_marcar_temporada_creates_entry_if_missing(client):
-    """Bug real (AGY, 2026-09-18): entrar directo a la ficha y darle a "Temp. completa"
-    sin haber pulsado antes "+ Pendientes" no encontraba entry y no marcaba nada."""
+    """"Temp. completa" funciona aunque la ficha se haya abierto sin "+ Pendientes"."""
     with db.get_connection() as conn:
         title = repo.ensure_manual_title(conn, "show", "Serie de temporada", 2020)
         conn.execute(

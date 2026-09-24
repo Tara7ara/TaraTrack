@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Importa el export de Trakt (JSON) a la BBDD de TaraTrack. Ejecucion puntual,
-idempotente (no duplica si se repite). Ver TaraTrack - Fases y roadmap.md, Fase 2.
+"""Importa el export de Trakt (JSON) a la BBDD. Idempotente: no duplica si se repite.
 
 Uso: TRAKT_EXPORT_DIR=/ruta/a/los/json python3 scripts/seed_from_trakt.py
 """

@@ -24,10 +24,7 @@
 <h1>Estadísticas</h1>
 <div class="content-medium">
 
-{# Dos tabs reales en vez de un "Ver desglose completo" que escondia
-   practicamente otra pagina entera (cuarto analisis, 2026-08-21: "vuelven barras,
-   afinidad, explicaciones... no parecen pertenecer al mismo bloque"). CSS puro
-   (radio + label + ~), mismo patron sin JS que el resto de la app. #}
+{# Dos pestañas con radio + label + ~, sin JS. #}
 <input type="radio" name="stats-tab" id="stats-tab-resumen" class="stats-tab-radio" checked>
 <input type="radio" name="stats-tab" id="stats-tab-perfil" class="stats-tab-radio">
 <div class="sort-bar stats-tabs">
@@ -54,10 +51,7 @@
     <a class="stat-tile" href="/estadisticas/episodios-favoritos"><span class="stat-num">{{ stats.totals.fav_episodes }}</span><span class="stat-label">eps favoritos</span></a>
 </div>
 
-{# Punto 6 del segundo analisis (2026-08-21): "episodios vistos y dias viendo son
-   metricas, no una historia - deberia darte una observacion personal que te
-   apetezca mirar". Generado con datos que YA existen en el contexto, sin tocar
-   el backend. #}
+{# Una frase de resumen personal hecha con datos que ya están en el contexto. #}
 {% if taste.covered and taste.top_inercia %}
 {% set top = taste.top_inercia[0] %}
 <div class="stat-insight">

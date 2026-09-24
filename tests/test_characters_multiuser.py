@@ -14,10 +14,8 @@ def _title_with_character_and_entry(conn, title_name, user_id, char_name="Kurisu
 
 
 def test_search_characters_local_only_sees_your_own_library(conn, user_id):
-    """Bug real (AGY, 2026-09-18): sin filtrar por user_id, buscar un personaje de un
-    titulo que SOLO otro usuario tiene devolvia el entry_id de ESE OTRO usuario -
-    pulsar la estrella fallaba con 404 (o peor, tocaba datos ajenos) en vez de no
-    encontrar nada, que es lo correcto si tu no tienes el titulo."""
+    """Buscar un personaje de un título que solo tiene otro usuario no devuelve su
+    entry_id."""
     other = repo.create_user(conn, "amigo", "unaclave123")
     _title_with_character_and_entry(conn, "Solo del amigo", other["id"], "Kurisu")
 

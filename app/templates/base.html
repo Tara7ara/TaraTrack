@@ -2,15 +2,18 @@
 <html lang="es">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>TaraTrack{% if title %} — {{ title }}{% endif %}</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
-    <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+    <link rel="apple-touch-icon" href="{{ touch_icon_data_uri }}">
     <meta name="theme-color" content="#0f0f0f">
-    {# Tipografia de titulares (segundo analisis, punto 5) - elegida por el usuario entre
-       3 opciones mostradas en un comparador aparte. Solo h1/h2/marca la usan, el
-       resto de la app sigue en system-ui. #}
+    <link rel="manifest" href="/static/manifest.webmanifest">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="TaraTrack">
+    {# Tipografía de titulares: solo h1/h2 y la marca; el resto sigue en system-ui. #}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
@@ -19,10 +22,8 @@
     <script src="/static/js/swipe.js?v={{ static_v }}" defer></script>
 </head>
 <body>
-    {# Calculado una sola vez (no dos, una por cada "Más" desktop/movil) - AGY,
-       2026-09-18: el aviso vivia SOLO dentro del desplegable "Más", invisible del
-       todo hasta abrirlo a proposito. Un punto en el propio boton "Más" es lo que
-       de verdad avisa sin tener que entrar. #}
+    {# Se calcula una vez para los dos "Más" (escritorio y móvil): el punto en el
+       propio botón avisa sin abrir el desplegable. #}
     {% set _comentarios_nuevos = comments_badge_count(request.state.user_id) %}
     <nav class="topnav">
         <a href="/" class="brand">TaraTrack</a>
@@ -40,12 +41,8 @@
             <a href="/listas" class="{{ 'active' if request.url.path.startswith('/listas') or request.url.path.startswith('/lista/') else '' }}">Listas</a>
         </div>
         <div class="nav-divider"></div>
-        {# Punto 3 del segundo analisis (2026-08-21): "demasiadas opciones visibles,
-           todas texto pequeño... pareceria una barra de herramientas". Historial/
-           Stats/Mosaico ya estaban catalogados como el cluster de "analisis" (ver
-           comentario de mas abajo, ronda 2026-08-20) - se sacan de la fila siempre
-           visible a un menu propio de escritorio, mismo patron que bottomnav-more
-           en movil, dejando visibles solo uso diario + exploracion (8 rutas). #}
+        {# Historial, Stats y Mosaico van en un menú propio de escritorio; en la fila
+           visible quedan uso diario y exploración. #}
         <details class="topnav-more">
             <summary class="{{ 'active' if request.url.path.startswith('/historial') or request.url.path.startswith('/estadisticas') or request.url.path.startswith('/mosaico') else '' }}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
@@ -53,10 +50,7 @@
                 {% if _comentarios_nuevos %}<span class="nav-more-dot" title="Hay comentarios nuevos"></span>{% endif %}
             </summary>
             <div class="topnav-more-menu">
-                {# El usuario, 2026-09-18: "¿por qué está si te lleva a pendientes? no metas
-                   trabajo al usuario final" - sin comentarios nuevos, el enlace no
-                   llevaba a ningun sitio util (caia en /pendientes) - mejor no
-                   enseñarlo cuando no hay nada que ver, en vez de un clic muerto. #}
+                {# Sin comentarios nuevos no se enseña el enlace. #}
                 {% if _comentarios_nuevos %}
                 <a href="/comentarios/siguiente">Comentarios<span id="nav-comentarios-desktop" class="nav-cola">{{ _comentarios_nuevos }}</span></a>
                 {% endif %}
@@ -65,9 +59,7 @@
                 <a href="/mosaico">Mosaico</a>
             </div>
         </details>
-        {# Punto 3A (AGY, 2026-09-18): "no aparece el nombre de usuario activo" - con
-           varias cuentas en la misma instancia, no se distinguia en que sesion estabas
-           sin abrir /ajustes. #}
+        {# Cuenta activa, para saber en qué sesión estás. #}
         <a href="/ajustes" class="nav-user" title="Cuenta activa: {{ request.state.username }}">
             {{ request.state.username|avatar(request.state.avatar_path) }}
             <span class="nav-user-name">{{ request.state.username }}</span>
@@ -76,10 +68,8 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </a>
     </nav>
-    {# Contenedor fijo para el aviso "¿comentas?" (El usuario, 2026-09-18) - vacio salvo
-       cuando una respuesta htmx lo rellena via hx-swap-oob (ver
-       partials/comment_toast.html), asi que existe en toda la app aunque marques el
-       episodio desde /pendientes o desde la propia ficha. #}
+    {# Contenedor del aviso "¿comentas?": vacío salvo cuando una respuesta htmx lo
+       rellena por hx-swap-oob (ver partials/comment_toast.html). #}
     <div id="comment-toast"></div>
     <main class="container">
         {% block content %}{% endblock %}
@@ -97,11 +87,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             <span>Vistas</span>
         </a>
-        {# Puntuar sale de la fila principal del bottomnav (El usuario, iPhone 17
-           Pro: "en la barra de abajo quita el puntuar y ponlo en mas") - pasa
-           a ser un enlace mas dentro de "Mas", junto con el resto de rutas
-           puntuales/de exploracion. El icono de "Mas" ahora tambien se marca
-           activo en /puntuar. #}
+        {# Puntuar va dentro de "Más"; el icono de "Más" se marca activo en /puntuar. #}
         <details class="bottomnav-more">
             <summary class="{{ 'active' if request.url.path.startswith('/calendario') or request.url.path.startswith('/listas') or request.url.path.startswith('/lista/') or request.url.path.startswith('/recomendados') or request.url.path.startswith('/duelo') or request.url.path.startswith('/puntuar') else '' }}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
@@ -124,5 +110,14 @@
             </div>
         </details>
     </nav>
+<script>
+// Teclado abierto = el viewport visible encoge mucho (iOS no cambia
+// innerHeight al sacar el teclado, solo visualViewport). Esconde el bottomnav, ver app.css.
+if (window.visualViewport) {
+    const kb = () => document.documentElement.classList.toggle(
+        "kb-open", window.innerHeight - window.visualViewport.height > 120);
+    window.visualViewport.addEventListener("resize", kb);
+}
+</script>
 </body>
 </html>

@@ -1,8 +1,5 @@
 {% if c %}
-{# id fijo en vez de "closest .home-card": mas robusto ante varios swaps outerHTML
-   encadenados (normal->confirmacion->cancelar), aunque la causa real del bug de
-   "desaparece" del 2026-09-16 resultase ser otra (hx-select heredado desde
-   #pendientes-page, ver pending.html) - se mantiene igualmente por ser mas solido. #}
+{# id fijo: más robusto que "closest .home-card" ante varios swaps outerHTML seguidos. #}
 <div class="home-card" id="home-card-{{ c.id }}">
     <a class="home-card-poster" href="/titulo/{{ c.tmdb_id }}/show">
         <img src="{{ c.poster_path|poster_size('w185') if c.poster_path else '/static/img/sin-portada.svg' }}"{% if c.poster_path %} srcset="{{ c.poster_path|poster_size('w185') }} 1x, {{ c.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ c.title }}" loading="lazy">
@@ -12,27 +9,17 @@
     <div class="home-card-info">
         <a class="home-card-title" href="/titulo/{{ c.tmdb_id }}/show" title="{{ c.title }}">{{ c.title }}</a>
         {% if c.next_ep %}
-        {# "Foco en progreso" (segundo analisis, punto 4, variante "continuar viendo") -
-           episodios vistos vs. emitidos-por-ver, ya disponibles en el row (watched_eps/
-           missing_eps de _HOME_SHOWS_SQL), sin tocar el backend. Deliberadamente sobre
-           EMITIDOS, no sobre el total de la serie: si sumase episodios aun no emitidos
-           la barra nunca llegaria al 100% aunque estes al dia. #}
+        {# Progreso sobre los episodios emitidos, no sobre el total: si no, la barra
+           nunca llegaría al 100% estando al día. #}
         {% set total_visible = (c.watched_eps or 0) + (c.missing_eps or 0) %}
         {% if total_visible %}
         <div class="home-card-progress"><div class="home-card-progress-fill" style="width: {{ ((c.watched_eps or 0) / total_visible * 100)|round }}%"></div></div>
         {% endif %}
         <div class="home-card-ep">
             {% if confirm_all %}
-            {# Confirmacion del doble tick renderizada por el servidor: window.confirm
-               (hx-confirm) no salta en el navegador del usuario. Vuelve al estilo de iconos
-               original (El usuario: prefiere visualmente esto a los botones de texto que se
-               probaron el 2026-09-16) - ya no hace falta que sea visualmente distinta del
-               estado normal para evitar el clic reflejo: la causa real de aquel bug era
-               que "Sí"/doble-tick coincidian en la MISMA posicion (izquierda) antes del
-               reordenamiento de botones de esta misma ronda; con el tick simple ahora
-               fijo a la izquierda y el doble tick a la derecha, un segundo clic reflejo
-               en la posicion del doble tick cae sobre "Cancelar" (inofensivo), no sobre
-               "Sí". #}
+            {# Confirmación del doble tick renderizada por el servidor (window.confirm
+               no salta en algunos móviles). El tick simple va a la izquierda y el doble a
+               la derecha: un segundo toque reflejo cae en "Cancelar", no en "Sí". #}
             <span>¿Los {{ c.missing_eps }}?</span>
             <span class="home-card-checks">
                 <button class="home-card-check" title="Sí, marcar los {{ c.missing_eps }} vistos"
@@ -47,32 +34,18 @@
             {% else %}
             <span>T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }}</span>
             <span class="home-card-checks">
-                {# throttle: un doble clic accidental marcaba DOS episodios seguidos en vez
-                   de uno - con solo 2 pendientes eso vaciaba la cola entera y la tarjeta
-                   desaparecia del carrusel de golpe, pareciendo un bug de datos cuando en
-                   realidad marcaba de verdad los 2 episodios reales (El usuario: "le doy a
-                   vista... desaparece la tarjeta en vez de actualizarse"). #}
+                {# throttle: un doble clic accidental no marca dos episodios. #}
                 <button class="home-card-check" title="Marcar T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }} visto"
                         hx-post="/entrada/{{ c.id }}/siguiente" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML"
                         hx-trigger="click throttle:800ms">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </button>
                 {% if c.missing_eps > 1 %}
-                {# Doble clic de verdad (raton, escritorio) va directo al POST sin pasar
-                   por la confirmacion de un toque. Primer intento (ondblclick nativo del
-                   navegador) no servia: en LAN el primer clic dispara la confirmacion
-                   (GET) y el swap outerHTML sustituye este boton ANTES de que llegue el
-                   segundo clic fisico - el navegador no dispara "dblclick" si el target
-                   del segundo clic ya no es el mismo nodo, asi que nunca llegaba a nada
-                   (confirmado en logs: un solo GET /confirmar por intento, nunca un
-                   segundo evento). Fix real: el propio onclick retrasa el swap 400ms con
-                   un timer guardado en el elemento (this._dt) - si llega un segundo clic
-                   dentro de esos 400ms, el DOM todavia no ha cambiado (mismo boton,
-                   misma posicion), se cancela el timer y se va directo al POST. Si no
-                   llega, pasados los 400ms se muestra la confirmacion de siempre (toque
-                   unico en movil, window.confirm no salta ahi). Puesto DESPUES del tick
-                   simple a proposito (2026-09-16): antes iba primero/a la izquierda, y un
-                   clic ahi creyendo marcar solo el episodio actual marcaba TODOS. #}
+                {# Doble clic con ratón va directo al POST. El onclick retrasa 400 ms la
+                   confirmación: si llega un segundo clic en ese tiempo, cancela el timer
+                   y marca todo; si no, enseña la confirmación de siempre (toque único en
+                   móvil). ondblclick no sirve porque el swap sustituye el botón antes
+                   del segundo clic. #}
                 <button class="home-card-check" title="Marcar TODOS los emitidos ({{ c.missing_eps }}) vistos (doble clic para marcar directo)"
                         onclick="if (this._dt) { clearTimeout(this._dt); this._dt = null; htmx.ajax('POST', '/entrada/{{ c.id }}/todos', {target: '#home-card-{{ c.id }}', swap: 'delete'}); } else { const el = this; el._dt = setTimeout(function () { el._dt = null; htmx.ajax('GET', '/entrada/{{ c.id }}/todos/confirmar', {target: '#home-card-{{ c.id }}', swap: 'outerHTML'}); }, 400); }">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 7 7 17 3 13"></polyline><polyline points="21 9 13 18"></polyline></svg>

@@ -219,11 +219,8 @@ CREATE TABLE IF NOT EXISTS score_distribution (
     computed_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Historial real de visionados por episodio (2026-08-20, "Volver a ver" estilo Trakt):
--- episodes.watched_at sigue siendo la fecha MAS RECIENTE (cache, todo el codigo viejo
--- que ya lo lee como "la fecha" sigue funcionando igual), pero cada marcado/re-marcado
--- deja aqui su propia fila - "Volver a ver" ya no borra episodes.watched_at, asi que
--- ninguna fecha antigua se pierde nunca, ni siquiera al re-marcar el mismo episodio.
+-- Historial de visionados por episodio: cada marcado o re-marcado deja su propia fila,
+-- así "Volver a ver" no pierde ninguna fecha.
 CREATE TABLE IF NOT EXISTS episode_watches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     episode_id INTEGER NOT NULL REFERENCES episodes(id),
@@ -231,11 +228,9 @@ CREATE TABLE IF NOT EXISTS episode_watches (
     watched_at TEXT NOT NULL
 );
 
--- Comentario/favorito por episodio, POR USUARIO (2026-09-17, multiusuario Fase 2) -
--- antes vivian como columnas directas en `episodes` (comment/is_favorite), compartidas
--- por toda la instancia. Esas dos columnas se dejan sin usar en `episodes` (no se
--- borran - SQLite no deja quitar columnas sin reconstruir la tabla entera, y no hace
--- falta el riesgo solo por limpieza) pero el codigo ya no las lee ni las escribe.
+-- Comentario y favorito por episodio, de cada usuario. Las columnas antiguas
+-- episodes.comment/is_favorite se quedan sin usar (SQLite no permite quitarlas sin
+-- reconstruir la tabla).
 CREATE TABLE IF NOT EXISTS episode_user_state (
     episode_id INTEGER NOT NULL REFERENCES episodes(id),
     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -244,23 +239,25 @@ CREATE TABLE IF NOT EXISTS episode_user_state (
     PRIMARY KEY (episode_id, user_id)
 );
 
--- Dia de emision manual por titulo (El usuario, notas.txt: "lunes Grand Blue pero en el
--- calendario sale los martes, es molesto ir a buscar") - pisa el weekday calculado en
--- UTC desde airing_at/startDate de AniList (app/anime.py) SOLO para ese titulo, sin
--- tocar el calculo automatico que funciona bien para el resto. Keyed por anilist_id,
--- no por titles.id, porque el calendario de temporada enseña anime aun no anadido a
--- la biblioteca (anilist_id es el unico identificador que tienen todos los items).
+-- Día de emisión corregido a mano por título: pisa el weekday calculado en UTC
+-- (app/anime.py). Por anilist_id y no por titles.id, porque el calendario de temporada
+-- enseña anime que aún no está en la biblioteca.
 CREATE TABLE IF NOT EXISTS weekday_overrides (
     anilist_id INTEGER PRIMARY KEY,
     weekday INTEGER NOT NULL
 );
 
--- Debate por episodio (2026-09-18, Fase 4 multiusuario) - a diferencia de
--- episode_user_state (privado, un comentario por usuario), esta es la UNICA tabla
--- pensada para ser visible ENTRE usuarios: un hilo cronologico por episodio. Se
--- enseña difuminado en la ficha hasta que el propio usuario marca ese episodio
--- como visto (ver partials/episode_row.html), con opcion de quitar el spoiler
--- antes de tiempo - eso es solo de render, aqui no hay nada que filtrar por usuario.
+-- Tarjeta del calendario de temporada -> título de TMDB al que se resolvió.
+-- Una tarjeta de "Temporada 2" en AniList es el MISMO show en TMDB, asi que ni
+-- titles.anilist_id ni el titulo exacto la encuentran: se guarda al añadir/abrir
+-- desde el propio calendario para poder marcarla luego como "ya en tu lista".
+CREATE TABLE IF NOT EXISTS calendar_links (
+    anilist_id INTEGER PRIMARY KEY,
+    title_id INTEGER NOT NULL REFERENCES titles(id)
+);
+
+-- Debate por episodio: única tabla visible entre usuarios, un hilo cronológico por
+-- episodio. El difuminado de spoilers es solo de render (partials/episode_row.html).
 CREATE TABLE IF NOT EXISTS episode_comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     episode_id INTEGER NOT NULL REFERENCES episodes(id),
@@ -305,87 +302,54 @@ MIGRATIONS = [
     "ALTER TABLE titles ADD COLUMN anilist_tags TEXT",
     "ALTER TABLE titles ADD COLUMN anilist_prequel_ids TEXT",
     "ALTER TABLE titles ADD COLUMN anilist_cross_rec_ids TEXT",
-    # Sin NOT NULL a proposito: tres estados - NULL (no decidido todavia),
-    # 0 (decidido, no es habito), 1 (habito). Con un booleano a 0 por defecto no se
-    # podria distinguir "no lo es" de "aun no lo he mirado". Marcado siempre a mano
-    # (ficha o formulario de puntuar), sin sugerencias automaticas - el triaje en
-    # bloque y el goteo se quitaron 2026-08-20 (El usuario: "una vez lo pongo es porque
-    # lo se al 100%", no queria que la app le propusiera candidatos).
+    # Tres estados a propósito: NULL (sin decidir), 0 (no es hábito), 1 (hábito).
+    # Con un booleano a 0 no se distinguiría "no lo es" de "aún no lo he mirado".
     "ALTER TABLE entries ADD COLUMN is_habit INTEGER",
     "ALTER TABLE titles ADD COLUMN original_title TEXT",
     "ALTER TABLE titles ADD COLUMN anilist_title_romaji TEXT",
     "ALTER TABLE titles ADD COLUMN anilist_title_english TEXT",
     "ALTER TABLE titles ADD COLUMN anilist_match_attempts INTEGER NOT NULL DEFAULT 0",
-    # Autover (2026-08-15): distinto de is_habit a proposito - habito solo afecta a
-    # las estadisticas de afinidad (silencioso), autover marca vistos episodios reales
-    # sin que el usuario lo pida - mezclarlos habria hecho que marcar algo "habito" tocara
-    # el historial real de golpe. Booleano simple (no tri-estado): es una decision
-    # explicita del usuario sobre una serie concreta, no algo que se pregunte solo.
+    # Autover, separado de is_habit: el hábito solo afecta a la afinidad; el autover
+    # marca episodios vistos.
     "ALTER TABLE entries ADD COLUMN auto_watch INTEGER NOT NULL DEFAULT 0",
-    # Glicko (2026-08-15): sustituye al Elo de K fijo para el duelo (entries/list_items/
-    # favorite_characters) - RD es la incertidumbre de cada item (350=nada seguro,
-    # baja con cada duelo), universal para los 3 (no depende de tener nota). Ver
-    # repo._glicko_update.
+    # Glicko: RD es la incertidumbre de cada elemento en los duelos (350 = nada
+    # seguro, baja con cada duelo). Ver repo._glicko_update.
     "ALTER TABLE entries ADD COLUMN rd REAL NOT NULL DEFAULT 350",
     "ALTER TABLE list_items ADD COLUMN rd REAL NOT NULL DEFAULT 350",
     "ALTER TABLE favorite_characters ADD COLUMN rd REAL NOT NULL DEFAULT 350",
-    # "Volver a ver" estilo Trakt (2026-08-20): fecha en la que empezo la ronda de
-    # rewatch ACTIVA (NULL = nunca, o ya puesta al dia). Compararla con
-    # episodes.watched_at (nunca borrado ahora) es lo que distingue "visto en esta
-    # ronda" de "visto antes de empezar a re-ver" sin perder ninguna fecha vieja - ver
-    # repo._episode_pending_sql/repo.next_unwatched_episode.
+    # Inicio del rewatch activo (NULL = ninguno). Lo visto antes de esta fecha vuelve
+    # a contar como pendiente sin borrar el historial.
     "ALTER TABLE entries ADD COLUMN rewatch_started_at TEXT",
-    # Backfill de episode_watches (2026-08-21, "volver a ver un episodio suelto"):
-    # la tabla solo tenia filas para lo marcado/re-marcado DESDE el 2026-08-20, asi
-    # que las estadisticas (episodios vistos, tiempo total, por mes/año) no podian
-    # pasar a leerla sin perder de golpe todo el historico. NOT EXISTS la hace
-    # idempotente (barata en cada arranque tras la primera vez, usa el indice de
-    # episode_watches.episode_id) - una fila por episodio ya visto con su fecha real.
+    # Backfill idempotente de episode_watches: una fila por episodio ya visto, para
+    # que las estadísticas lean de aquí sin perder el histórico.
     """INSERT INTO episode_watches (episode_id, watched_at)
        SELECT id, watched_at FROM episodes
        WHERE watched_at IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM episode_watches WHERE episode_watches.episode_id = episodes.id)""",
-    # Multiusuario Fase 2 (2026-09-17): episode_watches necesita saber DE QUIEN es cada
-    # visionado - antes de esto era compartido, cualquier usuario marcando un episodio
-    # lo marcaba "visto" para todos. El backfill real (asignar el admin a las filas ya
-    # existentes) vive en _migrate_multiuser, aqui solo se añade la columna.
+    # Cada visionado pertenece a un usuario. La asignación de las filas existentes al
+    # admin vive en _migrate_multiuser.
     "ALTER TABLE episode_watches ADD COLUMN user_id INTEGER REFERENCES users(id)",
-    # Multiusuario Fase 3 (2026-09-18): score_distribution necesita saber de quien es
-    # cada score backtesteado - taste_profile/profile_history tambien se vuelven
-    # por-usuario, pero sus PRIMARY KEY cambian (attr_type+attr_name -> +user_id;
-    # date -> user_id+date) asi que necesitan reconstruccion completa, no un ALTER
-    # ADD COLUMN simple - ver _migrate_affinity_multiuser mas abajo.
+    # score_distribution por usuario. taste_profile/profile_history cambian de PRIMARY
+    # KEY y se reconstruyen en _migrate_affinity_multiuser.
     "ALTER TABLE score_distribution ADD COLUMN user_id INTEGER REFERENCES users(id)",
-    # Bug real (2026-09-18, el usuario: "recomienda full anime a la cuenta random"):
-    # recommendations_cache era UNA tabla global calculada a partir de TODAS las
-    # entries de la instancia (mayoria del usuario), asi que cualquier cuenta nueva veia
-    # los recomendados del usuario. No es una tabla de datos del usuario (es cache
-    # recalculable), asi que no hace falta reconstruccion: se añade la columna y se
-    # tira lo que hubiera - se recalcula sola por usuario en la siguiente visita/sync
-    # (ver refresh_recommendations_cache). El DELETE es barato (tabla pequeña) e
-    # idempotente, se puede dejar corriendo en cada arranque sin problema.
+    # Caché de recomendados por usuario. Es recalculable, así que basta con añadir la
+    # columna y vaciarla: se rellena sola en la siguiente visita o sync.
     "ALTER TABLE recommendations_cache ADD COLUMN user_id INTEGER REFERENCES users(id)",
     "DELETE FROM recommendations_cache WHERE user_id IS NULL",
-    # Perfil de cuenta (El usuario, 2026-09-18: "como pongo fotos de usr, si quiero cambiar
-    # el nombre") - foto propia (avatar), independiente del username en si.
+    # Foto de perfil de cada cuenta.
     "ALTER TABLE users ADD COLUMN avatar_path TEXT",
-    # Aviso de comentarios nuevos en el nav (El usuario, 2026-09-18: "estilo tvtime") -
-    # marca de tiempo de "hasta aqui ya lo he visto", por usuario. Backfill a AHORA
-    # (no NULL) para que una cuenta ya existente no vea de golpe todo su historico de
-    # comentarios como "nuevo" el dia que se despliega esto - solo cuenta lo que pase
-    # DESDE este momento en adelante. Idempotente (solo toca las filas sin fecha).
+    # Hasta cuándo ha visto cada usuario los comentarios ajenos. Las cuentas existentes
+    # arrancan en AHORA para no ver todo el histórico como nuevo.
     "ALTER TABLE users ADD COLUMN comments_seen_at TEXT",
     "UPDATE users SET comments_seen_at = datetime('now') WHERE comments_seen_at IS NULL",
-    # Corregir a mano cuando TMDB desfasa un dia el episodio real (El usuario, 2026-09-22:
-    # Grand Blue emite en Japon el lunes pero TMDB lo cachea con fecha de martes, asi
-    # que en /pendientes/Continuar viendo -que usan episodes.air_date, no el
-    # weekday_overrides de mas arriba que es solo del calendario de temporada por
-    # AniList- no aparecia como emitido hasta un dia despues de lo esperado). Entero
-    # con signo en dias (-1 = "un dia antes de lo que dice TMDB"), 0 = sin corregir -
-    # ver repo.titles.sync_episodes/refresh_metadata, que aplican el desfase al
-    # guardar cada fecha, nunca al compararla, asi que ningun otro sitio del codigo
-    # necesita saber que existe.
+    # Desfase en días (con signo) para cuando TMDB fecha los episodios un día tarde o
+    # pronto. Se aplica al guardar cada fecha (sync_episodes/refresh_metadata), nunca
+    # al comparar, así que el resto del código no necesita saber que existe.
     "ALTER TABLE titles ADD COLUMN air_date_offset_days INTEGER NOT NULL DEFAULT 0",
+    # Votos de la comunidad de cada recomendacion de AniList, en el mismo orden que
+    # anilist_cross_rec_ids ("12,3,40") - para no pesar igual una recomendacion votada
+    # por cientos de personas que una con 1 voto (repo.recommendations).
+    "ALTER TABLE titles ADD COLUMN anilist_cross_rec_votes TEXT",
 ]
 
 # Indices para que las subqueries de inicio/calendario no barran tablas enteras.
@@ -414,32 +378,21 @@ CREATE INDEX IF NOT EXISTS idx_episode_comments_episode ON episode_comments(epis
 
 
 def _migrate_rating_scale_0_10(conn):
-    """SQLite no deja tocar un CHECK con ALTER TABLE, asi que subir la escala de notas
-    de 1-10 a 0-10 (El usuario: "nota del 0 al 10, no del 1 al 10") exige reconstruir las
-    tablas con nota (entries, season_ratings). Se hace UNA vez (marca en app_settings) -
-    crear tabla nueva + copiar + borrar la vieja + renombrar, con foreign_keys=OFF
-    mientras dura para que el hueco intermedio sin la tabla no rompa las referencias de
-    list_items/favorite_characters/watch_sessions/rating_history/season_ratings (todo
-    dentro de la misma transaccion, nadie mas ve ese estado intermedio)."""
+    """Pasa la escala de notas de 1-10 a 0-10. SQLite no permite modificar un CHECK con
+    ALTER TABLE, así que se reconstruyen entries y season_ratings una sola vez (marca
+    en app_settings), con foreign_keys desactivado y todo en la misma transacción."""
     done = conn.execute(
         "SELECT value FROM app_settings WHERE key = 'rating_scale_0_10'"
     ).fetchone()
     if done:
         return
-    # Bug real encontrado probando esta migracion contra una copia de la BBDD real
-    # del usuario (2026-09-18, antes de desplegar el multiusuario): "PRAGMA foreign_keys"
-    # es un no-op si ya hay una transaccion abierta (documentado en la propia SQLite) -
-    # y la hay, porque SCHEMA/MIGRATIONS ya han escrito antes en esta misma conexion.
-    # Sin este commit, el DROP TABLE de mas abajo revienta con
-    # "FOREIGN KEY constraint failed" en cuanto la tabla tiene filas reales
-    # referenciadas desde otras tablas - invisible en tests con BBDD siempre vacia.
+    # PRAGMA foreign_keys no tiene efecto con una transacción abierta, y SCHEMA/
+    # MIGRATIONS ya han escrito en esta conexión: sin este commit, el DROP TABLE falla
+    # en cuanto haya filas referenciadas.
     conn.commit()
     conn.execute("PRAGMA foreign_keys = OFF")
-    # Columnas posteriores a cat_disfrute (elo, is_habit, auto_watch, rd,
-    # rewatch_started_at...) tienen que estar aqui tambien - antes de arreglar esto
-    # (2026-08-20) esta reconstruccion se las comia enteras en cualquier BBDD fresca
-    # (bug ya documentado, "inofensivo en produccion" porque el flag de arriba ya
-    # esta puesto ahi, pero rompia tests/instalaciones nuevas de verdad).
+    # Todas las columnas posteriores a cat_disfrute tienen que estar aquí, o una BBDD
+    # nueva las pierde en la reconstrucción.
     conn.execute("""
         CREATE TABLE entries_new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -494,30 +447,16 @@ def _migrate_rating_scale_0_10(conn):
 
 
 def _migrate_multiuser(conn):
-    """Cuentas de verdad (2026-09-17, Fase 1 del multiusuario - hermana y un amigo
-    del usuario quieren su propio seguimiento). Antes no habia ningun concepto de
-    usuario: entries/lists/rejected_recommendations eran unicos por titulo/nombre
-    en TODA la instancia. Se hace UNA vez (flag en app_settings, mismo patron que
-    _migrate_rating_scale_0_10 de arriba) - SQLite no deja alterar un UNIQUE ya
-    creado, hace falta reconstruir la tabla igual que alli.
-
-    user_id se deja NULLABLE a proposito: los datos ya existentes quedan con el id
-    del admin recien creado, pero dejar la columna nullable evita romper insercion
-    directa por SQL de tests antiguos que no la mencionan - solo los puntos de
-    escritura reales de la app (repo.ensure_entry, repo.create_list,
-    repo.reject_recommendation) tienen la obligacion de rellenarla desde ahora.
-    Los listados (pendientes/vistas/afinidad/duelos...) TODAVIA no filtran por
-    usuario - eso es la Fase 2/3 del plan, deliberadamente fuera de esta migracion."""
+    """Introduce cuentas de usuario. SQLite no permite alterar un UNIQUE, así que
+    entries, lists y rejected_recommendations se reconstruyen una sola vez (marca en
+    app_settings) con UNIQUE compuestos por usuario. Los datos existentes pasan al
+    admin recién creado. user_id queda nullable para no romper inserciones directas
+    de tests antiguos; los puntos de escritura de la app siempre lo rellenan."""
     done = conn.execute("SELECT value FROM app_settings WHERE key = 'multiuser_migrated'").fetchone()
     if done:
         return
-    # Bug real encontrado probando esta migracion contra una copia de la BBDD real de
-    # El usuario (2026-09-18): "PRAGMA foreign_keys" no tiene efecto con una transaccion ya
-    # abierta (SCHEMA/MIGRATIONS ya escribieron en esta conexion) - sin este commit,
-    # el DROP TABLE de mas abajo revienta con "FOREIGN KEY constraint failed" en
-    # cuanto entries/lists/rejected_recommendations tienen filas reales referenciadas
-    # (list_items, favorite_characters, episode_watches...) - invisible en tests con
-    # BBDD siempre vacia, donde nunca hay nada que viole la referencia.
+    # PRAGMA foreign_keys no tiene efecto con una transacción abierta: sin este commit
+    # el DROP TABLE falla en cuanto haya filas referenciadas.
     conn.commit()
     conn.execute("PRAGMA foreign_keys = OFF")
 
@@ -630,9 +569,7 @@ def _migrate_multiuser(conn):
                 "INSERT INTO lists (user_id, name, is_default) VALUES (?, 'Favoritos', 1)", (admin_id,)
             )
 
-    # 6) episode_watches: todo lo ya registrado (historial real de visionados, ver el
-    # comentario junto a la tabla) era del admin - backfill directo, sin ambiguedad
-    # posible porque hasta ahora solo existia un usuario real.
+    # 6) episode_watches: todo lo ya registrado pasa a ser del admin.
     conn.execute("UPDATE episode_watches SET user_id = ? WHERE user_id IS NULL", (admin_id,))
 
     # 7) episode_user_state: `episodes.comment`/`is_favorite` (comentario/estrella por
@@ -654,12 +591,8 @@ def _migrate_multiuser(conn):
 
 
 def _migrate_affinity_multiuser(conn):
-    """Multiusuario Fase 3 (2026-09-18): el indice de afinidad, duelos/Elo y waifus
-    pasan a ser por-usuario. `taste_profile`/`profile_history` cambian de PRIMARY KEY
-    (hace falta reconstruir, SQLite no permite alterar una PK existente);
-    `score_distribution` ya gano su columna `user_id` via MIGRATIONS (ALTER simple,
-    sin PK que tocar). Todo lo ya calculado hasta ahora (el unico usuario real hasta
-    hoy) se asigna al mismo admin que ya tiene todo lo demas desde la Fase 1."""
+    """Afinidad, duelos y waifus por usuario. taste_profile/profile_history cambian de
+    PRIMARY KEY (SQLite obliga a reconstruir); lo ya calculado pasa al admin."""
     done = conn.execute(
         "SELECT value FROM app_settings WHERE key = 'affinity_multiuser_migrated'"
     ).fetchone()

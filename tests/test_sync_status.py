@@ -2,9 +2,8 @@ from app import db, repo
 
 
 def test_sync_library_records_status_on_success(conn):
-    """Ronda 2026-08-21, punto 4 de la lista del usuario: guardar y mostrar ultimo sync
-    correcto, duracion y si fallo. Con una BBDD vacia (0 titulos trackeables) no hay
-    llamadas de red reales - sync_library debe seguir dejando su rastro en app_settings."""
+    """sync_library deja su estado en app_settings incluso con una BBDD vacía (sin
+    llamadas de red)."""
     repo.sync_library()
     with db.get_connection() as c:
         status = repo.get_sync_status(c)

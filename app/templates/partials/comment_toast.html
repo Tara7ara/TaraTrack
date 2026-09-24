@@ -1,12 +1,6 @@
-{# Aviso "¿comentas?" tras marcar un episodio visto desde Continuar viendo/Pendientes
-   (El usuario, 2026-09-18: "para comentar tengo que entrar a la ficha... es tosco") - el
-   gancho para abrirlo vive donde de verdad marcas los episodios, sin tener que ir a
-   buscarlo despues. Abre el comentario PRIVADO por episodio, no el debate publico
-   (El usuario, 2026-09-22, tras preguntarselo explicitamente: "privado primero") - ver
-   ?apunte= en titulo.py/episode_row.html, parametro separado de ?comentar= (que
-   sigue siendo del debate, usado tambien por /comentarios/siguiente). Autodesaparece
-   a los 6s (mismo criterio "sin JS de mas" que el resto de la app - un timeout
-   suelto, nada de libreria) o se cierra a mano. #}
+{# Aviso "¿comentas?" tras marcar un episodio desde Continuar viendo o Pendientes.
+   Abre el comentario privado (?apunte=), no el debate (?comentar=). Desaparece a los
+   6 s o se cierra a mano. #}
 <div id="comment-toast" hx-swap-oob="innerHTML">
     <div class="comment-toast" data-autoclose>
         <span>T{{ season_number }}E{{ episode_number }} marcado</span>
