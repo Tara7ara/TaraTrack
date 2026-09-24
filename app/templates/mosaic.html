@@ -5,7 +5,8 @@
     {% for p in posters %}
     <a href="/titulo/{{ p.tmdb_id }}/{{ p.type }}" title="Ver ficha" style="position:relative">
         {% if p.custom_poster %}<span class="custom-poster-badge" title="Portada propia">★</span>{% endif %}
-        <img src="{{ p.poster_path|poster_size('w185') }}" srcset="{{ p.poster_path|poster_size('w185') }} 1x, {{ p.poster_path|poster_size('w342') }} 2x" alt="" loading="lazy">
+        {# Casillas de ~90px: la miniatura de 240px basta también en pantallas 3x. #}
+        <img src="{{ p.poster_path|poster_size('w185') }}" alt="" loading="lazy" decoding="async">
     </a>
     {% endfor %}
 </div>

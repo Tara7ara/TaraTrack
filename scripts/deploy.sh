@@ -99,8 +99,10 @@ rsync -av --delete --exclude "__pycache__/" "$REPO_DIR/app/" "$SERVER:$SERVER_AP
 
 # docker-compose.yml y Dockerfile viven fuera de app/: se sincronizan aparte. El
 # snapshot no los cubre.
-echo "-- Sincronizando docker-compose.yml y Dockerfile --"
-scp "$REPO_DIR/docker-compose.yml" "$REPO_DIR/Dockerfile" "$SERVER:$SERVER_APP_DIR/"
+echo "-- Sincronizando docker-compose.yml, Dockerfile, requirements.txt y scripts/ --"
+# requirements.txt y scripts/ también entran en la imagen (COPY del Dockerfile).
+scp "$REPO_DIR/docker-compose.yml" "$REPO_DIR/Dockerfile" "$REPO_DIR/requirements.txt" "$SERVER:$SERVER_APP_DIR/"
+rsync -av --delete --exclude "__pycache__/" "$REPO_DIR/scripts/" "$SERVER:$SERVER_APP_DIR/scripts/"
 
 echo "-- Build + recreate del contenedor --"
 # docker-compose v1.29.2 (EOL, version instalada en el servidor) revienta con

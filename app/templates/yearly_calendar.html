@@ -29,6 +29,11 @@
 <div class="season-nav">
     <div class="year-switch">
         <a class="year-arrow" href="/calendario/anual?year={{ prev_year }}&season={{ season }}&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" title="{{ prev_year }}">&larr;</a>
+{# En móvil, año, estación y "Opciones" a la vista; vista, 95%+ y actualizar perfil se
+   despliegan (ver .mobile-filters en app.css). #}
+{% set opciones_activas = (1 if vista != 'dia' else 0) + (1 if afinidad_alta else 0) %}
+<div class="mobile-filters">
+<input type="checkbox" id="filters-toggle" class="filters-toggle" hidden>
         <span class="year-label">{{ year }}</span>
         <a class="year-arrow" href="/calendario/anual?year={{ next_year }}&season={{ season }}&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" title="{{ next_year }}">&rarr;</a>
     </div>
@@ -38,11 +43,12 @@
         <a href="/calendario/anual?year={{ year }}&season=SUMMER&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if season == 'SUMMER' }}">Verano</a>
         <a href="/calendario/anual?year={{ year }}&season=FALL&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if season == 'FALL' }}">Otoño</a>
     </div>
-    <a class="season-back" href="/calendario">Calendario normal</a>
+    <a class="season-back filter-extra" href="/calendario">Calendario normal</a>
+    <label for="filters-toggle" class="btn secondary filters-toggle-label">Opciones{% if opciones_activas %} ({{ opciones_activas }}){% endif %}</label>
 </div>
 <h2 class="season-divider">{{ season_es }} {{ year }} <span class="season-count">{{ total }}</span></h2>
 
-<div class="season-controls">
+<div class="season-controls filter-extra">
     <div class="sort-bar">
         <a href="/calendario/anual?year={{ year }}&season={{ season }}&vista=dia&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if vista == 'dia' }}">Por día</a>
         <a href="/calendario/anual?year={{ year }}&season={{ season }}&vista=porcentaje&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if vista == 'porcentaje' }}">Por %</a>
@@ -53,6 +59,7 @@
         <button class="secondary" title="Predicción con {{ perfil_cubierto }} título{{ "s" if perfil_cubierto != 1 else "" }} puntuados en el perfil">Actualizar perfil{% if perfil_pendiente %} ({{ perfil_pendiente }}){% endif %}</button>
     </form>
     <div hx-get="/afinidad/estado" hx-trigger="load" hx-swap="outerHTML"></div>
+</div>
 </div>
 
 {% if api_down %}

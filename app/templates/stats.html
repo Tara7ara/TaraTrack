@@ -120,16 +120,25 @@
 
     <div class="stat-section">
     <h2>Episodios por mes (último año)</h2>
-    {% set max_m = stats.monthly|map(attribute="c")|max if stats.monthly else 1 %}
-    <div class="stat-bars">
+    {# Columnas por mes. Si un mes supera en más de 2,5 veces al siguiente más alto, la
+       escala se ajusta al resto y esa columna se corta con una marca (valor encima):
+       si no, un solo mes atípico deja los demás casi a cero. #}
+    {% set vals = stats.monthly|map(attribute="c")|list %}
+    {% set ordenados = vals|sort(reverse=True) %}
+    {% set cortar = ordenados|length > 1 and ordenados[1] > 0 and ordenados[0] > ordenados[1] * 2.5 %}
+    {% set escala = (ordenados[1] * 1.15) if cortar else ((ordenados[0] if ordenados else 1) or 1) %}
+    {% set meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] %}
+    <div class="month-cols" role="img" aria-label="Episodios vistos por mes en el último año">
         {% for row in stats.monthly %}
-        <div class="stat-bar-row">
-            <span class="stat-bar-label wide">{{ row.month }}</span>
-            <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (row.c / max_m * 100)|round }}%"></div></div>
-            <span class="stat-bar-count">{{ row.c }}</span>
+        {% set cortada = cortar and row.c > escala %}
+        <div class="month-col{{ ' cut' if cortada }}" title="{{ row.month }}: {{ row.c }} episodios">
+            <span class="month-val">{{ row.c }}</span>
+            <div class="month-bar" style="height: {{ [row.c / escala * 100, 100]|min|round(1) }}%"></div>
+            <span class="month-lbl">{{ meses[row.month[5:7]|int - 1] }}{% if row.month[5:7] == "01" or loop.first %}<br><span class="month-year">{{ row.month[2:4] }}</span>{% endif %}</span>
         </div>
         {% endfor %}
     </div>
+    {% if cortar %}<p class="page-hint month-note">La columna cortada no está a escala.</p>{% endif %}
     </div>
     </div>
 

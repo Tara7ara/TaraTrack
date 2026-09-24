@@ -30,7 +30,8 @@
 <div class="duel-grid">
     {% for item in pair %}
     <button type="submit" form="duel-form" name="resultado" value="{{ '1' if loop.index0 == 0 else '0' }}" class="duel-pick">
-        <img src="{{ item.image or '/static/img/sin-portada.svg' }}" alt="{{ item.title }}" loading="lazy">
+        {# Siempre en pantalla: carga inmediata y con prioridad, sin esperar al lazy. #}
+        <img src="{{ item.image or '/static/img/sin-portada.svg' }}" alt="{{ item.title }}" fetchpriority="high" decoding="async">
         <span class="duel-title">{{ item.title }}</span>
         {% if item.subtitle %}<span class="duel-subtitle">{{ item.subtitle }}</span>{% endif %}
     </button>

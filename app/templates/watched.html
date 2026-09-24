@@ -3,6 +3,10 @@
 <h1>Vistas</h1>
 {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todo.</p>{% endif %}
 
+{# En móvil, buscador, pestañas y "Filtros" a la vista; orden, género y duelos se
+   despliegan (ver .mobile-filters en app.css). #}
+<div class="mobile-filters">
+<input type="checkbox" id="filters-toggle" class="filters-toggle" hidden>
 <form class="filter-bar" action="/vistas" method="get">
     <input type="hidden" name="tipo" value="{{ tipo }}">
     <input type="hidden" name="direccion" value="{{ direccion }}">
@@ -10,7 +14,8 @@
            hx-get="/vistas" hx-include="closest form"
            hx-trigger="input changed delay:400ms, search"
            hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
-    <span class="sort-control">
+    <label for="filters-toggle" class="btn secondary filters-toggle-label">Filtros{% if genero %} (1){% endif %}</label>
+    <span class="sort-control filter-extra">
     <select name="orden" hx-get="/vistas" hx-include="closest form"
             hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
         <option value="recientes" {{ "selected" if orden == "recientes" }}>Recientes</option>
@@ -30,7 +35,7 @@
     </a>
     </span>
     {% if generos %}
-    <select name="genero" hx-get="/vistas" hx-include="closest form"
+    <select name="genero" class="filter-extra" hx-get="/vistas" hx-include="closest form"
             hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
         <option value="">Todos los géneros</option>
         {% for g in generos %}
@@ -52,7 +57,7 @@
        hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=anime" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Anime</a>
 </div>
 {% if entries|length > 2 %}
-<div class="page-actions tight">
+<div class="page-actions tight filter-extra">
     <a class="btn secondary" href="/duelo">Jugar duelos (anime)</a>
     {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
     <details class="del-confirm">
@@ -63,7 +68,7 @@
     </details>
 </div>
 {% if coverage and not coverage.done %}
-<p class="page-hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>
+<p class="page-hint filter-extra">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>
 {% endif %}
 {% endif %}
 
@@ -123,6 +128,7 @@
     </div>
 </div>
 {% endfor %}
+</div>
 </div>
 </div>
 {% endblock %}

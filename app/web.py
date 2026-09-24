@@ -11,7 +11,7 @@ from datetime import date, datetime, timezone
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from app import repo
+from app import repo, thumbs
 from app.db import get_connection
 
 templates = Jinja2Templates(directory="app/templates")
@@ -176,8 +176,11 @@ _TMDB_SIZE_RE = re.compile(r"/t/p/w\d+/")
 def poster_size(url, size):
     """Cambia la resolución de una URL de TMDB (guardada en w500) a `size` (p. ej.
     'w185'). Los pósters locales y el placeholder se devuelven tal cual."""
-    if not url or "image.tmdb.org" not in url:
+    if not url:
         return url
+    if "image.tmdb.org" not in url:
+        # Portada local: miniatura para los tamaños pequeños (ver app/thumbs.py).
+        return thumbs.thumb_url(url, size) or url
     return _TMDB_SIZE_RE.sub(f"/t/p/{size}/", url)
 
 

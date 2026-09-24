@@ -25,6 +25,7 @@ from app.routers import (
     pendientes,
     puntuar,
     recomendados,
+    thumbs,
     titulo,
     vistas,
     waifus,
@@ -44,7 +45,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 for _router_module in (
     pendientes, buscar, titulo, puntuar, recomendados, vistas, duelo,
-    historial, listas, waifus, estadisticas, ajustes, calendario,
+    historial, listas, waifus, estadisticas, ajustes, calendario, thumbs,
 ):
     app.include_router(_router_module.router)
 
@@ -71,7 +72,9 @@ async def static_cache_headers(request: Request, call_next):
     """Caché larga para estáticos. El resto (páginas y partials de htmx) va sin caché:
     Safari/iOS puede enseñar una versión vieja al volver atrás tras una acción."""
     response = await call_next(request)
-    if request.url.path.startswith("/static/"):
+    # /thumbs/ lleva ?v= con la fecha de la portada original, así que también se puede
+    # cachear a largo plazo.
+    if request.url.path.startswith(("/static/", "/thumbs/")):
         response.headers["Cache-Control"] = "public, max-age=604800"
     else:
         response.headers["Cache-Control"] = "no-store"
