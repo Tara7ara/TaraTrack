@@ -1763,6 +1763,11 @@ a.ep-row:hover { border-color: var(--accent); }
 
 @media (max-width: 640px), (max-height: 500px) and (orientation: landscape) {
     .topnav a:not(.brand) { display: none; }
+    /* En móvil el avatar se queda arriba a la derecha, sin nombre, como acceso a
+       Ajustes. El padding lo lleva a la zona táctil de 44px. */
+    .topnav a.nav-user { display: flex; margin-left: auto; padding: 0.5rem; }
+    .topnav a.nav-user .nav-user-name { display: none; }
+    .topnav a.nav-user .avatar { width: 1.9rem; height: 1.9rem; font-size: 0.8rem; }
 
     /* safe-area-inset-left/-right (antes sin usar en todo el CSS): con Dynamic
        Island, al girar el iPhone 17 Pro a horizontal la isla y la barra de gestos
