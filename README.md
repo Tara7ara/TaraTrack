@@ -129,7 +129,7 @@ Tema único y oscuro, con una paleta propia de negro y naranja y tres capas de p
 
 ## Calidad y arquitectura
 
-35 módulos (rutas por dominio y capa de datos separada por subsistema), sin ORM y sin SQL fuera de esa capa, 48 plantillas; 174 tests y `ruff` en cada despliegue. Login propio con clave de sesión obligatoria, límite de intentos y validación de subidas (ver [`docs/engineering-notes.md`](docs/engineering-notes.md)). Estructura, modelo de datos y Docker en [`docs/architecture.md`](docs/architecture.md).
+35 módulos (rutas por dominio y capa de datos separada por subsistema), sin ORM y sin SQL fuera de esa capa, 48 plantillas; 177 tests y `ruff` en cada despliegue. Login propio con clave de sesión obligatoria, límite de intentos y validación de subidas (ver [`docs/engineering-notes.md`](docs/engineering-notes.md)). Estructura, modelo de datos y Docker en [`docs/architecture.md`](docs/architecture.md).
 
 ## Estado
 
