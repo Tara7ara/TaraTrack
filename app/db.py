@@ -371,6 +371,10 @@ MIGRATIONS = [
     "ALTER TABLE titles ADD COLUMN backdrops TEXT",
     "ALTER TABLE titles ADD COLUMN hidden_backdrops TEXT",
     "ALTER TABLE episodes ADD COLUMN still_path TEXT",
+    # Renovada: con estado «Returning Series» y sin fecha del siguiente episodio,
+    # separa «Renovada» (en producción) de «Pausa». También fuera de la biblioteca.
+    "ALTER TABLE titles ADD COLUMN in_production INTEGER",
+    "ALTER TABLE tmdb_extra ADD COLUMN in_production INTEGER",
     # Géneros de cada recomendación, para agruparlas por género.
     "ALTER TABLE recommendations_cache ADD COLUMN genres TEXT",
     # Cuentas por invitación: hash del código de un solo uso y su caducidad; y cuentas

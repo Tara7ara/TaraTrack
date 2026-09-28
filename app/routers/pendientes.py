@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from app import repo, web
 from app.db import get_connection
@@ -30,6 +30,18 @@ def inicio(request: Request):
                 """SELECT titles.tmdb_id FROM entries JOIN titles ON titles.id = entries.title_id
                    WHERE entries.user_id = ? AND entries.is_habit = 1""", (uid,))
         }
+        # Inicio vacío no se enseña: sin nada a medias ni de temporada, se va a
+        # Pendientes; si tampoco hay pendientes, a Recomendados (si hay alguno). No en
+        # los refrescos htmx de la propia página.
+        if not continuar and not nuevas and not request.headers.get("HX-Request"):
+            if conn.execute(
+                "SELECT 1 FROM entries WHERE user_id = ? AND status = 'pending' LIMIT 1", (uid,)
+            ).fetchone():
+                return RedirectResponse("/pendientes", status_code=303)
+            if conn.execute(
+                "SELECT 1 FROM recommendations_cache WHERE user_id = ? LIMIT 1", (uid,)
+            ).fetchone():
+                return RedirectResponse("/recomendados?vacio=1", status_code=303)
         today = date.today().isoformat()
         cal = [i for i in repo.list_calendar(conn, uid) if not i["auto_watch"] and i["tmdb_id"] not in habit_ids]
     hoy = [i for i in cal if i["air_date"] == today]

@@ -111,6 +111,7 @@ def get_extra(tmdb_id: int, media_type: str) -> dict:
     return {
         "backdrop_path": backdrop, "logo_path": logo, "show_status": data.get("status") if media_type == "show" else None,
         "next_episode_air_date": (next_ep or {}).get("air_date"), "next_episode_label": _next_label(next_ep),
+        "in_production": bool(data.get("in_production")),
     }
 
 
@@ -168,6 +169,9 @@ def get_details(tmdb_id: int, media_type: str) -> dict:
         result["episode_count"] = data.get("number_of_episodes")
         next_ep = data.get("next_episode_to_air")
         result["show_status"] = data.get("status")
+        # Renovada: TMDB la marca en producción aunque aún no haya fecha del siguiente
+        # episodio (distingue «viene temporada nueva» de «parada»).
+        result["in_production"] = bool(data.get("in_production"))
         result["seasons"] = [
             s["season_number"] for s in data.get("seasons", []) if s["season_number"] > 0
         ]

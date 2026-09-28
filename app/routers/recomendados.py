@@ -52,7 +52,7 @@ def _anime_temporada(conn, user_id: int, limit: int = 20) -> list[dict]:
 
 
 @router.get("/recomendados", response_class=HTMLResponse)
-def recomendados(request: Request, tipo: str = "", todas: str = ""):
+def recomendados(request: Request, tipo: str = "", todas: str = "", vacio: str = ""):
     uid = request.state.user_id
     with get_connection() as conn:
         recs, _pages = repo.list_recommendations(conn, uid, tipo=tipo, limit=10000, with_pages=True)
@@ -92,7 +92,7 @@ def recomendados(request: Request, tipo: str = "", todas: str = ""):
     return templates.TemplateResponse(
         request, "recommendations.html",
         {"top": top, "filas": filas, "por_genero": por_genero, "temporada": temporada, "mas": mas,
-         "total": len(recs), "tipo": tipo, "transparent_nav": bool(top), "title": "Recomendados"},
+         "total": len(recs), "tipo": tipo, "transparent_nav": bool(top), "vacio": bool(vacio), "title": "Recomendados"},
     )
 
 

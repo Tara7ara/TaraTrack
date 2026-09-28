@@ -30,7 +30,7 @@
   <div class="slide{{ ' on' if loop.first }}">
     {% if h.backdrop_path %}<div class="hero-bg">{{ hero_img(h.backdrop_path, loop.first) }}</div>{% endif %}
     <div class="hero-body">
-      <div class="ask">¿Qué me puede gustar? · {{ 'tu mejor recomendación' if loop.first else 'tu recomendación nº ' ~ loop.index }}</div>
+      <div class="ask">{{ 'No tienes nada pendiente' if vacio else '¿Qué me puede gustar?' }} · {{ 'tu mejor recomendación' if loop.first else 'tu recomendación nº ' ~ loop.index }}</div>
       {% if h.logo_path %}<img class="hero-logo" src="{{ h.logo_path|tmdb_img('w500') }}" alt="{{ h.title }}">{% else %}<h1 class="hero-title">{{ h.title }}</h1>{% endif %}
       <div class="meta-row"><span class="mchip">{{ h.year or '—' }} · {{ 'Serie' if h.type == 'show' else 'Película' }}</span>{% if h.vote_average %}<span class="mchip">Internet <b>{{ h.vote_average|fmt_rating(1) }}</b></span>{% endif %}</div>
       {% if h.overview %}<p class="overview-short">{{ h.overview }}</p>{% endif %}

@@ -306,7 +306,8 @@ def refresh_tmdb_extra(conn, items, max_age_days=TMDB_EXTRA_MAX_AGE_DAYS):
     TMDB al abrir la pagina. Solo pide lo que falta o tiene mas de una semana."""
     fresh = {
         (row["tmdb_id"], row["type"]) for row in conn.execute(
-            "SELECT tmdb_id, type FROM tmdb_extra WHERE fetched_at > datetime('now', ?)",
+            # Sin in_production (filas de antes de esa columna) se vuelve a pedir.
+            "SELECT tmdb_id, type FROM tmdb_extra WHERE fetched_at > datetime('now', ?) AND in_production IS NOT NULL",
             (f"-{max_age_days} days",),
         )
     }
@@ -327,14 +328,15 @@ def refresh_tmdb_extra(conn, items, max_age_days=TMDB_EXTRA_MAX_AGE_DAYS):
             continue
         conn.execute(
             """INSERT INTO tmdb_extra (tmdb_id, type, backdrop_path, logo_path, show_status,
-                   next_episode_air_date, next_episode_label, fetched_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                   next_episode_air_date, next_episode_label, in_production, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(tmdb_id, type) DO UPDATE SET backdrop_path = excluded.backdrop_path,
                    logo_path = excluded.logo_path, show_status = excluded.show_status,
                    next_episode_air_date = excluded.next_episode_air_date,
-                   next_episode_label = excluded.next_episode_label, fetched_at = excluded.fetched_at""",
+                   next_episode_label = excluded.next_episode_label, in_production = excluded.in_production,
+                   fetched_at = excluded.fetched_at""",
             (tmdb_id, media_type, extra["backdrop_path"], extra["logo_path"], extra["show_status"],
-             extra["next_episode_air_date"], extra["next_episode_label"]),
+             extra["next_episode_air_date"], extra["next_episode_label"], int(extra["in_production"])),
         )
     return len(results)
 
@@ -359,5 +361,6 @@ def recommendation_extras(conn, recs):
             "show_status": e["show_status"] if e else None,
             "next_episode_air_date": e["next_episode_air_date"] if e else None,
             "next_episode_label": e["next_episode_label"] if e else None,
+            "in_production": e["in_production"] if e else None,
         })
     return out

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/ui.html" import ic, card, head, empty %}
 {% block content %}
-{% set qs = "tipo=" ~ tipo ~ "&orden=" ~ orden ~ "&direccion=" ~ direccion ~ "&q=" ~ (q|urlencode) ~ "&genero=" ~ (genero|urlencode) %}
+{% set qs = "tipo=" ~ tipo ~ "&orden=" ~ orden ~ "&direccion=" ~ direccion ~ "&q=" ~ (q|urlencode) ~ "&genero=" ~ (genero|urlencode) ~ "&estado=" ~ estado %}
 <div id="vistas-page">
 <div class="page">
     <div id="vis-head" class="lib-head">
@@ -16,7 +16,7 @@
   {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todo.</p>{% endif %}
   <form class="toolbar" id="vis-form" action="/vistas" method="get"
         hx-get="/vistas" hx-target="#vistas-section" hx-select="#vistas-section" hx-select-oob="#vis-head, #vis-tabs, #vis-dir" hx-swap="outerHTML" hx-push-url="true"
-        hx-trigger="submit, change from:#vis-orden, change from:#vis-genero" hx-boost="true">
+        hx-trigger="submit, change from:#vis-orden, change from:#vis-genero, change from:#vis-estado" hx-boost="true">
     <input type="hidden" name="tipo" value="{{ tipo }}"><input type="hidden" name="direccion" value="{{ direccion }}">
     <div class="seg" id="vis-tabs" hx-target="#vistas-page" hx-select="#vistas-page" hx-select-oob="unset">{% for v, l in tipo_tabs(request.state.user_id) %}<a href="/vistas?{{ qs|replace('tipo=' ~ tipo ~ '&', 'tipo=' ~ v ~ '&') }}" class="{{ 'active' if tipo == v }}">{{ l }}</a>{% endfor %}</div>
     <label class="search-field grow">{{ ic('search', 'sm') }}<input class="input" type="search" name="q" id="vis-q" value="{{ q }}" placeholder="Buscar en vistas…" autocomplete="off"
@@ -28,6 +28,7 @@
     <a class="btn quiet icon" id="vis-dir" hx-target="#vistas-page" hx-select="#vistas-page" hx-select-oob="unset" title="{{ 'Descendente' if direccion == 'desc' else 'Ascendente' }}" href="/vistas?{{ qs|replace('direccion=' ~ direccion, 'direccion=' ~ ('asc' if direccion == 'desc' else 'desc')) }}">{{ ic('down' if direccion == 'desc' else 'up', 'sm') }}</a>
     </span>
     {% if generos %}<select class="input" name="genero" id="vis-genero" aria-label="Género"><option value="">Todos los géneros</option>{% for g in generos %}<option value="{{ g }}"{{ ' selected' if g == genero }}>{{ g }}</option>{% endfor %}</select>{% endif %}
+    <select class="input" name="estado" id="vis-estado" aria-label="Estado"><option value="">Todos los estados</option>{% for v, l in estados %}<option value="{{ v }}"{{ ' selected' if v == estado }}>{{ l }}</option>{% endfor %}</select>
   </form>
   <div id="vistas-section" style="display:grid;gap:22px">
     {% if entries|length > 2 %}

@@ -172,3 +172,51 @@ def test_vistas_por_tandas(client):
     assert r.text.count('class="pcard') == 60 and "desde=60" in r.text
     r2 = client.get("/vistas?desde=60&parcial=1")
     assert r2.text.count('class="pcard') == 15 and "desde=" not in r2.text
+
+
+def test_renovada_vs_pausa_y_filtro_estado_en_vistas(client):
+    """Returning Series sin fecha: «Renovada» si TMDB la tiene en producción; si no, «Pausa».
+    El filtro Estado de Vistas usa esa misma etiqueta."""
+    from app import web
+    base = {"type": "show", "show_status": "Returning Series", "next_episode_air_date": None, "next_episode_label": None}
+    assert web.show_status_ribbon({**base, "in_production": 1})[0] == "Renovada"
+    assert web.show_status_ribbon({**base, "in_production": 0})[0] == "Pausa"
+    with db.get_connection() as conn:
+        uid = conn.execute("SELECT id FROM users WHERE username = 'principal'").fetchone()["id"]
+        for tmdb, name, st, prod in ((7101, "Renov", "Returning Series", 1), (7102, "Parada", "Returning Series", 0), (7103, "Fin", "Ended", 0)):
+            t = conn.execute("INSERT INTO titles (tmdb_id, type, title, show_status, in_production) VALUES (?, 'show', ?, ?, ?)", (tmdb, name, st, prod)).lastrowid
+            conn.execute("INSERT INTO entries (title_id, user_id, status, watched_at) VALUES (?, ?, 'watched', '2026-01-01')", (t, uid))
+    r = client.get("/vistas?estado=renovada")
+    assert "Renov" in r.text and "Parada" not in r.text and ">Fin<" not in r.text
+    r = client.get("/vistas?estado=pausa")
+    assert "Parada" in r.text and "Renov<" not in r.text
+
+
+def test_inicio_sin_nada_pendiente_va_a_recomendados(client):
+    """Sin nada a medias ni de temporada, Inicio manda a Pendientes; sin pendientes
+    tampoco, a Recomendados (si hay)."""
+    assert client.get("/", follow_redirects=False).status_code == 200  # sin recomendados: se queda
+    with db.get_connection() as conn:
+        uid = conn.execute("SELECT id FROM users WHERE username = 'principal'").fetchone()["id"]
+        conn.execute("""INSERT INTO recommendations_cache (user_id, tmdb_id, type, title, seeds, score)
+                        VALUES (?, 8801, 'show', 'Reco', '[]', 1)""", (uid,))
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/recomendados?vacio=1"
+    assert client.get("/", headers={"HX-Request": "true"}, follow_redirects=False).status_code == 200
+    with db.get_connection() as conn:
+        t = conn.execute("INSERT INTO titles (tmdb_id, type, title) VALUES (8802, 'movie', 'Pend')").lastrowid
+        conn.execute("INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'pending')", (t, uid))
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/pendientes"
+
+
+def test_recomendados_fuera_de_la_biblioteca_salen_renovada(client, monkeypatch):
+    """tmdb_extra guarda in_production: un recomendado renovado sin fecha no sale «Pausa»."""
+    from app import repo, tmdb, web
+    monkeypatch.setattr(tmdb, "get_extra", lambda i, t: {
+        "backdrop_path": None, "logo_path": None, "show_status": "Returning Series",
+        "next_episode_air_date": None, "next_episode_label": None, "in_production": True})
+    with db.get_connection() as conn:
+        repo.refresh_tmdb_extra(conn, [(8901, "show")])
+        rec = repo.recommendation_extras(conn, [{"tmdb_id": 8901, "type": "show"}])[0]
+    assert web.show_status_ribbon(rec)[0] == "Renovada"

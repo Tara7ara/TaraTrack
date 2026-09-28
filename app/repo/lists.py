@@ -105,7 +105,7 @@ def list_items_in_list(conn, list_id: int):
         else "list_items.position NULLS LAST, list_items.added_at DESC"
     )
     return conn.execute(
-        f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id, titles.show_status, titles.next_episode_air_date, titles.next_episode_label,
+        f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id, titles.show_status, titles.next_episode_air_date, titles.next_episode_label, titles.in_production,
                   list_items.id AS item_id, list_items.elo AS elo, list_items.rd AS rd
            FROM list_items
            JOIN entries ON entries.id = list_items.entry_id

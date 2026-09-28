@@ -62,7 +62,10 @@ def show_status_ribbon(title_row):
             return "Próx.", "ribbon-planned"
         return "Emisión", "ribbon-airing"
     if status == "Returning Series":
-        # Sin proximo episodio con fecha: entre temporadas ("Continua" no le gustaba)
+        # Sin próximo episodio con fecha: si TMDB la tiene en producción, viene
+        # temporada nueva («Renovada»); si no, está parada entre temporadas («Pausa»).
+        if "in_production" in title_row.keys() and title_row["in_production"]:
+            return "Renovada", "ribbon-planned"
         return "Pausa", "ribbon-returning"
     css = {"Ended": "ribbon-ended", "Canceled": "ribbon-canceled"}.get(status, "ribbon-planned")
     return _RIBBON_SHORT.get(status, fmt_show_status(status)), css

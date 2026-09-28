@@ -24,7 +24,7 @@ def _with_status(conn, results):
     ph = ",".join("?" * len(ids))
     status = {
         row["tmdb_id"]: dict(row) for row in conn.execute(
-            f"""SELECT tmdb_id, show_status, next_episode_air_date, next_episode_label
+            f"""SELECT tmdb_id, show_status, next_episode_air_date, next_episode_label, in_production
                 FROM titles WHERE type = 'show' AND tmdb_id IN ({ph})""", ids,
         )
     }
@@ -34,7 +34,7 @@ def _with_status(conn, results):
         status.update({r["tmdb_id"]: r for r in repo.recommendation_extras(conn, fuera)})
     for r in shows:
         s = status.get(r["tmdb_id"], {})
-        for k in ("show_status", "next_episode_air_date", "next_episode_label"):
+        for k in ("show_status", "next_episode_air_date", "next_episode_label", "in_production"):
             r[k] = s.get(k)
     return results
 

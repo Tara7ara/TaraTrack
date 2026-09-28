@@ -53,8 +53,8 @@ def ensure_title(conn, tmdb_id: int, media_type: str):
            (tmdb_id, type, title, year, poster_path, overview, genres, imdb_id,
             show_status, next_episode_air_date, next_episode_label, vote_average,
             runtime_minutes, episode_count, is_adult, release_date, original_language,
-            original_title, backdrop_path, logo_path)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            original_title, backdrop_path, logo_path, in_production)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             tmdb_id,
             media_type,
@@ -76,6 +76,7 @@ def ensure_title(conn, tmdb_id: int, media_type: str):
             details.get("original_title"),
             details.get("backdrop_path"),
             details.get("logo_path"),
+            int(bool(details.get("in_production"))),
         ),
     )
     return get_title(conn, tmdb_id)
@@ -131,7 +132,7 @@ def refresh_metadata(conn, title_row):
         """UPDATE titles SET title = ?, overview = ?, genres = ?, show_status = ?,
            next_episode_air_date = ?, next_episode_label = ?,
            vote_average = ?, runtime_minutes = ?, episode_count = ?, release_date = ?,
-           original_language = ?, original_title = ?,
+           original_language = ?, original_title = ?, in_production = ?,
            backdrop_path = COALESCE(?, backdrop_path), logo_path = COALESCE(?, logo_path) WHERE id = ?""",
         (
             details["title"],
@@ -146,6 +147,7 @@ def refresh_metadata(conn, title_row):
             details.get("release_date"),
             details.get("original_language"),
             details.get("original_title"),
+            int(bool(details.get("in_production"))),
             details.get("backdrop_path"),
             details.get("logo_path"),
             title_row["id"],
@@ -452,7 +454,7 @@ _HOME_SHOWS_SQL = """
     SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type,
            titles.tmdb_id, titles.runtime_minutes, titles.release_date,
            titles.backdrop_path, titles.logo_path, titles.show_status,
-           titles.next_episode_air_date, titles.next_episode_label,
+           titles.next_episode_air_date, titles.next_episode_label, titles.in_production,
            (SELECT count(*) FROM episodes
               WHERE episodes.title_id = titles.id
                 AND EXISTS(SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
@@ -918,7 +920,7 @@ def list_pending(conn, user_id, tipo="", orden="anadido", q="", genero="", direc
         f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type,
                    titles.tmdb_id, titles.vote_average, titles.anilist_id, titles.anilist_genres,
                    titles.anilist_studio, titles.anilist_tags, titles.anilist_prequel_ids,
-                   titles.anilist_cross_rec_ids, titles.show_status, titles.next_episode_air_date, titles.next_episode_label
+                   titles.anilist_cross_rec_ids, titles.show_status, titles.next_episode_air_date, titles.next_episode_label, titles.in_production
            FROM entries JOIN titles ON titles.id = entries.title_id
            WHERE entries.status = 'pending' AND entries.user_id = ?{_tipo_sql(tipo)}{filtro_q}{filtro_genero}
            ORDER BY {order_sql}""",
@@ -940,7 +942,7 @@ def random_pending(conn, user_id, tipo="", excluir: int | None = None, tmdb_id: 
                    titles.poster_path, titles.overview, titles.vote_average,
                    titles.runtime_minutes, titles.episode_count, titles.is_adult,
                    titles.backdrop_path, titles.logo_path, titles.show_status,
-                   titles.next_episode_air_date, titles.next_episode_label, titles.genres,
+                   titles.next_episode_air_date, titles.next_episode_label, titles.in_production, titles.genres,
                    titles.anilist_id, titles.anilist_genres, titles.anilist_studio, titles.anilist_tags,
                    titles.anilist_prequel_ids, titles.anilist_cross_rec_ids
            FROM entries JOIN titles ON titles.id = entries.title_id
@@ -987,7 +989,7 @@ def list_watched(conn, user_id: int, orden="recientes", tipo="", q="", genero=""
     params.extend(genero_params)
     return conn.execute(
         f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id,
-                   titles.vote_average, titles.runtime_minutes, titles.episode_count, titles.show_status, titles.next_episode_air_date, titles.next_episode_label,
+                   titles.vote_average, titles.runtime_minutes, titles.episode_count, titles.show_status, titles.next_episode_air_date, titles.next_episode_label, titles.in_production,
                    EXISTS(SELECT 1 FROM list_items WHERE list_items.entry_id = entries.id
                           AND list_items.list_id = ?) AS is_favorite,
                    {_IS_ANIME_SQL} AS is_anime
@@ -1172,7 +1174,7 @@ def _season_review_candidates(conn, user_id: int):
         """SELECT DISTINCT entries.id, entries.title_id, entries.rewatch_started_at, entries.is_habit,
                   entries.watched_at, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id,
                   titles.backdrop_path, titles.logo_path, titles.vote_average, titles.show_status,
-                  titles.next_episode_air_date, titles.next_episode_label
+                  titles.next_episode_air_date, titles.next_episode_label, titles.in_production
            FROM entries
            JOIN season_ratings ON season_ratings.entry_id = entries.id
            JOIN titles ON titles.id = entries.title_id
@@ -1202,7 +1204,7 @@ def count_review_queue(conn, user_id: int) -> int:
 def next_review_item(conn, user_id: int, excluir_ids: list[int]):
     query = f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id,
                       titles.backdrop_path, titles.logo_path, titles.vote_average, titles.show_status,
-                      titles.next_episode_air_date, titles.next_episode_label
+                      titles.next_episode_air_date, titles.next_episode_label, titles.in_production
                FROM entries JOIN titles ON titles.id = entries.title_id
                WHERE entries.status = 'watched' AND entries.rating IS NULL AND entries.user_id = ?
                  AND {_NO_EN_EMISION_SQL} AND {_SIN_PENDIENTES_SQL}"""
