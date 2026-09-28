@@ -29,8 +29,6 @@ def _duel_counts(conn, table: str, ids: list[int]) -> dict:
     return counts
 
 
-
-
 def duel_coverage(conn, table: str, ids: list[int], min_duels: int = 5):
     """Cuántos duelos faltan como mínimo para un ranking asentado (5 por elemento).
     Cada duelo resta como mucho 1 al déficit de dos elementos a la vez, así que
@@ -45,8 +43,6 @@ def duel_coverage(conn, table: str, ids: list[int], min_duels: int = 5):
         "done": remaining == 0, "covered": covered, "total": len(ids),
         "remaining": remaining, "min_duels": min_duels,
     }
-
-
 
 
 # --- Glicko ---------------------------------------------------------------
@@ -73,18 +69,12 @@ DUEL_COOLDOWN = 3      # los participantes de los ultimos N duelos descansan
 RATING_SEED_SCALE = 200
 
 
-
-
 def _glicko_g(rd: float) -> float:
     return 1 / math.sqrt(1 + 3 * GLICKO_Q**2 * rd**2 / math.pi**2)
 
 
-
-
 def _glicko_expected(rating: float, rival_rating: float, rival_rd: float) -> float:
     return 1 / (1 + 10 ** (-_glicko_g(rival_rd) * (rating - rival_rating) / 400))
-
-
 
 
 def _glicko_update(rating: float, rd: float, rival_rating: float, rival_rd: float, score: float):
@@ -97,8 +87,6 @@ def _glicko_update(rating: float, rd: float, rival_rating: float, rival_rd: floa
     new_rating = rating + GLICKO_Q / (1 / rd**2 + 1 / d2) * g * (score - e)
     new_rd = max(GLICKO_RD_MIN, math.sqrt(1 / (1 / rd**2 + 1 / d2)))
     return new_rating, new_rd
-
-
 
 
 def reseed_undueled_entries_elo(conn, user_id):
@@ -137,8 +125,6 @@ def reseed_undueled_entries_elo(conn, user_id):
         conn.execute("UPDATE entries SET elo = ?, rd = ? WHERE id = ?", (seed, GLICKO_RD_INIT, row["id"]))
 
 
-
-
 def elo_confidence_label(rd: float) -> str:
     """Traduce el RD a algo legible junto al Elo - "ningun numero sin su porque",
     mismo criterio que ya usa el resto de la app (afinidad, cobertura de duelos)."""
@@ -147,8 +133,6 @@ def elo_confidence_label(rd: float) -> str:
     if rd >= 120:
         return "orientativo"
     return "fiable"
-
-
 
 
 def reset_elo(conn, table: str, ids: list[int], user_id: int | None = None):
@@ -168,8 +152,6 @@ def reset_elo(conn, table: str, ids: list[int], user_id: int | None = None):
     conn.execute(f"DELETE FROM elo_snapshots WHERE table_name = ? AND item_id IN ({placeholders})", [table, *ids])
     if table == "entries":
         reseed_undueled_entries_elo(conn, user_id)
-
-
 
 
 def list_watched_ids(conn, user_id):
@@ -203,8 +185,6 @@ def list_watched_ids(conn, user_id):
     ]
 
 
-
-
 def list_all_watched_ids(conn, user_id):
     """Todo lo visto por este usuario, sin filtrar por género: el pool de respaldo
     cuando no hay anime suficiente. No exige temporada completa."""
@@ -230,13 +210,12 @@ def get_entries_by_ids(conn, ids: list[int]):
     placeholders = ",".join("?" * len(ids))
     return conn.execute(
         f"""SELECT entries.id AS id, titles.title AS title, titles.poster_path AS image,
-                   titles.year AS subtitle, titles.tmdb_id, titles.type
+                   titles.year AS subtitle, titles.tmdb_id, titles.type, titles.backdrop_path,
+                   titles.logo_path, entries.rating, entries.elo
            FROM entries JOIN titles ON titles.id = entries.title_id
            WHERE entries.id IN ({placeholders})""",
         ids,
     ).fetchall()
-
-
 
 
 def _duel_history(conn, table: str, ids: list[int]):
@@ -308,8 +287,6 @@ def random_duel_pair(conn, table: str, ids: list[int]):
     return pair
 
 
-
-
 _DUEL_OWNERSHIP_SQL = {
     "entries": "SELECT count(*) FROM entries WHERE id IN (?, ?) AND user_id = ?",
     "list_items": """SELECT count(*) FROM list_items JOIN lists ON lists.id = list_items.list_id
@@ -352,8 +329,6 @@ def record_duel(conn, table: str, a_id: int, b_id: int, user_id: int, result: fl
         "INSERT INTO duels (table_name, winner_id, loser_id, result) VALUES (?, ?, ?, ?)",
         (table, a_id, b_id, result),
     )
-
-
 
 
 def get_elo_deltas(conn, table: str, ids: list[int]):

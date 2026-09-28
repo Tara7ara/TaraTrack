@@ -62,3 +62,55 @@ def ensure_thumb(width, name):
         im.save(tmp, "JPEG", quality=80, optimize=True, progressive=True)
     os.replace(tmp, dest)
     return dest
+
+
+_BACKDROP_RE = re.compile(r"^[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)$")
+
+
+def backdrop_url(tmdb_path, tmdb_id=None):
+    """'/abc.jpg' de TMDB -> URL local que lo sirve. `tmdb_id` dice de qué título es, para
+    decidir si se puede guardar (ver routers/thumbs.fondo)."""
+    if not tmdb_path:
+        return ""
+    return f"/fondo/{tmdb_path.lstrip('/')}" + (f"?t={tmdb_id}" if tmdb_id else "")
+
+
+def tmdb_backdrop_url(name):
+    return f"https://image.tmdb.org/t/p/original/{name}"
+
+
+def local_backdrop(name):
+    """Ruta en disco del fondo si ya está guardado; None si no (o si el nombre no vale)."""
+    if not _BACKDROP_RE.match(name):
+        return None
+    dest = os.path.join(_posters_dir(), "backdrops", name)
+    return dest if os.path.isfile(dest) and os.path.getsize(dest) > 0 else None
+
+
+def delete_backdrop(name):
+    """Borra el fondo guardado (al quitarlo desde la ficha): que no ocupe disco."""
+    path = local_backdrop(name)
+    if path:
+        os.remove(path)
+
+
+def ensure_backdrop(name):
+    """Ruta en disco del fondo, descargándolo de TMDB (original) si aún no está. None si
+    el nombre no es válido."""
+    if not _BACKDROP_RE.match(name):
+        return None
+    dest_dir = os.path.join(_posters_dir(), "backdrops")
+    dest = os.path.join(dest_dir, name)
+    if local_backdrop(name):
+        return dest
+    from app import tmdb  # import aquí: tmdb no hace falta para las miniaturas
+
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp = f"{dest}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
+    try:
+        tmdb.download_poster(f"https://image.tmdb.org/t/p/original/{name}", tmp)
+        os.replace(tmp, dest)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return dest

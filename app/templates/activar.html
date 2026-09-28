@@ -1,0 +1,14 @@
+{% extends "auth_base.html" %}
+{% block title %}Activar cuenta{% endblock %}
+{% block heading %}Activa tu cuenta{% endblock %}
+{% block sub %}Pon el usuario y el código que te han pasado, y elige tu contraseña. El código solo sirve una vez.{% endblock %}
+{% block form %}
+<form method="post" action="/activar" class="auth-form">
+  <div class="field"><label for="act-username">Usuario</label><input class="input" type="text" id="act-username" name="username" value="{{ usuario }}" autocomplete="username" autocapitalize="none" {{ '' if usuario else 'autofocus' }} required></div>
+  <div class="field"><label for="act-code">Código de invitación</label><input class="input code-input" type="text" id="act-code" name="code" placeholder="XXXXX-XXXXX" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" {{ 'autofocus' if usuario else '' }} required></div>
+  <div class="field"><label for="act-password">Tu contraseña <span class="hint">(8 o más)</span></label><input class="input" type="password" id="act-password" name="password" autocomplete="new-password" minlength="8" required></div>
+  <div class="field"><label for="act-password2">Repítela</label><input class="input" type="password" id="act-password2" name="password2" autocomplete="new-password" minlength="8" required></div>
+  <button class="btn lg">Activar y entrar</button>
+</form>
+{% endblock %}
+{% block foot %}¿Ya la tienes activada? <a class="link" href="/login">Entrar</a>{% endblock %}

@@ -1,17 +1,6 @@
-<div class="char-card">
-    {% if c.profile_path %}
-    <img src="{{ c.profile_path }}" alt="{{ c.name }}" loading="lazy">
-    {% else %}
-    <img src="/static/img/sin-portada.svg" alt="Sin foto" loading="lazy">
-    {% endif %}
-    <div class="char-name">{{ c.character_name or c.name }}</div>
-    {% if entry_id %}
-    <button class="fav-star {{ 'is-fav' if is_favorite else '' }}"
-            hx-post="/personaje/{{ c.id }}/favorito/{{ entry_id }}"
-            hx-target="closest .char-card"
-            hx-swap="outerHTML"
-            title="Personaje favorito">
-        {{ "★" if is_favorite else "☆" }}
-    </button>
-    {% endif %}
+{% from "partials/ui.html" import ic %}
+<div class="char">
+  {% if c.profile_path %}<img src="{{ c.profile_path }}" alt="{{ c.character_name or c.name }}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ph'}))">{% else %}<span class="ph"></span>{% endif %}
+  {% if entry_id %}<button class="star-btn{{ ' on' if is_favorite }}" hx-post="/personaje/{{ c.id }}/favorito/{{ entry_id }}" hx-target="closest .char" hx-swap="outerHTML" title="Personaje favorito">{{ ic('star') }}</button>{% endif %}
+  <span class="nm">{{ c.character_name or c.name }}</span>
 </div>

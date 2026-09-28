@@ -9,10 +9,9 @@ from app.repo._shared import (
 
 
 def list_favorite_episodes(conn, user_id):
-    """Episodios marcados con estrella por este usuario, agrupados por título."""
     return conn.execute(
-        """SELECT episodes.season_number, episodes.episode_number, episodes.name,
-                  titles.title, titles.tmdb_id, titles.type
+        """SELECT episodes.season_number, episodes.episode_number, episodes.name, episodes.still_path,
+                  titles.title, titles.tmdb_id, titles.type, titles.poster_path, titles.backdrop_path, titles.logo_path
            FROM episode_user_state
            JOIN episodes ON episodes.id = episode_user_state.episode_id
            JOIN titles ON titles.id = episodes.title_id
@@ -20,8 +19,6 @@ def list_favorite_episodes(conn, user_id):
            ORDER BY titles.title COLLATE NOCASE, episodes.season_number, episodes.episode_number""",
         (user_id,),
     ).fetchall()
-
-
 
 
 def get_stats(conn, user_id):
@@ -99,8 +96,6 @@ def get_stats(conn, user_id):
     }
 
 
-
-
 def get_available_years(conn, user_id) -> list[int]:
     """Años con actividad de visionado real de ESTE usuario - descarta fechas
     placeholder (epoch 1970, de historial importado sin fecha real)."""
@@ -115,8 +110,6 @@ def get_available_years(conn, user_id) -> list[int]:
     # Un watched_at malformado no puede tumbar /resumen: se ignora si no empieza por
     # un año válido.
     return [int(r["y"]) for r in rows if r["y"] and r["y"].isdigit()]
-
-
 
 
 def get_year_stats(conn, user_id, year: int):
@@ -184,7 +177,7 @@ def get_year_stats(conn, user_id, year: int):
     busiest_month = max(monthly, key=lambda r: r["c"], default=None)
 
     top_rated = conn.execute(
-        """SELECT titles.title, titles.poster_path, entries.rating
+        """SELECT titles.title, titles.poster_path, titles.tmdb_id, titles.type, entries.rating
            FROM entries JOIN titles ON titles.id = entries.title_id
            WHERE entries.rating IS NOT NULL AND entries.user_id = ?
              AND entries.watched_at >= ? AND entries.watched_at < ?
@@ -201,8 +194,6 @@ def get_year_stats(conn, user_id, year: int):
         "busiest_month": busiest_month,
         "top_rated": top_rated,
     }
-
-
 
 
 def export_data(conn, user_id):
@@ -308,8 +299,6 @@ def export_data(conn, user_id):
         "waifus": [dict(w) for w in waifus],
         "notas_por_temporada": [dict(s) for s in season_ratings],
     }
-
-
 
 
 def get_rating_discrepancies(conn, user_id, limit=25):

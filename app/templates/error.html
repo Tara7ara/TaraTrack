@@ -1,9 +1,8 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic %}
 {% block content %}
-<div class="error-page">
-    <div class="error-code">{{ code }}</div>
-    <h1>{{ "Esto no existe" if code == 404 else "Algo se ha roto" }}</h1>
-    <p class="page-hint">{{ message }}</p>
-    <a class="btn" href="/pendientes">Volver a Pendientes</a>
-</div>
+<div class="page"><div class="empty" style="padding:80px 16px">{{ ic('warn') }}
+  <div style="font-family:var(--display);font-weight:800;font-size:3rem;color:var(--accent)">{{ code }}</div>
+  <h3>{{ "Esto no existe" if code == 404 else "Algo se ha roto" }}</h3><p>{{ message }}</p>
+  <a class="btn" href="/">Volver a Inicio</a></div></div>
 {% endblock %}

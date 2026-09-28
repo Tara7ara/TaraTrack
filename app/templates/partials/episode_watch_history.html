@@ -1,7 +1,2 @@
-{% if fechas %}
-<ul class="ep-watch-history">
-    {% for fecha in fechas %}<li>{{ fecha[:10] }}</li>{% endfor %}
-</ul>
-{% else %}
-<p class="ep-watch-history-empty">Sin fechas registradas.</p>
-{% endif %}
+{% if fechas %}<div class="watch-dates">{% for fecha in fechas %}<span class="chip">{{ fecha[:10] }}</span>{% endfor %}</div>
+{% else %}<p class="hint">Sin fechas registradas.</p>{% endif %}

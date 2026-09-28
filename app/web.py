@@ -27,15 +27,11 @@ def avatar(username: str, avatar_path: str | None = None) -> Markup:
     return Markup(f'<span class="avatar avatar-{idx}">{escape(username[0].upper())}</span>')
 
 
-
-
 def fmt_rating(value, decimals=2):
     """10.0 -> '10', 8.5 -> '8.5' - fuera los .0 en notas redondas."""
     if value is None:
         return ""
     return f"{value:.{decimals}f}".rstrip("0").rstrip(".")
-
-
 
 
 _SHOW_STATUS_ES = {
@@ -55,16 +51,15 @@ def fmt_show_status(value):
 
 
 def show_status_ribbon(title_row):
-    """(texto, clase) de la tira de estado en la esquina del póster, o None. "En
-    emisión" sale de que haya próximo episodio con fecha, no del estado de TMDB."""
+    if title_row["type"] == "movie":
+        return "Película", "ribbon-movie"
     if title_row["type"] != "show" or not title_row["show_status"]:
         return None
     status = title_row["show_status"]
     if status in ("Returning Series", "In Production") and title_row["next_episode_air_date"]:
-        # Próximo episodio = el 1 de una temporada: aún no ha empezado.
         label = title_row["next_episode_label"] if "next_episode_label" in title_row.keys() else None
         if re.match(r"T\d+E1\b", label or ""):
-            return "Prox.", "ribbon-planned"
+            return "Próx.", "ribbon-planned"
         return "Emisión", "ribbon-airing"
     if status == "Returning Series":
         # Sin proximo episodio con fecha: entre temporadas ("Continua" no le gustaba)
@@ -78,8 +73,6 @@ def show_status_ribbon(title_row):
 _RIBBON_SHORT = {"Ended": "Acabada", "Canceled": "Cancel.", "In Production": "En prod.", "Planned": "Anunc."}
 
 
-
-
 def fmt_duration(minutes):
     """112 -> '1 h 52 min', 45 -> '45 min'."""
     if not minutes:
@@ -90,8 +83,6 @@ def fmt_duration(minutes):
     return f"{hours} h" if hours else f"{mins} min"
 
 
-
-
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 
@@ -99,8 +90,6 @@ MESES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ]
-
-
 
 
 def fmt_day(date_str):
@@ -120,16 +109,12 @@ def fmt_day(date_str):
     return label if d.year == date.today().year else f"{label} de {d.year}"
 
 
-
-
 def fmt_month(mm: str) -> str:
     """'08' -> 'agosto' - para el resumen anual."""
     try:
         return MESES[int(mm) - 1]
     except (TypeError, ValueError, IndexError):
         return mm
-
-
 
 
 def fmt_ago(iso_str):
@@ -156,8 +141,6 @@ def fmt_ago(iso_str):
     return f"hace {days} día{'s' if days != 1 else ''}"
 
 
-
-
 def fmt_sync_duration(seconds):
     """8.3 -> '8 s', 125.0 -> '2 min 5 s' - a diferencia de fmt_duration (que trabaja
     en minutos, pensado para runtime de episodios) un sync puede durar solo unos
@@ -171,11 +154,7 @@ def fmt_sync_duration(seconds):
     return f"{minutes} min {secs} s" if secs else f"{minutes} min"
 
 
-
-
 _TMDB_SIZE_RE = re.compile(r"/t/p/w\d+/")
-
-
 
 
 def poster_size(url, size):
@@ -189,8 +168,6 @@ def poster_size(url, size):
     return _TMDB_SIZE_RE.sub(f"/t/p/{size}/", url)
 
 
-
-
 templates.env.filters["fmt_rating"] = fmt_rating
 templates.env.filters["fmt_show_status"] = fmt_show_status
 templates.env.filters["show_status_ribbon"] = show_status_ribbon
@@ -200,6 +177,31 @@ templates.env.filters["fmt_month"] = fmt_month
 templates.env.filters["fmt_ago"] = fmt_ago
 templates.env.filters["fmt_sync_duration"] = fmt_sync_duration
 templates.env.filters["poster_size"] = poster_size
+
+
+def tmdb_img(path, size="w780"):
+    """Ruta de imagen de TMDB ('/abc.jpg') -> URL completa del tamaño pedido."""
+    return f"https://image.tmdb.org/t/p/{size}{path}" if path else ""
+
+
+templates.env.filters["tmdb_img"] = tmdb_img
+
+
+def hero_size(request) -> str:
+    return "original"
+
+
+templates.env.globals["hero_size"] = hero_size
+templates.env.filters["backdrop_local"] = thumbs.backdrop_url
+
+
+def genres_es(csv):
+    """'Action & Adventure,Comedy' -> 'Acción y Aventura, Comedia' (mismo mapa que los filtros)."""
+    from app.repo._shared import _GENRE_ES
+    return ", ".join(_GENRE_ES.get(g.strip(), g.strip()) for g in (csv or "").split(",") if g.strip())
+
+
+templates.env.filters["genres_es"] = genres_es
 templates.env.filters["elo_confidence"] = repo.elo_confidence_label
 templates.env.filters["avatar"] = avatar
 # Cache-busting de estáticos propios: /static se cachea 7 días. Cambia en cada arranque.
@@ -247,6 +249,17 @@ def _waifus_label(user_id: int) -> str:
 
 
 templates.env.globals["waifus_label"] = _waifus_label
+
+
+def _tipo_tabs(user_id) -> list:
+    tabs = [("", "Todo"), ("series", "Series"), ("pelis", "Pelis")]
+    with get_connection() as conn:
+        if repo.get_show_anime_calendar(conn, user_id, default=repo.user_has_anime(conn, user_id)):
+            tabs.append(("anime", "Anime"))
+    return tabs
+
+
+templates.env.globals["tipo_tabs"] = _tipo_tabs
 
 
 def render_nav_cola_oob(conn, user_id: int) -> str:

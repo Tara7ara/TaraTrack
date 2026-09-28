@@ -10,8 +10,6 @@ from app.web import templates
 router = APIRouter()
 
 
-
-
 @router.get("/waifus", response_class=HTMLResponse)
 def waifus(request: Request, elo_reset: str = ""):
     with get_connection() as conn:
@@ -28,8 +26,6 @@ def waifus(request: Request, elo_reset: str = ""):
             "elo_reset": bool(elo_reset),
         },
     )
-
-
 
 
 @router.get("/waifus/buscar", response_class=HTMLResponse)
@@ -55,8 +51,6 @@ def waifus_buscar(request: Request, q: str = ""):
         "partials/waifu_search_results.html",
         {"results": results, "externals": externals, "query": q, "api_down": api_down},
     )
-
-
 
 
 @router.post("/waifus/anadir", response_class=HTMLResponse)
@@ -90,15 +84,11 @@ def waifus_anadir(
     return RedirectResponse("/waifus", status_code=303)
 
 
-
-
 @router.post("/waifu/{fav_id}/mover/{direction}", response_class=HTMLResponse)
 def waifu_mover(request: Request, fav_id: int, direction: str):
     with get_connection() as conn:
         repo.move_waifu(conn, fav_id, direction, request.state.user_id)
     return RedirectResponse("/waifus", status_code=303)
-
-
 
 
 @router.post("/waifus/elo/reiniciar", response_class=HTMLResponse)
@@ -112,8 +102,6 @@ def waifus_elo_reiniciar(request: Request):
     return RedirectResponse("/waifus?elo_reset=1", status_code=303)
 
 
-
-
 @router.post("/waifus/orden", response_class=HTMLResponse)
 def waifus_orden(request: Request, modo: str = Form(...)):
     with get_connection() as conn:
@@ -121,28 +109,29 @@ def waifus_orden(request: Request, modo: str = Form(...)):
     return RedirectResponse("/waifus", status_code=303)
 
 
-
-
 @router.get("/waifus/duelo", response_class=HTMLResponse)
 def waifus_duelo(request: Request):
     """Ranking por duelos sobre TUS waifus: con 60 waifus las flechas nunca llegan a
-    dar un orden - elegir A o B unas cuantas veces da un orden mas honesto (ver
+    dar un orden real - elegir A o B unas cuantas veces da un orden mas honesto (ver
     repo.record_duel)."""
     with get_connection() as conn:
         ids = [w["fav_id"] for w in repo.list_waifus(conn, request.state.user_id)]
         pair_ids = repo.random_duel_pair(conn, "favorite_characters", ids)
         pair = repo.get_waifus_by_ids(conn, pair_ids) if pair_ids else []
         coverage = repo.duel_coverage(conn, "favorite_characters", ids)
+        ranking = [
+            {"title": w["character_name"] or w["name"], "image": w["profile_path"], "elo": w["elo"], "href": "/waifus"}
+            for w in sorted(repo.list_waifus(conn, request.state.user_id), key=lambda w: w["elo"], reverse=True)[:8]
+        ]
     return templates.TemplateResponse(
         request,
         "duel.html",
         {
             "pair": pair, "coverage": coverage, "duelo_titulo": "Duelo: Waifus",
             "duelo_url": "/waifus/duelo", "duelo_volver": "/waifus", "duelo_ambito": "waifus",
+            "duelo_scope": "Waifus", "volver_txt": "Ver el ranking", "ranking": ranking, "caras": True,
         },
     )
-
-
 
 
 @router.post("/waifus/duelo", response_class=HTMLResponse)

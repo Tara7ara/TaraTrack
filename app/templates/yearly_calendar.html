@@ -1,93 +1,70 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, empty, cal_tabs %}
 {% block content %}
-{% macro anime_card(item) %}
-<div class="char-card season-card{{ ' masterpiece-candidate' if item.masterpiece_candidate }}">
-    {% if item.predict is not none %}<div class="predict-badge">{{ item.predict }}%</div>{% endif %}
-    <a href="/calendario/abrir?title={{ item.title|urlencode }}&romaji={{ (item.title_romaji or '')|urlencode }}&anilist_id={{ item.anilist_id or 0 }}">
-        <img src="{{ item.image or '/static/img/sin-portada.svg' }}" alt="{{ item.title }}" loading="lazy">
-        <div class="char-name">{{ item.title }}{% if item.weekday_overridden %} <span title="Día de emisión corregido a mano" style="opacity:0.6">✎</span>{% endif %}</div>
-        {% if item.score %}<div class="year" style="padding:0 0.3rem">Nota: {{ item.score|fmt_rating(1) }}</div>{% endif %}
-        {% if item.masterpiece_candidate %}<div class="masterpiece-label">Candidato a obra maestra</div>{% endif %}
-    </a>
-    {% if item.library_status %}
-    <a class="btn secondary char-add" href="/calendario/abrir?title={{ item.title|urlencode }}&romaji={{ (item.title_romaji or '')|urlencode }}&anilist_id={{ item.anilist_id or 0 }}">{{ "✓ Pendiente" if item.library_status == "pending" else "✓ En tu lista" }}</a>
-    {% else %}
-    <form hx-post="/calendario/anadir" hx-target="this" hx-swap="outerHTML">
-        <input type="hidden" name="title" value="{{ item.title }}">
-        <input type="hidden" name="romaji" value="{{ item.title_romaji or '' }}">
-        <input type="hidden" name="anilist_id" value="{{ item.anilist_id or 0 }}">
-        <input type="hidden" name="predict" value="{{ item.predict if item.predict is not none else '' }}">
-        <button class="secondary char-add">+ Pendientes</button>
-    </form>
-    {% endif %}
+{% set q = '&vista=' ~ vista ~ '&afinidad_alta=' ~ afinidad_alta %}
+{% macro srow(item, rank=none) -%}
+{% set href = '/calendario/abrir?title=' ~ (item.title|urlencode) ~ '&romaji=' ~ ((item.title_romaji or '')|urlencode) ~ '&anilist_id=' ~ (item.anilist_id or 0) %}
+<div class="wrow srow{{ ' gold' if item.masterpiece_candidate }}{{ ' seen' if item.library_status == 'watched' }}">
+  {% if rank %}<span class="srank">{{ rank }}</span>{% endif %}
+  <a class="sth" href="{{ href }}">{% if item.image %}<img src="{{ item.image }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}</a>
+  <a class="wi" href="{{ href }}"><b>{{ item.title }}{% if item.weekday_overridden %} <span title="Día corregido a mano" style="opacity:.6">✎</span>{% endif %}</b>
+    <span>{% if item.predict is not none %}<em class="spct">{{ item.predict }}%</em>{% endif %}{% if item.score %}{{ ' · ' if item.predict is not none }}Nota {{ item.score|fmt_rating(1) }}{% endif %}{% if item.studio %}{{ ' · ' if item.predict is not none or item.score }}{{ item.studio }}{% endif %}</span></a>
+  {% if item.library_status %}<a class="wck on" href="{{ href }}" title="{{ 'En pendientes' if item.library_status == 'pending' else 'En tu lista' }}">{{ ic('check', 'sm') }}</a>
+  {% else %}<form hx-post="/calendario/anadir" hx-target="this" hx-swap="outerHTML">
+    <input type="hidden" name="title" value="{{ item.title }}"><input type="hidden" name="romaji" value="{{ item.title_romaji or '' }}">
+    <input type="hidden" name="anilist_id" value="{{ item.anilist_id or 0 }}"><input type="hidden" name="predict" value="{{ item.predict if item.predict is not none else '' }}">
+    <input type="hidden" name="compact" value="1">
+    <button class="wck" title="Añadir a pendientes">{{ ic('plus', 'sm') }}</button></form>{% endif %}
 </div>
-{% endmacro %}
-<h1>Calendario de temporada</h1>
-
-{# Dos niveles: cuándo (año y estación) y cómo se mira (vista, filtro, actualizar).
-   Cobertura del perfil y estado de recálculo quedan en un tooltip. #}
-<div class="season-nav">
-    <div class="year-switch">
-        <a class="year-arrow" href="/calendario/anual?year={{ prev_year }}&season={{ season }}&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" title="{{ prev_year }}">&larr;</a>
-{# En móvil, año, estación y "Opciones" a la vista; vista, 95%+ y actualizar perfil se
-   despliegan (ver .mobile-filters en app.css). #}
-{% set opciones_activas = (1 if vista != 'dia' else 0) + (1 if afinidad_alta else 0) %}
-<div class="mobile-filters">
-<input type="checkbox" id="filters-toggle" class="filters-toggle" hidden>
-        <span class="year-label">{{ year }}</span>
-        <a class="year-arrow" href="/calendario/anual?year={{ next_year }}&season={{ season }}&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" title="{{ next_year }}">&rarr;</a>
+{%- endmacro %}
+<div class="page">
+  <div class="head-row">
+    <header class="page-head"><div class="ask">¿Qué anime sale esta temporada?</div><h1>Calendario</h1></header>
+    {{ cal_tabs('temporada') }}
+  </div>
+  <div class="toolbar">
+    <span class="weeknav">
+      <a class="btn quiet icon" href="/calendario/anual?year={{ prev_season_year }}&season={{ prev_season }}{{ q }}" aria-label="{{ prev_season_es }} {{ prev_season_year }}" title="{{ prev_season_es }} {{ prev_season_year }}">{{ ic('chevl', 'sm') }}</a>
+      <b>{{ season_es }} {{ year }}</b>
+      <a class="btn quiet icon" href="/calendario/anual?year={{ next_season_year }}&season={{ next_season }}{{ q }}" aria-label="{{ next_season_es }} {{ next_season_year }}" title="{{ next_season_es }} {{ next_season_year }}">{{ ic('chevr', 'sm') }}</a>
+      {% if not is_current %}<a class="btn sm quiet" href="/calendario/anual?vista={{ vista }}&afinidad_alta={{ afinidad_alta }}">Actual</a>{% endif %}
+    </span>
+    <div class="seg">{% for k, l in [('dia', 'Por día'), ('porcentaje', 'Por %'), ('nota', 'Por nota')] %}<a class="{{ 'active' if vista == k }}" href="/calendario/anual?year={{ year }}&season={{ season }}&vista={{ k }}&afinidad_alta={{ afinidad_alta }}">{{ l }}</a>{% endfor %}</div>
+    <div class="seg"><a class="{{ '' if afinidad_alta else 'active' }}" href="/calendario/anual?year={{ year }}&season={{ season }}&vista={{ vista }}">Todo</a><a class="{{ 'active' if afinidad_alta }}" href="/calendario/anual?year={{ year }}&season={{ season }}&vista={{ vista }}&afinidad_alta=1">95%+</a></div>
+    <span style="margin-left:auto" class="btn-row">
+      <div hx-get="/afinidad/estado" hx-trigger="load" hx-swap="outerHTML"></div>
+      <form method="post" action="/calendario/anual/perfil?year={{ year }}&season={{ season }}&vista={{ vista }}"><button class="btn ghost" title="Predicción con {{ perfil_cubierto }} títulos puntuados">{{ ic('sync', 'sm') }} Actualizar perfil{% if perfil_pendiente %} ({{ perfil_pendiente }}){% endif %}</button></form>
+    </span>
+  </div>
+  <div class="wstats">
+    <div><b>{{ total if not afinidad_alta else n_top }}</b><span>anime {{ 'con 95%+' if afinidad_alta else 'esta temporada' }}</span></div>
+    <div><b>{{ n_lista }}</b><span>ya en tu lista</span></div>
+    <div class="{{ 'hot' if n_top }}"><b>{{ n_top }}</b><span>candidatos a obra maestra</span></div>
+  </div>
+  <p class="cal-legend"><span><em class="spct">87%</em> lo que te gustará</span><span><i class="wck on">{{ ic('check', 'sm') }}</i> ya en tu lista</span><span><i class="wck">{{ ic('plus', 'sm') }}</i> añadir a pendientes</span><span><i class="gold-dot"></i> candidato a obra maestra</span></p>
+  {% if api_down %}{{ empty('cal', 'AniList no responde ahora mismo', 'Prueba en un rato.') }}
+  {% elif total == 0 %}{{ empty('search', 'Nada encontrado para esta temporada', 'Quita «95%+» si lo tienes puesto.' if afinidad_alta else '') }}
+  {% elif vista in ('porcentaje', 'nota') %}
+  <div class="wcol srank-list">
+    <div class="wh"><span>{{ 'ORDENADO POR LO QUE TE GUSTARÁ' if vista == 'porcentaje' else 'ORDENADO POR NOTA DE ANILIST' }}</span></div>
+    <div class="srank-grid">{% for item in (por_porcentaje if vista == 'porcentaje' else por_nota) %}{{ srow(item, loop.index) }}{% endfor %}</div>
+  </div>
+  {% else %}
+  <div class="week season-week">
+    {% for d in dias if d['items'] %}
+    <div class="wcol{{ ' today' if loop.index0 == today_dow }}">
+      <div class="wh"><span>{{ d.dow }}</span>{% if d['items'] %}<i>{{ d['items']|length }}</i>{% endif %}</div>
+      {% for item in d['items'] %}{{ srow(item) }}{% endfor %}
     </div>
-    <div class="sort-bar">
-        <a href="/calendario/anual?year={{ year }}&season=WINTER&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if season == 'WINTER' }}">Invierno</a>
-        <a href="/calendario/anual?year={{ year }}&season=SPRING&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if season == 'SPRING' }}">Primavera</a>
-        <a href="/calendario/anual?year={{ year }}&season=SUMMER&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if season == 'SUMMER' }}">Verano</a>
-        <a href="/calendario/anual?year={{ year }}&season=FALL&vista={{ vista }}&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if season == 'FALL' }}">Otoño</a>
-    </div>
-    <a class="season-back filter-extra" href="/calendario">Calendario normal</a>
-    <label for="filters-toggle" class="btn secondary filters-toggle-label">Opciones{% if opciones_activas %} ({{ opciones_activas }}){% endif %}</label>
+    {% endfor %}
+  </div>
+  {% if sin_dia %}
+  <div class="wcol srank-list">
+    <div class="wh"><span>SIN DÍA FIJO O RECIÉN ANUNCIADO</span><i>{{ sin_dia|length }}</i></div>
+    <div class="srank-grid">{% for item in sin_dia %}{{ srow(item) }}{% endfor %}</div>
+  </div>
+  {% endif %}
+  {% endif %}
+  <p class="hint">Todo el anime de la temporada según AniList, no solo lo que sigues. El % es lo que te gustará según tus notas; el borde dorado marca los candidatos a obra maestra.</p>
 </div>
-<h2 class="season-divider">{{ season_es }} {{ year }} <span class="season-count">{{ total }}</span></h2>
-
-<div class="season-controls filter-extra">
-    <div class="sort-bar">
-        <a href="/calendario/anual?year={{ year }}&season={{ season }}&vista=dia&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if vista == 'dia' }}">Por día</a>
-        <a href="/calendario/anual?year={{ year }}&season={{ season }}&vista=porcentaje&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if vista == 'porcentaje' }}">Por %</a>
-        <a href="/calendario/anual?year={{ year }}&season={{ season }}&vista=nota&afinidad_alta={{ afinidad_alta }}" class="{{ 'active' if vista == 'nota' }}">Por nota</a>
-        <a href="/calendario/anual?year={{ year }}&season={{ season }}&vista={{ vista }}&afinidad_alta={{ '' if afinidad_alta else '1' }}" class="{{ 'active' if afinidad_alta }}">Solo 95%+</a>
-    </div>
-    <form method="post" action="/calendario/anual/perfil?year={{ year }}&season={{ season }}&vista={{ vista }}">
-        <button class="secondary" title="Predicción con {{ perfil_cubierto }} título{{ "s" if perfil_cubierto != 1 else "" }} puntuados en el perfil">Actualizar perfil{% if perfil_pendiente %} ({{ perfil_pendiente }}){% endif %}</button>
-    </form>
-    <div hx-get="/afinidad/estado" hx-trigger="load" hx-swap="outerHTML"></div>
-</div>
-</div>
-
-{% if api_down %}
-<p class="empty">AniList no responde ahora mismo, prueba en un rato.</p>
-{% elif total == 0 %}
-<p class="empty">Nada encontrado para esta temporada.</p>
-{% elif vista == 'porcentaje' %}
-<div class="char-grid season-grid">
-    {% for item in por_porcentaje %}{{ anime_card(item) }}{% endfor %}
-</div>
-{% elif vista == 'nota' %}
-<div class="char-grid season-grid">
-    {% for item in por_nota %}{{ anime_card(item) }}{% endfor %}
-</div>
-{% else %}
-{% for dia_nombre, items in dias %}
-{% if items %}
-<h3>{{ dia_nombre }}</h3>
-<div class="char-grid season-grid">
-    {% for item in items %}{{ anime_card(item) }}{% endfor %}
-</div>
-{% endif %}
-{% endfor %}
-{% if sin_dia %}
-<h3>Sin día fijo / recién anunciado</h3>
-<div class="char-grid season-grid">
-    {% for item in sin_dia %}{{ anime_card(item) }}{% endfor %}
-</div>
-{% endif %}
-{% endif %}
 {% endblock %}

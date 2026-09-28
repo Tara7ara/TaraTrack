@@ -1,50 +1,44 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, poster, head, empty %}
 {% block content %}
-<div class="decision-header">
-<h1>{{ duelo_titulo }}</h1>
-{% if coverage %}
-<p class="page-hint">
-    {% if coverage.done %}
-    ✓ Todos los elementos tienen ya al menos {{ coverage.min_duels }} duelos jugados.
-    {% else %}
-    Faltan ~{{ coverage.remaining }} duelos para que los {{ coverage.total }} tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }} ya cubiertos).
+<div class="page">
+  {{ head('¿Cuál me gusta más?', 'Duelo', duelo_scope or '') }}
+  {% if pair|length < 2 %}
+    {% call empty('trophy', 'Hacen falta más', 'Necesitas al menos 2 en ' ~ duelo_ambito ~ ' para poder jugar duelos.') %}<a class="btn ghost" href="{{ duelo_volver }}">Ver ranking</a>{% endcall %}
+  {% else %}
+  <form id="duel-form" method="post" action="{{ duelo_url }}"><input type="hidden" name="a_id" value="{{ pair[0].id }}"><input type="hidden" name="b_id" value="{{ pair[1].id }}"></form>
+  <div class="duel-wrap">
+    <div class="duel-pair">
+      {% for p in pair %}
+      <button type="submit" form="duel-form" name="resultado" value="{{ '1' if loop.first else '0' }}" class="dcard" id="duel-{{ 'a' if loop.first else 'b' }}" title="Prefiero {{ p.title }}">
+        <span class="dcard-bg{{ '' if p.backdrop_path else ' blur' }}"><img src="{{ p.backdrop_path|tmdb_img('w1280') if p.backdrop_path else (p.image|poster_size('w342') if p.image else '') }}" alt="" onerror="this.remove()"></span>
+        <span class="dcard-poster">{{ poster(p.image, p.title, size='w342') }}</span>
+        <span class="dcard-foot">{% if p.logo_path %}<img class="dcard-logo" src="{{ p.logo_path|tmdb_img('w500') }}" alt="{{ p.title }}">{% else %}<b>{{ p.title }}</b>{% endif %}
+          <span>{% if caras %}{{ p.subtitle }} · {% endif %}{% if p.rating is defined and p.rating is not none %}Tu nota {{ p.rating|fmt_rating }} · {% endif %}{% if p.elo is defined and p.elo is not none %}Elo {{ p.elo|round|int }}{% endif %}</span></span>
+        <span class="dkey">{{ '←' if loop.first else '→' }}</span>
+      </button>
+      {% if loop.first %}<span class="dvs">VS</span>{% endif %}
+      {% endfor %}
+    </div>
+    {% if ranking %}
+    <aside class="panel duel-rank"><h3>Tu ranking</h3>
+      {% for r in ranking %}<a class="drank" href="{{ r.href }}"><span class="k">{{ loop.index }}</span><img src="{{ r.image|poster_size('w185') if r.image else '' }}" alt="" loading="lazy" onerror="this.remove()"><b>{{ r.title }}</b><span class="e">{{ r.elo|round|int }}</span></a>{% endfor %}
+      <a class="link" href="{{ duelo_volver }}" style="font-size:0.85rem">{{ volver_txt or 'Ver ranking' }}</a></aside>
     {% endif %}
-</p>
-{% endif %}
+  </div>
+  <div class="duel-foot2">
+    <button type="submit" form="duel-form" name="resultado" value="0.5" class="btn ghost lg" id="duel-tie">Empate</button>
+    <a class="btn quiet lg" href="{{ duelo_url }}">{{ ic('shuffle', 'sm') }} Otro par</a>
+    {% if coverage %}<span class="duel-cov2"><span class="progress"><i style="width:{{ (coverage.covered / coverage.total * 100)|round if coverage.total else 0 }}%"></i></span>{{ 'Todos tienen ya sus duelos' if coverage.done else 'Faltan ~' ~ coverage.remaining ~ ' duelos para que todos tengan ' ~ coverage.min_duels }}</span>{% endif %}
+    <span class="hint">También con ← → y ↓ para empate</span>
+  </div>
+  <script>
+  document.addEventListener("keydown", (e) => {
+      if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+      const id = { ArrowLeft: "duel-a", ArrowRight: "duel-b", ArrowDown: "duel-tie" }[e.key];
+      if (id) { e.preventDefault(); document.getElementById(id).click(); }
+  });
+  </script>
+  {% endif %}
 </div>
-{% if pair|length < 2 %}
-<div class="empty-state">
-    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg></span>
-    <h3>Hacen falta más elementos</h3>
-    <p>Necesitas al menos 2 en {{ duelo_ambito }} para poder jugar duelos.</p>
-</div>
-<div class="duel-nav">
-    <a href="{{ duelo_volver }}">Ver ranking actual</a>
-</div>
-{% else %}
-<p class="page-hint decision-intro">Elige cuál prefieres</p>
-<form id="duel-form" method="post" action="{{ duelo_url }}">
-    <input type="hidden" name="a_id" value="{{ pair[0].id }}">
-    <input type="hidden" name="b_id" value="{{ pair[1].id }}">
-</form>
-<div class="duel-grid">
-    {% for item in pair %}
-    <button type="submit" form="duel-form" name="resultado" value="{{ '1' if loop.index0 == 0 else '0' }}" class="duel-pick">
-        {# Siempre en pantalla: carga inmediata y con prioridad, sin esperar al lazy. #}
-        <img src="{{ item.image or '/static/img/sin-portada.svg' }}" alt="{{ item.title }}" fetchpriority="high" decoding="async">
-        <span class="duel-title">{{ item.title }}</span>
-        {% if item.subtitle %}<span class="duel-subtitle">{{ item.subtitle }}</span>{% endif %}
-    </button>
-    {% if not loop.last %}<span class="duel-vs">VS</span>{% endif %}
-    {% endfor %}
-</div>
-<div class="page-actions duel-tie">
-    <button type="submit" form="duel-form" name="resultado" value="0.5" class="btn secondary">Empate</button>
-</div>
-<div class="duel-nav">
-    <a href="{{ duelo_url }}">Otro par</a>
-    <span class="sep">·</span>
-    <a href="{{ duelo_volver }}">Ver ranking actual</a>
-</div>
-{% endif %}
 {% endblock %}

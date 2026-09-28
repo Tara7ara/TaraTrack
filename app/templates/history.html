@@ -1,26 +1,37 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, head, empty %}
 {% block content %}
-<h1>Historial</h1>
-{% if not days %}
-<div class="empty-state">
-    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></span>
-    <h3>Todavía no hay nada registrado</h3>
-    <p>En cuanto marques algo como visto, aparecerá aquí día a día.</p>
-</div>
-{% endif %}
-{% for day, items in days.items() %}
-<div class="cal-day">
-    <h2 class="cal-day-title">{{ day|fmt_day }}</h2>
-    {% for item in items %}
-    <div class="list-row hist-row">
-        <img src="{{ item.poster_path|poster_size('w185') if item.poster_path else '/static/img/sin-portada.svg' }}"{% if item.poster_path %} srcset="{{ item.poster_path|poster_size('w185') }} 1x, {{ item.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ item.title }}" loading="lazy">
-        <div class="info">
-            <a href="/titulo/{{ item.tmdb_id }}/{{ item.type }}">{{ item.title }}</a>
-            <div class="year">{{ item.detail }}</div>
-        </div>
-        <span class="year">{{ item.at[11:16] if item.at and item.at|length > 11 else "" }}</span>
-    </div>
+<div class="page">
+  {{ head('¿Qué he visto últimamente?', 'Historial', 'episodios, títulos y revisionados') }}
+  {% if not days %}{{ empty('clock', 'Todavía no hay nada registrado', 'En cuanto marques algo como visto, aparecerá aquí día a día.') }}
+  {% else %}
+  <div class="wstats">
+    <div class="{{ 'hot' if semana.eps }}"><b>{{ semana.eps }}</b><span>episodios en los últimos 7 días</span></div>
+    <div><b>{{ semana.titles }}</b><span>títulos distintos</span></div>
+    <div><b>{{ ((semana.minutes / 60)|round|int ~ ' h') if semana.minutes >= 60 else ((semana.minutes|fmt_duration) or '—') }}</b><span>delante de la pantalla</span></div>
+  </div>
+  <div class="hdays">
+    {% for day, d in days.items() %}
+    {% set nombre = day|fmt_day %}
+    <section class="hday2">
+      <header class="hday2-h"><b>{{ nombre[:1]|upper }}{{ nombre[1:] }}</b>
+        <span>{% if d.eps %}{{ d.eps }} episodio{{ 's' if d.eps != 1 }}{% endif %}{% if d.eps and d.n_titles > 1 %} · {% endif %}{% if d.n_titles > 1 or not d.eps %}{{ d.n_titles }} título{{ 's' if d.n_titles != 1 }}{% endif %}{% if d.minutes %} · {{ d.minutes|fmt_duration }}{% endif %}</span></header>
+      <div class="hgrid">
+        {% for g in d.groups %}
+        {% set img = g.still_path|tmdb_img('w300') if g.still_path else (g.backdrop_path|tmdb_img('w780') if g.backdrop_path else '') %}
+        <a class="hcard k-{{ g.kind }}" href="/titulo/{{ g.tmdb_id }}/{{ g.type }}">
+          <span class="hcard-img">{% if img %}<img src="{{ img }}" alt="" loading="lazy" onerror="this.remove()">{% elif g.poster_path %}<img class="poster-fill" src="{{ g.poster_path|poster_size('w342') }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}
+            {% if g.n_eps > 1 %}<i class="hcount">{{ g.n_eps }} ep.</i>{% endif %}
+            {% if g.kind != 'ep' %}<i class="hkind">{{ ic('done' if g.kind == 'title' else 'rewatch', 'sm') }} {{ g.label }}</i>{% endif %}</span>
+          <span class="hcard-body"><b>{{ g.title }}</b>
+            <span class="hmeta">{% if g.kind == 'ep' %}<em>{{ g.label }}</em>{% if g.ep_name %} · {{ g.ep_name }}{% endif %}{% else %}{{ 'La marcaste como vista' if g.kind == 'title' else 'Empezaste a volver a verla' }}{% endif %}</span>
+            <span class="htime">{{ ic('clock', 'sm') }} {% if g.first and g.last and g.first[11:16] != g.last[11:16] %}{{ g.first[11:16] }} – {{ g.last[11:16] }}{% else %}{{ g.last[11:16] if g.last and g.last|length > 11 else '' }}{% endif %}</span></span>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
     {% endfor %}
+  </div>
+  {% endif %}
 </div>
-{% endfor %}
 {% endblock %}

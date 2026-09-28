@@ -1,7 +1,7 @@
 """app.routers.calendario - calendario semanal, calendario de temporada y sync."""
 import asyncio
 import logging
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request
@@ -17,8 +17,6 @@ from app.web import _recompute_with_status, templates
 router = APIRouter()
 
 
-
-
 @router.get("/calendario/abrir", response_class=HTMLResponse)
 def calendario_abrir(request: Request, title: str = "", romaji: str = "", anilist_id: int = 0):
     match = _resolve_calendar_match(title.strip(), romaji.strip()) if title.strip() else None
@@ -31,20 +29,15 @@ def calendario_abrir(request: Request, title: str = "", romaji: str = "", anilis
     return RedirectResponse(f"/buscar?q={quote(title)}", status_code=303)
 
 
-
-
 @router.post("/calendario/anadir", response_class=HTMLResponse)
 def calendario_anadir(
     request: Request, title: str = Form(...), romaji: str = Form(""), predict: str = Form(""),
-    anilist_id: int = Form(0),
+    anilist_id: int = Form(0), compact: str = Form(""),
 ):
-    """+ Pendientes desde la tarjeta del calendario de temporada, sin salir de la
-    página. Guarda también el % que enseñaba la tarjeta (solo si la entry es nueva),
-    para comparar después expectativa y nota."""
     r = _resolve_calendar_match(title.strip(), romaji.strip())
     if not r:
         return templates.TemplateResponse(
-            request, "partials/calendar_add_result.html", {"ok": False, "title": title}
+            request, "partials/calendar_add_result.html", {"ok": False, "title": title, "compact": compact}
         )
     with get_connection() as conn:
         entry = repo.ensure_entry(conn, r["tmdb_id"], r["type"], request.state.user_id)
@@ -52,40 +45,57 @@ def calendario_anadir(
         if predict.strip().isdigit():
             repo.set_predicted_score(conn, entry["id"], int(predict))
     return templates.TemplateResponse(
-        request, "partials/calendar_add_result.html", {"ok": True, "tmdb_id": r["tmdb_id"], "type": r["type"]}
+        request, "partials/calendar_add_result.html",
+        {"ok": True, "tmdb_id": r["tmdb_id"], "type": r["type"], "compact": compact},
     )
 
 
+_DOW3 = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"]
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+          "septiembre", "octubre", "noviembre", "diciembre"]
 
 
-def _calendario_response(request: Request, conn):
-    """Hoy y futuro primero (lo que quieres ver al abrir), los dias ya pasados plegados al final."""
-    today = date.today().isoformat()
-    days, past_days = {}, {}
-    for item in repo.list_calendar(conn, request.state.user_id):
-        target = days if item["air_date"] >= today else past_days
-        target.setdefault(item["air_date"], []).append(item)
-    past_days = dict(sorted(past_days.items(), reverse=True))
+def _calendario_response(request: Request, conn, semana: int = 0, solo: str = ""):
+    today = date.today()
+    items = repo.list_calendar(conn, request.state.user_id)
+    monday = today - timedelta(days=today.weekday()) + timedelta(weeks=semana)
+    week = [monday + timedelta(days=k) for k in range(7)]
+    fechas = sorted(i["air_date"] for i in items)
+    seen = lambda i: i["watched_now"] or i["auto_watch"]  # noqa: E731
+    by_day = {}
+    for item in items:
+        by_day.setdefault(item["air_date"], []).append(item)
+    dias = []
+    for k, d in enumerate(week):
+        iso = d.isoformat()
+        day_items = by_day.get(iso, [])
+        if solo:
+            day_items = [i for i in day_items if not seen(i)]
+        dias.append({"iso": iso, "dow": _DOW3[k], "num": d.day, "items": day_items})
+    rango = (f"{week[0].day}{' de ' + _MESES[week[0].month - 1] if week[0].month != week[6].month else ''}"
+             f" – {week[6].day} de {_MESES[week[6].month - 1]}")
     show_anime_calendar = repo.get_show_anime_calendar(
         conn, request.state.user_id, default=repo.user_has_anime(conn, request.state.user_id)
     )
     return templates.TemplateResponse(
         request, "calendar.html",
         {
-            "days": days, "past_days": past_days, "today": today, "sync_status": repo.get_sync_status(conn),
-            "show_anime_calendar": show_anime_calendar,
+            "dias": dias, "today": today.isoformat(), "semana": semana, "solo": solo, "rango": rango,
+            "puede_atras": bool(fechas) and fechas[0] < week[0].isoformat(),
+            "puede_adelante": bool(fechas) and fechas[-1] > week[6].isoformat(),
+            "n_semana": sum(1 for i in items if week[0].isoformat() <= i["air_date"] <= week[6].isoformat()),
+            "n_hoy": sum(1 for i in items if i["air_date"] == today.isoformat()),
+            "n_sin_ver": sum(1 for i in items if i["air_date"] <= today.isoformat() and not seen(i)),
+            "sync_status": repo.get_sync_status(conn), "show_anime_calendar": show_anime_calendar,
+            "title": "Calendario",
         },
     )
 
 
-
-
 @router.get("/calendario", response_class=HTMLResponse)
-def calendario(request: Request):
+def calendario(request: Request, semana: int = 0, solo: str = ""):
     with get_connection() as conn:
-        return _calendario_response(request, conn)
-
-
+        return _calendario_response(request, conn, max(-2, min(6, semana)), solo)
 
 
 _SEASON_ORDER = ["WINTER", "SPRING", "SUMMER", "FALL"]
@@ -97,8 +107,6 @@ _SEASON_ES = {"WINTER": "Invierno", "SPRING": "Primavera", "SUMMER": "Verano", "
 _WEEKDAY_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 
-
-
 def _current_season() -> str:
     month = date.today().month
     if month in (12, 1, 2):
@@ -108,8 +116,6 @@ def _current_season() -> str:
     if month in (6, 7, 8):
         return "SUMMER"
     return "FALL"
-
-
 
 
 async def _refresh_season_cache_async(season: str, year: int):
@@ -127,19 +133,10 @@ async def _refresh_season_cache_async(season: str, year: int):
     asyncio.create_task(asyncio.to_thread(_run))
 
 
-
-
 @router.get("/calendario/anual", response_class=HTMLResponse)
 async def calendario_anual(
     request: Request, year: int = 0, season: str = "", vista: str = "dia", afinidad_alta: str = ""
 ):
-    """Calendario de temporada: todo el anime TV/ONA de una temporada según AniList,
-    una temporada a la vez (por defecto la actual), por día de emisión, por % o por
-    nota.
-
-    Sale de la caché de la BBDD. La primera vez que se pide una temporada se espera a
-    AniList; si la caché tiene más de 24 h se enseña igual y se refresca en segundo
-    plano. La temporada actual se refresca sola cada día (season_cache_loop)."""
     year = year or date.today().year
     if season not in _SEASON_ORDER:
         season = _current_season()
@@ -163,8 +160,6 @@ async def calendario_anual(
         weekday_overrides = repo.get_weekday_overrides(conn)
         in_library = repo.library_status_for_cards(conn, request.state.user_id, items)
     for item in items:
-        # Día de emisión corregido a mano: pisa el calculado en UTC (tabla
-        # weekday_overrides).
         if item["anilist_id"] in weekday_overrides:
             item["weekday"] = weekday_overrides[item["anilist_id"]]
             item["weekday_overridden"] = True
@@ -174,13 +169,13 @@ async def calendario_anual(
         detail = repo.predict_score_detail(item, profile)
         item["predict"] = detail["score"] if detail else None
         item["predict_confidence"] = detail["confidence"] if detail else None
-        # "Candidato a obra maestra" exige apoyo de tags, estudio o precuela, no solo
-        # un género (ver repo.MASTERPIECE_MIN_CONFIDENCE).
         item["masterpiece_candidate"] = (
             item["predict"] is not None and item["predict"] >= 95
             and item["predict_confidence"] is not None
             and item["predict_confidence"] > repo.MASTERPIECE_MIN_CONFIDENCE
         )
+    n_lista = sum(1 for i in items if i["library_status"])
+    n_top = sum(1 for i in items if i["masterpiece_candidate"])
     if afinidad_alta:
         items = [i for i in items if i["masterpiece_candidate"]]
 
@@ -188,7 +183,6 @@ async def calendario_anual(
     if vista == "porcentaje":
         por_porcentaje = sorted(items, key=lambda i: i["predict"] if i["predict"] is not None else -1, reverse=True)
     elif vista == "nota":
-        # Orden por nota = item["score"], la media de AniList que ya enseña la tarjeta.
         por_nota = sorted(items, key=lambda i: i["score"] if i["score"] is not None else -1, reverse=True)
     else:
         vista = "dia"
@@ -196,7 +190,12 @@ async def calendario_anual(
         sin_dia = []
         for item in items:
             (dias[item["weekday"]] if item["weekday"] is not None else sin_dia).append(item)
-        dias = [(_WEEKDAY_ES[i], dias[i]) for i in range(7)]
+        dias = [{"dow": _DOW3[i], "name": _WEEKDAY_ES[i], "items": dias[i]} for i in range(7)]
+
+    idx = _SEASON_ORDER.index(season)
+    prev_s = (_SEASON_ORDER[idx - 1], year - 1 if idx == 0 else year)
+    next_s = (_SEASON_ORDER[(idx + 1) % 4], year + 1 if idx == 3 else year)
+    is_current = season == _current_season() and year == date.today().year
 
     return templates.TemplateResponse(
         request,
@@ -206,12 +205,14 @@ async def calendario_anual(
             "dias": dias, "sin_dia": sin_dia, "por_porcentaje": por_porcentaje, "por_nota": por_nota,
             "api_down": api_down, "total": len(items),
             "prev_year": year - 1, "next_year": year + 1,
+            "prev_season": prev_s[0], "prev_season_year": prev_s[1], "prev_season_es": _SEASON_ES[prev_s[0]],
+            "next_season": next_s[0], "next_season_year": next_s[1], "next_season_es": _SEASON_ES[next_s[0]],
+            "is_current": is_current, "today_dow": date.today().weekday() if is_current else None,
+            "n_lista": n_lista, "n_top": n_top,
             "perfil_cubierto": profile["covered"], "perfil_pendiente": pendientes_perfil,
             "afinidad_alta": afinidad_alta,
         },
     )
-
-
 
 
 @router.post("/calendario/anual/perfil", response_class=HTMLResponse)
@@ -224,8 +225,6 @@ async def calendario_anual_perfil(request: Request, year: int = 0, season: str =
             repo.backfill_anilist_profile(conn)
     asyncio.create_task(asyncio.to_thread(_recompute_with_status, request.state.user_id, _backfill))
     return RedirectResponse(f"/calendario/anual?year={year}&season={season}&vista={vista}", status_code=303)
-
-
 
 
 @router.post("/calendario/sincronizar")

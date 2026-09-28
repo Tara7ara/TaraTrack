@@ -18,6 +18,15 @@ services:
       - taratrack-uploads:/srv/app/static/uploads
       - taratrack-profiles:/srv/app/static/profiles
       - taratrack-avatars:/srv/app/static/avatars
+    # taratrack-tunnel: red compartida solo con cloudflared (~/cloudflared en el servidor),
+    # que llega a la app como http://taratrack:8000. Creada a mano con `docker network create`.
+    networks:
+      - default
+      - taratrack-tunnel
+
+networks:
+  taratrack-tunnel:
+    external: true
 
 volumes:
   taratrack-data:

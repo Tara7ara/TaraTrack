@@ -19,40 +19,35 @@ def client(tmp_path, monkeypatch):
 
 
 def test_crear_usuario_con_nombre_invalido_no_revienta(client):
-    """Un alta desde /ajustes con un nombre inválido da un aviso, no un 500."""
-    r = client.post(
-        "/ajustes/usuarios", data={"username": "admin", "password": "unaclave123"}, follow_redirects=False
-    )
+    """Un nombre invalido (reservado) avisa con usuario_error en vez de un 500."""
+    r = client.post("/ajustes/usuarios", data={"username": "admin"}, follow_redirects=False)
     assert r.status_code == 303
     assert "usuario_error" in r.headers["location"]
 
 
-def test_crear_usuario_con_password_corta_no_revienta(client):
-    r = client.post(
-        "/ajustes/usuarios", data={"username": "amigo", "password": "corta"}, follow_redirects=False
-    )
-    assert r.status_code == 303
-    assert "usuario_error" in r.headers["location"]
+def test_crear_usuario_duplicado_avisa(client):
+    r = client.post("/ajustes/usuarios", data={"username": "principal"}, follow_redirects=False)
+    assert r.status_code == 303 and "usuario_error" in r.headers["location"]
 
 
-def test_crear_usuario_valido_funciona(client):
-    r = client.post(
-        "/ajustes/usuarios", data={"username": "amigo", "password": "unaclave123"}, follow_redirects=False
-    )
-    assert r.status_code == 303
-    assert "usuario_creado" in r.headers["location"]
+def test_crear_usuario_valido_enseña_codigo_una_vez(client):
+    r = client.post("/ajustes/usuarios", data={"username": "amigo"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert 'id="invite-code"' in r.text
+    assert "sin activar" in r.text
+    r2 = client.get("/ajustes")
+    assert 'id="invite-code"' not in r2.text
 
 
 def test_calendario_anime_toggle(client):
-    """Se puede forzar a mano si se ve el calendario de temporada."""
     r = client.post("/ajustes/perfil/calendario-anime", data={"mostrar": "1"}, follow_redirects=False)
     assert r.status_code == 303
     r2 = client.get("/calendario")
-    assert "Calendario de temporada" in r2.text
+    assert "/calendario/anual" in r2.text
 
     client.post("/ajustes/perfil/calendario-anime", data={}, follow_redirects=False)
     r3 = client.get("/calendario")
-    assert "Calendario de temporada" not in r3.text
+    assert "/calendario/anual" not in r3.text
 
 
 def test_non_static_responses_are_not_cached(client):
@@ -62,38 +57,38 @@ def test_non_static_responses_are_not_cached(client):
     assert r.headers["cache-control"] == "no-store"
 
 
-def test_admin_puede_resetear_password_de_otro(client):
-    """Un admin puede restablecer la contraseña de otra cuenta."""
+def test_admin_genera_codigo_nuevo_y_la_password_vieja_deja_de_valer(client):
+    """Recuperar el acceso sin que el admin sepa la contraseña."""
     from app import repo
 
     with db.get_connection() as conn:
-        other = repo.get_user_by_username(conn, "amigo") or repo.create_user(conn, "amigo", "unaclave123")
-        other_id = other["id"]
-
-    r = client.post(
-        f"/ajustes/usuarios/{other_id}/password", data={"password": "una-pass-recuperada"}, follow_redirects=False
-    )
-    assert r.status_code == 303
-
+        other_id = repo.create_user(conn, "amigo", "unaclave123")["id"]
+    r = client.post(f"/ajustes/usuarios/{other_id}/codigo", follow_redirects=False)
+    assert r.status_code == 200 and 'id="invite-code"' in r.text
     with db.get_connection() as conn:
         refreshed = repo.get_user(conn, other_id)
-        assert repo.verify_password("una-pass-recuperada", refreshed["password_hash"], refreshed["password_salt"])
+        assert not repo.verify_password("unaclave123", refreshed["password_hash"], refreshed["password_salt"])
+        assert refreshed["invite_code_hash"] is not None
 
 
-def test_non_admin_no_puede_resetear_password(client):
+def test_admin_no_genera_codigo_para_si_mismo(client):
+    with db.get_connection() as conn:
+        admin_id = conn.execute("SELECT id FROM users WHERE username = 'principal'").fetchone()["id"]
+    r = client.post(f"/ajustes/usuarios/{admin_id}/codigo", follow_redirects=False)
+    assert r.status_code == 303 and "usuario_error" in r.headers["location"]
+
+
+def test_non_admin_no_puede_generar_codigos(client):
     from app import repo
 
     with db.get_connection() as conn:
-        other = repo.create_user(conn, "amigo", "unaclave123")
-        amigo_id = other["id"]
-
+        amigo_id = repo.create_user(conn, "amigo", "unaclave123")["id"]
     login_as_amigo = client.post(
         "/login", data={"username": "amigo", "password": "unaclave123", "next": "/"}, follow_redirects=False
     )
     assert "taratrack_auth" in login_as_amigo.cookies
-
-    r = client.post(f"/ajustes/usuarios/{amigo_id}/password", data={"password": "otra-cosa-larga"})
-    assert r.status_code == 403
+    assert client.post(f"/ajustes/usuarios/{amigo_id}/codigo").status_code == 403
+    assert client.post("/ajustes/usuarios", data={"username": "otro"}).status_code == 403
 
 
 def test_mensaje_de_error_con_tildes_no_rompe_el_redirect(client):
@@ -105,3 +100,67 @@ def test_mensaje_de_error_con_tildes_no_rompe_el_redirect(client):
     r = client.post(f"/ajustes/usuarios/{admin_id}/admin", data={"valor": "0"}, follow_redirects=False)
     assert r.status_code == 303
     assert r.headers["location"].startswith("/ajustes?usuario_error=")
+
+
+def test_usuario_de_una_letra_se_puede_crear(client):
+    r = client.post("/ajustes/usuarios", data={"username": "z"}, follow_redirects=False)
+    assert r.status_code == 200 and 'id="invite-code"' in r.text
+
+
+def test_bloquear_impide_entrar_y_desbloquear_lo_devuelve(client):
+    from app import repo
+
+    with db.get_connection() as conn:
+        amigo_id = repo.create_user(conn, "amigo", "unaclave123")["id"]
+    r = client.post(f"/ajustes/usuarios/{amigo_id}/bloquear", data={"valor": "1"}, follow_redirects=False)
+    assert r.status_code == 303 and "usuario_ok" in r.headers["location"]
+    with TestClient(main.app, base_url="https://testserver") as other:
+        r = other.post("/login", data={"username": "amigo", "password": "unaclave123", "next": "/"}, follow_redirects=False)
+        assert r.status_code == 403 and "taratrack_auth" not in r.cookies
+    client.post(f"/ajustes/usuarios/{amigo_id}/bloquear", data={"valor": "0"})
+    with TestClient(main.app, base_url="https://testserver") as other:
+        r = other.post("/login", data={"username": "amigo", "password": "unaclave123", "next": "/"}, follow_redirects=False)
+        assert r.status_code == 303
+
+
+def test_bloquear_expulsa_una_sesion_ya_abierta(client):
+    from app import repo
+
+    with db.get_connection() as conn:
+        amigo_id = repo.create_user(conn, "amigo", "unaclave123")["id"]
+    with TestClient(main.app, base_url="https://testserver") as other:
+        other.post("/login", data={"username": "amigo", "password": "unaclave123", "next": "/"})
+        assert other.get("/pendientes", follow_redirects=False).status_code == 200
+        with db.get_connection() as conn:
+            repo.set_blocked(conn, amigo_id, True)
+        r = other.get("/pendientes", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/login")
+
+
+def test_borrar_cuenta_exige_escribir_el_nombre_y_borra_sus_datos(client):
+    from app import repo
+
+    with db.get_connection() as conn:
+        amigo_id = repo.create_user(conn, "amigo", "unaclave123")["id"]
+        tid = conn.execute("INSERT INTO titles (tmdb_id, type, title) VALUES (999001, 'movie', 'X')").lastrowid
+        conn.execute("INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'pending')", (tid, amigo_id))
+        conn.execute("INSERT INTO app_settings (key, value) VALUES (?, 'manual')", (f"waifus_order_mode:{amigo_id}",))
+    r = client.post(f"/ajustes/usuarios/{amigo_id}/borrar", data={"confirmar": "otro"}, follow_redirects=False)
+    assert "usuario_error" in r.headers["location"]
+    r = client.post(f"/ajustes/usuarios/{amigo_id}/borrar", data={"confirmar": "amigo"}, follow_redirects=False)
+    assert "usuario_ok" in r.headers["location"]
+    with db.get_connection() as conn:
+        assert repo.get_user(conn, amigo_id) is None
+        assert conn.execute("SELECT count(*) FROM entries WHERE user_id = ?", (amigo_id,)).fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM lists WHERE user_id = ?", (amigo_id,)).fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM app_settings WHERE key = ?", (f"waifus_order_mode:{amigo_id}",)).fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM titles WHERE id = ?", (tid,)).fetchone()[0] == 1  # catalogo compartido
+
+
+def test_no_puedes_borrar_ni_bloquear_tu_propia_cuenta(client):
+    with db.get_connection() as conn:
+        admin_id = conn.execute("SELECT id FROM users WHERE username = 'principal'").fetchone()["id"]
+    r = client.post(f"/ajustes/usuarios/{admin_id}/borrar", data={"confirmar": "principal"}, follow_redirects=False)
+    assert "usuario_error" in r.headers["location"]
+    r = client.post(f"/ajustes/usuarios/{admin_id}/bloquear", data={"valor": "1"}, follow_redirects=False)
+    assert "usuario_error" in r.headers["location"]

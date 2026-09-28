@@ -1,48 +1,36 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, head %}
 {% block content %}
-<h1>Listas</h1>
-
-<form method="post" action="/listas" class="inline-form">
-    <input type="text" name="name" placeholder="Nombre de la lista nueva..." required>
-    <button type="submit">Crear</button>
-</form>
-
-{% set _waifus_label = waifus_label(request.state.user_id) %}
-<a class="list-card" href="/waifus">
-    <div class="list-card-head">
-        <span class="list-card-name">{{ _waifus_label }}
-            {% if _waifus_label == "Waifus" %}
-            <span class="badge badge-fav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg>Personajes</span>
-            {% endif %}
-        </span>
-        <span class="year">tu ranking de personajes</span>
-    </div>
-    {% if waifus_preview %}
-    <div class="list-card-posters">
-        {% for p in waifus_preview %}
-        <img src="{{ p or '/static/img/sin-portada.svg' }}" alt="" loading="lazy">
-        {% endfor %}
-    </div>
-    {% else %}
-    <p class="empty">Marca personajes con la estrella y aparecen aquí.</p>
+{% macro collage(imgs, kind='kp') -%}
+<span class="lcover {{ kind }}">{% for u in imgs if u %}{% if loop.index <= 5 %}<img class="c{{ loop.index0 }}" src="{{ u if (u.startswith('http')) else u|poster_size('w342') }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}{% endfor %}</span>
+{%- endmacro %}
+{% set wl = waifus_label(request.state.user_id) %}
+{% set hay_comentarios = n_comentarios or n_debate %}
+<div class="page">
+  <div class="head-row">{{ head('¿Qué guardo aparte?', 'Listas', (lists|length + 1 + (1 if fav_eps else 0) + (1 if hay_comentarios else 0)) ~ ' colecciones') }}
+    <details class="del-confirm"><summary class="btn ghost">{{ ic('plus', 'sm') }} Nueva lista</summary>
+      <form method="post" action="/listas" class="btn-row" style="margin-top:8px"><input class="input" type="text" name="name" placeholder="Nombre de la lista…" required style="width:260px"><button class="btn">Crear</button></form></details>
+  </div>
+  <div class="ltiles">
+    <a class="ltile" href="/waifus">{{ collage(waifus[:5]|map(attribute='profile_path')|list, 'kf') }}
+      <span class="lt-body"><b>{{ wl }}</b><span>{{ waifus|length }} personaje{{ 's' if waifus|length != 1 }} · tu ranking de personajes</span></span></a>
+    {% for l in lists if l.is_default %}
+    <a class="ltile" href="/lista/{{ l.id }}">{{ collage(posters[l.id]) }}
+      <span class="lt-body"><b>{{ l.name }} <span class="badge">{{ ic('star') }} Por defecto</span></b><span>{{ l.total }} título{{ 's' if l.total != 1 }}{% if l.total > 2 %} · orden {{ 'por duelos' if l.order_mode == 'duelo' else 'manual' }}{% endif %}</span></span></a>
+    {% endfor %}
+    {% if fav_eps %}
+    <a class="ltile" href="/estadisticas/episodios-favoritos">{{ collage(fav_eps[:5]|map(attribute='still_path')|map('tmdb_img', 'w500')|list if fav_eps and fav_eps[0].still_path else fav_eps[:5]|map(attribute='poster_path')|list, 'kw') }}
+      <span class="lt-body"><b>Episodios favoritos</b><span>{{ fav_eps|length }} episodio{{ 's' if fav_eps|length != 1 }} con estrella</span></span></a>
     {% endif %}
-</a>
-
-{% for l in lists %}
-<a class="list-card" href="/lista/{{ l.id }}">
-    <div class="list-card-head">
-        <span class="list-card-name">{{ l.name }}{% if l.is_default %} <span class="badge badge-fav"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"></path></svg>Favoritos</span>{% endif %}</span>
-        <span class="year">{{ l.total }} título{{ "s" if l.total != 1 else "" }}</span>
-    </div>
-    {% if l.posters %}
-    <div class="list-card-posters">
-        {% for p in l.posters %}
-        <img src="{{ p or '/static/img/sin-portada.svg' }}" alt="" loading="lazy">
-        {% endfor %}
-    </div>
-    {% else %}
-    <p class="empty">Vacía todavía.</p>
+    {% if hay_comentarios %}
+    <a class="ltile" href="/comentarios">{{ collage(comentario_posters) }}
+      <span class="lt-body"><b>Tus comentarios</b><span>{{ n_comentarios }} comentarios{% if n_debate %} · {{ n_debate }} en debates{% endif %}</span>
+        {% if cita %}<q>{{ cita.comment }} <cite>— {{ cita.title }}</cite></q>{% endif %}</span></a>
     {% endif %}
-</a>
-{% endfor %}
+    {% for l in lists if not l.is_default %}
+    <a class="ltile" href="/lista/{{ l.id }}">{{ collage(posters[l.id]) }}
+      <span class="lt-body"><b>{{ l.name }}</b><span>{{ (l.total ~ ' título' ~ ('s' if l.total != 1 else '')) if l.total else 'Vacía todavía' }}{% if l.total > 2 %} · orden {{ 'por duelos' if l.order_mode == 'duelo' else 'manual' }}{% endif %}</span></span></a>
+    {% endfor %}
+  </div>
+</div>
 {% endblock %}

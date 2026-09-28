@@ -10,30 +10,29 @@ from app.web import templates
 router = APIRouter()
 
 
-
-
 @router.get("/duelo", response_class=HTMLResponse)
 def duelo_general(request: Request):
-    """Duelo A/B general sobre entries.elo. El pool es anime y, si no hay al menos 2,
-    todo lo visto (repo.duel_pool_for_user). El ranking se ve ordenando /vistas por
-    "Elo"."""
     with get_connection() as conn:
         ids, es_anime = repo.duel_pool_for_user(conn, request.state.user_id)
         pair_ids = repo.random_duel_pair(conn, "entries", ids)
         pair = repo.get_entries_by_ids(conn, pair_ids) if pair_ids else []
         coverage = repo.duel_coverage(conn, "entries", ids)
+        ranking = [
+            {"title": e["title"], "image": e["image"], "elo": e["elo"], "href": f"/titulo/{e['tmdb_id']}/{e['type']}"}
+            for e in sorted(repo.get_entries_by_ids(conn, ids), key=lambda e: e["elo"], reverse=True)[:8]
+        ] if ids else []
     return templates.TemplateResponse(
         request,
         "duel.html",
         {
             "pair": pair, "coverage": coverage,
-            "duelo_titulo": "Duelo: Anime" if es_anime else "Duelo",
+            "duelo_titulo": "Duelo",
             "duelo_url": "/duelo", "duelo_volver": "/vistas?orden=elo",
             "duelo_ambito": "el anime visto" if es_anime else "lo que has visto",
+            "duelo_scope": "", "volver_txt": "Ranking completo en Vistas",
+            "ranking": ranking,
         },
     )
-
-
 
 
 @router.post("/duelo", response_class=HTMLResponse)
@@ -41,8 +40,6 @@ def duelo_general_votar(request: Request, a_id: int = Form(...), b_id: int = For
     with get_connection() as conn:
         repo.record_duel(conn, "entries", a_id, b_id, request.state.user_id, resultado)
     return RedirectResponse("/duelo", status_code=303)
-
-
 
 
 @router.post("/duelo/elo/reiniciar", response_class=HTMLResponse)

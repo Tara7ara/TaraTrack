@@ -1,158 +1,145 @@
 {% extends "base.html" %}
-
-{% macro afinidad_scatter(items) %}
-{% if items %}
-{% set max_i = (items|map(attribute="inercia")|map("abs")|max) or 1 %}
-<div class="diverging-list">
-    {% for a in items %}
-    <div class="diverging-row">
-        <div class="affinity-head">
-            <span class="stat-bar-label wide">{{ a.name }}</span>
-            <span class="diverging-value {{ 'positive' if a.inercia > 0 else 'negative' }}">{{ "%+d"|format(a.inercia) }}</span>
-        </div>
-        <div class="diverging-track">
-            <div class="diverging-zero"></div>
-            <div class="diverging-fill {{ 'positive' if a.inercia > 0 else 'negative' }}" style="width: {{ (a.inercia|abs / max_i * 50)|round(1) }}%"></div>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-{% endmacro %}
-
+{% from "partials/ui.html" import ic, head, card, empty %}
+{% from "partials/charts.html" import columns, bars, diverging %}
 {% block content %}
-<h1>Estadísticas</h1>
-<div class="content-medium">
+{% set T = stats.totals %}
+{% set meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] %}
+{% set meses_largos = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"] %}
+{% macro dcards(rows, up) -%}
+<div class="row-scroll cards">{% for r in rows %}{{ card(r.poster_path, r.title, href='/titulo/' ~ r.tmdb_id ~ '/' ~ r.type, rb=('Película', 'ribbon-movie') if r.type == 'movie' else none,
+   l1='Tú <b>' ~ (r.rating|fmt_rating) ~ '</b> · Internet ' ~ (r.vote_average|fmt_rating(1)),
+   l2='<b style="color:' ~ ('var(--success)' if up else 'var(--danger)') ~ '">' ~ ('+' if up else '') ~ (r.diff|fmt_rating(1)) ~ '</b> de diferencia', has_acts=false) }}{% endfor %}</div>
+{%- endmacro %}
+<div class="page">
+  {{ head('¿Cuánto y qué veo?', 'Estadísticas') }}
+  <nav class="stats-index" id="stats-index">
+    <a href="#resumen" title="Resumen" aria-label="Resumen">{{ ic('chart', 'sm') }} Resumen</a>
+    {% if years and ystats %}<a href="#anio" title="Tu año" aria-label="Tu año">{{ ic('cal', 'sm') }} Tu año</a>{% endif %}
+    {% if te_gusta_mas or te_gusta_menos %}<a href="#discrepancias" title="Discrepancias" aria-label="Discrepancias">{{ ic('warn', 'sm') }} Discrepancias</a>{% endif %}
+    <a href="#gustos" title="Perfil de gustos" aria-label="Perfil de gustos">{{ ic('target', 'sm') }} Perfil de gustos</a>
+  </nav>
 
-{# Dos pestañas con radio + label + ~, sin JS. #}
-<input type="radio" name="stats-tab" id="stats-tab-resumen" class="stats-tab-radio" checked>
-<input type="radio" name="stats-tab" id="stats-tab-perfil" class="stats-tab-radio">
-<div class="sort-bar stats-tabs">
-    <label for="stats-tab-resumen">Resumen</label>
-    <label for="stats-tab-perfil">Perfil de gustos</label>
-</div>
+    <section class="stats-sec" id="resumen">
+    {% if taste.covered and taste.top_inercia %}{% set top = taste.top_inercia[0] %}
+    <p class="insight">{% if top.inercia > 0 %}Persigues <strong>{{ top.name }}</strong> ({{ top.tipo_es }}) más de lo que en el fondo te convence: es tu costumbre más marcada ahora mismo.{% else %}<strong>{{ top.name }}</strong> ({{ top.tipo_es }}) te encanta mucho más de lo que sueles buscarlo. Quizá te apetezca ver más.{% endif %}</p>
+    {% elif stats.top_genres %}<p class="insight">Tu género favorito es <strong>{{ stats.top_genres[0][0] }}</strong>, con {{ stats.top_genres[0][1] }} episodios vistos.</p>{% endif %}
+    <div class="bento">
+      <div class="tile big"><span class="n">{{ '{:,}'.format(T.episodes_watched).replace(',', '.') }}</span><span class="l">episodios vistos</span></div>
+      <div class="tile big"><span class="n">{{ (stats.total_minutes / 60 / 24)|round(1)|string|replace('.', ',') }}</span><span class="l">días viendo</span></div>
+      <div class="tile"><span class="n">{{ T.shows_watched }}</span><span class="l">series vistas</span></div>
+      <div class="tile"><span class="n">{{ T.movies_watched }}</span><span class="l">pelis vistas</span></div>
+      <a class="tile" href="/pendientes"><span class="n">{{ T.pending }}</span><span class="l">pendientes</span></a>
+      <div class="tile"><span class="n">{{ T.avg_rating or '—' }}</span><span class="l">nota media · {{ T.rated }} con nota</span></div>
+      <a class="tile" href="/waifus"><span class="n">{{ T.waifus }}</span><span class="l">{{ waifus_label(request.state.user_id)|lower }}</span></a>
+      <a class="tile" href="/estadisticas/episodios-favoritos"><span class="n">{{ T.fav_episodes }}</span><span class="l">episodios favoritos</span></a>
+      <div class="tile wide"><h3 class="tile-h">Mis notas</h3>
+        {% set hrows = [] %}{% for b in range(0, 11) %}{% set _ = hrows.append((b|string, 'Nota ' ~ b, stats.histogram.get(b, 0) or stats.histogram.get(b|string, 0))) %}{% endfor %}
+        {{ columns(hrows, 'hist') }}</div>
+      <div class="tile wide"><h3 class="tile-h">Episodios por mes <small>último año</small></h3>
+        {% set mrows = [] %}{% for r in stats.monthly %}{% set _ = mrows.append((meses[r.month[5:7]|int - 1], r.month, r.c)) %}{% endfor %}
+        {{ columns(mrows) }}</div>
+      {% if stats.top_genres %}<div class="tile full"><h3 class="tile-h">Géneros más vistos <small>por episodios</small></h3>{{ bars(stats.top_genres) }}</div>{% endif %}
+    </div>
+  </section>
 
-<div class="stats-panel-resumen">
-<div class="page-actions">
-    <a class="btn secondary" href="/resumen">Ver resumen anual</a>
-    <a class="btn secondary" href="/discrepancias">Dónde discrepas con la crítica</a>
-</div>
-
-<div class="stat-hero-row">
-    <div class="stat-tile hero"><span class="stat-num">{{ stats.totals.episodes_watched }}</span><span class="stat-label">episodios vistos</span></div>
-    <div class="stat-tile hero"><span class="stat-num">{{ (stats.total_minutes / 60 / 24)|round(1) }}</span><span class="stat-label">días viendo</span></div>
-</div>
-<div class="stat-tiles">
-    <div class="stat-tile"><span class="stat-num">{{ stats.totals.shows_watched }}</span><span class="stat-label">series vistas</span></div>
-    <div class="stat-tile"><span class="stat-num">{{ stats.totals.movies_watched }}</span><span class="stat-label">pelis vistas</span></div>
-    <div class="stat-tile"><span class="stat-num">{{ stats.totals.pending }}</span><span class="stat-label">pendientes</span></div>
-    <div class="stat-tile"><span class="stat-num">{{ stats.totals.avg_rating or "—" }}</span><span class="stat-label">nota media ({{ stats.totals.rated }} con nota)</span></div>
-    <div class="stat-tile"><span class="stat-num">{{ stats.totals.waifus }}</span><span class="stat-label">{{ waifus_label(request.state.user_id)|lower }}</span></div>
-    <a class="stat-tile" href="/estadisticas/episodios-favoritos"><span class="stat-num">{{ stats.totals.fav_episodes }}</span><span class="stat-label">eps favoritos</span></a>
-</div>
-
-{# Una frase de resumen personal hecha con datos que ya están en el contexto. #}
-{% if taste.covered and taste.top_inercia %}
-{% set top = taste.top_inercia[0] %}
-<div class="stat-insight">
-    {% if top.inercia > 0 %}
-    <p>Persigues <strong>{{ top.name }}</strong> ({{ top.tipo_es }}) más de lo que en el fondo te convence — es tu costumbre más marcada ahora mismo.</p>
+    {% if years and ystats %}
+  <section class="stats-sec" id="anio">
+    <div class="section-head"><h2>Tu año</h2>{% if years %}<div class="seg years-seg">{% for y in years %}<a class="{{ 'active' if y == year }}" href="/estadisticas?anio={{ y }}#anio">{{ y }}</a>{% endfor %}</div>{% endif %}</div>
+    {% if not years or not ystats %}<p class="hint">Todavía no hay suficiente historial con fechas.</p>
     {% else %}
-    <p><strong>{{ top.name }}</strong> ({{ top.tipo_es }}) te encanta mucho más de lo que sueles buscarlo — quizá te apetezca ver más.</p>
+        <div class="bento year-bento">
+      <div class="tile hl"><span class="n">{{ '{:,}'.format(ystats.totals.episodes_watched).replace(',', '.') }}</span><span class="l">episodios vistos en {{ year }}</span></div>
+      <div class="tile"><span class="n">{{ ystats.totals.movies_watched }}</span><span class="l">pelis vistas</span></div>
+      <div class="tile"><span class="n">{{ ystats.totals.shows_active }}</span><span class="l">series seguidas</span></div>
+      <div class="tile"><span class="n">{{ (ystats.total_minutes / 60 / 24)|round(1)|string|replace('.', ',') }}</span><span class="l">días viendo</span></div>
+      {% if ystats.busiest_month %}<div class="tile full"><p class="insight">Tu mes más activo del {{ year }} fue <strong>{{ ystats.busiest_month.month|fmt_month }}</strong>, con {{ ystats.busiest_month.c }} episodios.</p></div>{% endif %}
+      {% if ystats.monthly %}{% set yrows = [] %}{% for i in range(1, 13) %}{% set mm = '%02d'|format(i) %}{% set v = (ystats.monthly|selectattr('month', 'equalto', mm)|map(attribute='c')|first) or 0 %}{% set _ = yrows.append((meses[i - 1], meses_largos[i - 1], v)) %}{% endfor %}
+      <div class="tile wide"><h3 class="tile-h">Episodios por mes</h3>{{ columns(yrows) }}</div>{% endif %}
+      {% if ystats.top_genres %}<div class="tile wide"><h3 class="tile-h">Lo tuyo este año</h3>{{ bars(ystats.top_genres) }}</div>{% endif %}
+    </div>
+    {% if ystats.top_rated %}
+    <h3 class="sub-h">Tus mejores notas del {{ year }}</h3>
+    <div class="row-scroll cards">{% for r in ystats.top_rated %}{{ card(r.poster_path, r.title, href=('/titulo/' ~ r.tmdb_id ~ '/' ~ r.type) if r.tmdb_id else none, l1='Tu nota <b>' ~ (r.rating|fmt_rating) ~ '</b>', has_acts=false) }}{% endfor %}</div>
     {% endif %}
-</div>
-{% elif stats.top_genres %}
-<div class="stat-insight">
-    <p>Tu género favorito es <strong>{{ stats.top_genres[0][0] }}</strong>, con {{ stats.top_genres[0][1] }} episodios vistos.</p>
-</div>
-{% endif %}
-</div>
-
-<div class="stats-panel-perfil">
-    {% if taste.covered %}
-    <h2>Dónde tiendes a la costumbre o infravaloras</h2>
-    <p class="page-hint">Apetito (cuánto lo buscas) frente a calidad (cuánto te llega cuando acierta) — {{ taste.covered }} títulos con perfil. En rojo, lo que persigues más de lo que en el fondo te gusta; en verde, lo que te encanta pero casi no buscas.</p>
-    <div class="diverging-list">
-        {% for a in taste.top_inercia %}
-        <div class="diverging-row">
-            <div class="affinity-head">
-                <span class="stat-bar-label wide">{{ a.tipo_es }}: {{ a.name }}</span>
-                <span class="diverging-value {{ 'positive' if a.inercia > 0 else 'negative' }}">{{ "%+d"|format(a.inercia) }}</span>
-            </div>
-            <div class="diverging-track">
-                <div class="diverging-zero"></div>
-                <div class="diverging-fill {{ 'positive' if a.inercia > 0 else 'negative' }}" style="width: {{ (a.inercia|abs / taste.max_inercia * 50)|round(1) }}%"></div>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
     {% endif %}
+  </section>
 
-    <div class="stats-columns section-gap">
-    <div class="stat-section">
-    <h2>Mis notas</h2>
-    {% set max_h = stats.histogram.values()|max if stats.histogram else 1 %}
-    <div class="stat-bars">
-        {% for bucket in range(1, 11) %}
-        {% set count = stats.histogram.get(bucket, 0) %}
-        <div class="stat-bar-row">
-            <span class="stat-bar-label">{{ bucket }}</span>
-            <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (count / max_h * 100)|round }}%"></div></div>
-            <span class="stat-bar-count">{{ count or "" }}</span>
-        </div>
-        {% endfor %}
-    </div>
-    </div>
+  {% endif %}
 
-    <div class="stat-section">
-    <h2>Géneros más vistos</h2>
-    {% set max_g = stats.top_genres[0][1] if stats.top_genres else 1 %}
-    <div class="stat-bars">
-        {% for genre, count in stats.top_genres %}
-        <div class="stat-bar-row">
-            <span class="stat-bar-label wide">{{ genre }}</span>
-            <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (count / max_g * 100)|round }}%"></div></div>
-            <span class="stat-bar-count">{{ count }}</span>
-        </div>
-        {% endfor %}
-    </div>
-    </div>
+    {% if te_gusta_mas or te_gusta_menos %}
+  <section class="stats-sec" id="discrepancias">
+    <div class="section-head"><h2>Dónde discrepas con la crítica</h2><span class="meta">tu nota frente a la de internet, en lo que has puntuado</span></div>
+    {% if te_gusta_mas %}<h3 class="sub-h">Te flipa más de lo que dice internet</h3>{{ dcards(te_gusta_mas, true) }}{% endif %}
+    {% if te_gusta_menos %}<h3 class="sub-h">Te gusta menos que a la crítica</h3>{{ dcards(te_gusta_menos, false) }}{% endif %}
+  </section>
+  {% endif %}
 
-    <div class="stat-section">
-    <h2>Episodios por mes (último año)</h2>
-    {# Columnas por mes. Si un mes supera en más de 2,5 veces al siguiente más alto, la
-       escala se ajusta al resto y esa columna se corta con una marca (valor encima):
-       si no, un solo mes atípico deja los demás casi a cero. #}
-    {% set vals = stats.monthly|map(attribute="c")|list %}
-    {% set ordenados = vals|sort(reverse=True) %}
-    {% set cortar = ordenados|length > 1 and ordenados[1] > 0 and ordenados[0] > ordenados[1] * 2.5 %}
-    {% set escala = (ordenados[1] * 1.15) if cortar else ((ordenados[0] if ordenados else 1) or 1) %}
-    {% set meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] %}
-    <div class="month-cols" role="img" aria-label="Episodios vistos por mes en el último año">
-        {% for row in stats.monthly %}
-        {% set cortada = cortar and row.c > escala %}
-        <div class="month-col{{ ' cut' if cortada }}" title="{{ row.month }}: {{ row.c }} episodios">
-            <span class="month-val">{{ row.c }}</span>
-            <div class="month-bar" style="height: {{ [row.c / escala * 100, 100]|min|round(1) }}%"></div>
-            <span class="month-lbl">{{ meses[row.month[5:7]|int - 1] }}{% if row.month[5:7] == "01" or loop.first %}<br><span class="month-year">{{ row.month[2:4] }}</span>{% endif %}</span>
-        </div>
-        {% endfor %}
+    <section class="stats-sec" id="gustos">
+    <div class="section-head"><h2>Perfil de gustos</h2><span class="meta">{{ (last.covered ~ ' de ' ~ last.total_rated ~ ' títulos con nota dentro del perfil') if last else '' }}</span>
+      <span class="btn-row" style="margin-left:auto"><span hx-get="/afinidad/estado" hx-trigger="load" hx-swap="outerHTML"></span>
+        <form method="post" action="/gustos/actualizar"><button class="btn ghost">{{ ic('sync', 'sm') }} Actualizar perfil{% if backfill_pendientes %} ({{ backfill_pendientes }}){% endif %}</button></form></span></div>
+
+    {% if acc %}
+    <h3 class="sub-h">¿Cuánto acierta el «% te gustará»? <small>cada título puntuado, predicho como si no lo hubieras visto</small></h3>
+    <div class="bento acc-tiles" style="align-items:stretch">
+      <div class="tile big" style="grid-column:span 4"><span class="n">{{ '%.2f'|format(acc.spearman) if acc.spearman is not none else '—' }}</span>
+        <span class="l">de acierto · 0 es azar y 1 perfecto.{% if acc.spearman_lo is not none %} Por puro azar saldría entre {{ '%.2f'|format(acc.spearman_lo) }} y {{ '%.2f'|format(acc.spearman_hi) }}.{% endif %}{% if acc_first and n_acc > 1 and acc.spearman is not none and acc_first.spearman is not none %} {{ 'Sube' if acc.spearman >= acc_first.spearman else 'Baja' }} {{ '%.3f'|format((acc.spearman - acc_first.spearman)|abs) }} en {{ n_acc }} días.{% endif %}</span></div>
+      <div class="tile" style="grid-column:span 4"><span class="n">{{ acc.masterpieces_hit }}<small style="font-size:1.2rem;color:var(--text-dim)">/{{ acc.masterpieces }}</small></span><span class="l">obras maestras que ya predecía con 50 % o más</span></div>
+      <div class="tile" style="grid-column:span 4"><span class="n">{{ cal.mae|fmt_rating(1) if cal.n else '—' }}</span><span class="l">puntos de error medio (sobre 100) en {{ cal.n }} título{{ 's' if cal.n != 1 }} que tenían predicción antes de puntuarlos</span></div>
     </div>
-    {% if cortar %}<p class="page-hint month-note">La columna cortada no está a escala.</p>{% endif %}
-    </div>
-    </div>
+    {% if cal.surprises %}
+    <details class="panel stats-fold"><summary>Las mayores sorpresas <span class="hint">{{ cal.surprises|length }}</span> {{ ic('chevd', 'sm') }}</summary>
+      <div class="rlist">{% for s in cal.surprises %}
+        <div class="rrow surprise-row" style="grid-template-columns:44px minmax(0,1fr) 200px 60px">
+          <img class="th" src="{{ s.poster_path|poster_size('w185') if s.poster_path else '' }}" alt="" loading="lazy" onerror="this.remove()">
+          <span class="in"><a href="/titulo/{{ s.tmdb_id }}/{{ s.type }}">{{ s.title }}</a><span>{{ 'Te gustó más de lo previsto' if s.diff > 0 else 'Te gustó menos de lo previsto' }}</span></span>
+          <span class="el">predicho {{ s.predicted }} % · nota {{ s.rating|fmt_rating }}</span>
+          <span style="text-align:right;font-weight:800;color:{{ 'var(--success)' if s.diff > 0 else 'var(--danger)' }}">{{ '%+.0f'|format(s.diff) }}</span></div>
+      {% endfor %}</div></details>{% endif %}
+    {% endif %}
 
     {% if taste.covered %}
-    <h2 class="section-gap stat-section-head"><svg class="stat-section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"></circle></svg>Índice de afinidad — género (AniList)</h2>
-    <p class="page-hint">Apetito (cuánto lo buscas) y calidad (cuánto te llega cuando acierta) combinados — {{ taste.covered }} títulos con perfil. Solo géneros/tags/estudios con al menos 3 títulos.</p>
-    {{ afinidad_scatter(taste.genres) }}
+    <h3 class="sub-h">Dónde tiendes a la costumbre <small>apetito (cuánto lo buscas) frente a calidad (cuánto te llega)</small></h3>
+    <div class="panel">{{ diverging(taste.top_inercia, true) }}</div>
+    <div class="sub-h-row"><h3 class="sub-h">Afinidad <small>solo lo que tiene al menos 3 títulos</small></h3>
+      <div class="seg" id="afinidad-tabs">{% for k, l in [('genres', 'Género'), ('tags', 'Tag'), ('studios', 'Estudio')] %}<a class="{{ 'active' if pestana == k }}" href="/estadisticas?pestana={{ k }}#gustos" data-tab="{{ k }}">{{ l }}</a>{% endfor %}</div></div>
+    {% for k in ['genres', 'tags', 'studios'] %}<div class="panel" data-panel="{{ k }}"{% if k != pestana %} hidden{% endif %}>{{ diverging(taste[k]) }}</div>{% endfor %}
+    {% else %}{{ empty('chart', 'Todavía no hay perfil', 'Puntúa anime y pulsa «Actualizar perfil».') }}{% endif %}
 
-    <h2 class="stat-section-head"><svg class="stat-section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="4" x2="8" y2="20"></line><line x1="16" y1="4" x2="14" y2="20"></line></svg>Índice de afinidad — tag (AniList)</h2>
-    {{ afinidad_scatter(taste.tags) }}
-
-    <h2 class="stat-section-head"><svg class="stat-section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1"></rect><line x1="8" y1="7" x2="8" y2="7.01"></line><line x1="12" y1="7" x2="12" y2="7.01"></line><line x1="8" y1="11" x2="8" y2="11.01"></line><line x1="12" y1="11" x2="12" y2="11.01"></line><line x1="8" y1="15" x2="16" y2="15"></line><line x1="8" y1="18" x2="16" y2="18"></line></svg>Índice de afinidad — estudio</h2>
-    {{ afinidad_scatter(taste.studios) }}
+    {% if history %}
+    <details class="panel stats-fold"><summary>Cobertura del perfil <span class="hint">últimos {{ history|length }} días</span> {{ ic('chevd', 'sm') }}</summary>
+      <div class="months" style="height:90px;margin-top:12px">{% for h in history %}{% set p = (h.covered / h.total_rated * 100) if h.total_rated else 0 %}<div class="c" title="{{ h.date }}: {{ h.covered }}/{{ h.total_rated }}"><span class="bw"><i style="height:{{ p|round(1) }}%"></i></span><span>{{ h.date[8:10]|int }}</span></div>{% endfor %}</div></details>
     {% endif %}
+
+    <details class="panel stats-fold">
+      <summary><b>Pesos del cálculo</b><span class="chip acc" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em">Avanzado</span><span class="hint" style="margin-left:auto">20 valores {{ ic('chevd', 'sm') }}</span></summary>
+      <form method="post" action="/ajustes/afinidad" style="display:grid;gap:18px;margin-top:14px">
+        <p class="hint">Cómo se combinan apetito y calidad aquí y en el «% te gustará». Al guardar se recalcula el perfil; tarda alrededor de un minuto.</p>
+        {% for group, legend, fields in [('appetite_weights', 'Apetito', [('volumen', 'Volumen'), ('lift', 'Lift'), ('ritmo', 'Ritmo'), ('dia1', 'Día 1'), ('rewatch', 'Rewatch'), ('curacion', 'Curación')]), ('quality_weights', 'Calidad', [('techo', 'Techo'), ('suelo', 'Suelo'), ('disfrute', 'Disfrute'), ('media', 'Media suavizada'), ('elo', 'Corrección Elo')]), ('predict_weights', 'Predicción «% te gustará»', [('precuela', 'Precuela puntuada'), ('cross_rec', 'Recomendaciones AniList'), ('estudio', 'Estudio'), ('tags', 'Tags'), ('genero', 'Género')])] %}
+        <fieldset class="wset"><legend>{{ legend }}</legend><div class="sgrid">{% for key, label in fields %}{% set v = cfg[group][key] %}{% set d = defaults[group][key] %}
+          <div class="wfield{{ ' changed' if v != d }}"><label>{{ label }}</label><input class="input" type="number" step="{{ '0.1' if group == 'predict_weights' else '0.01' }}" name="{{ group }}__{{ key }}" value="{{ v }}"><small>por defecto: {{ d }}</small></div>{% endfor %}</div></fieldset>
+        {% endfor %}
+        <fieldset class="wset"><legend>Combinación</legend><div class="sgrid">{% for key, label in [('appetite_exp', 'Exponente apetito'), ('quality_exp', 'Exponente calidad'), ('gap_threshold', 'Umbral de desfase'), ('gap_factor', 'Castigo por desfase')] %}
+          <div class="wfield{{ ' changed' if cfg[key] != defaults[key] }}"><label>{{ label }}</label><input class="input" type="number" step="{{ '1' if key == 'gap_threshold' else '0.01' }}" name="{{ key }}" value="{{ cfg[key] }}"><small>por defecto: {{ defaults[key] }}</small></div>{% endfor %}</div></fieldset>
+        <div class="btn-row"><button class="btn">Guardar y recalcular</button><button class="btn quiet" type="submit" form="restablecer">Restablecer por defecto</button></div>
+      </form>
+      <form id="restablecer" method="post" action="/ajustes/afinidad/restablecer"></form>
+    </details>
+  </section>
 </div>
-</div>
+<script>
+(() => {
+  const links = [...document.querySelectorAll("#stats-index a")];
+  const secs = links.map((a) => document.querySelector(a.getAttribute("href")));
+  const io = new IntersectionObserver((es) => {
+    es.forEach((e) => { if (e.isIntersecting) links.forEach((a, n) => a.classList.toggle("active", secs[n] === e.target)); });
+  }, { rootMargin: "-40% 0px -55% 0px" });
+  secs.forEach((s) => s && io.observe(s));
+})();
+document.querySelectorAll("#afinidad-tabs [data-tab]").forEach((a) => a.addEventListener("click", (e) => {
+  e.preventDefault();
+  document.querySelectorAll("#afinidad-tabs [data-tab]").forEach((x) => x.classList.toggle("active", x === a));
+  document.querySelectorAll("[data-panel]").forEach((p) => { p.hidden = p.dataset.panel !== a.dataset.tab; });
+}));
+</script>
 {% endblock %}

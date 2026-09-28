@@ -1,0 +1,80 @@
+{% from "partials/ui.html" import ic %}
+{% set EXAM_CATS = [("historia", "Historia / guion"), ("animacion", "Animación / arte"), ("personajes", "Personajes"), ("musica", "Música"), ("disfrute", "Disfrute personal")] %}
+{% macro exam_form(action, categories, weights, rating=none, comment='', errors=none, habit=none, show_habit=true, comment_required=true, show_date=false, release_date=none, hidden={}) -%}
+{% set any_cat = categories and (categories.values()|reject("none")|list) %}
+<form class="exam-card" id="exam" method="post" action="{{ action }}">
+  {% for k, v in hidden.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <div class="exam-score"><span class="n none" id="exam-n">—</span><span class="of">/10</span>
+    <span class="how" id="exam-how">Mueve las barras que quieras valorar.<br>La que no toques no cuenta.</span></div>
+  <div style="display:grid;gap:8px">
+    {% for cat, label in EXAM_CATS %}
+    {% set cur = categories[cat] if categories and categories[cat] not in (none, "") else none %}
+    {% set w = weights[cat] %}
+    <div class="exam-q{{ ' off' if cur is none }}{{ ' w-heavy' if w > 1 }}" data-w="{{ w }}">
+      <label for="slider_{{ cat }}">{{ label }} <em>×{{ w|string|replace('.', ',') }}</em></label>
+      <span class="v">{{ cur|fmt_rating(1) if cur is not none else '—' }}</span>
+      <button type="button" class="clr" title="Sin valorar">{{ ic('x', 'sm') }}</button>
+      <input type="range" id="slider_{{ cat }}" min="0" max="10" step="0.5" value="{{ cur if cur is not none else 5.5 }}">
+      <input type="hidden" name="cat_{{ cat }}" value="{{ cur if cur is not none else '' }}">
+    </div>
+    {% if errors and errors["cat_" + cat] %}<div class="error">{{ errors["cat_" + cat] }}</div>{% endif %}
+    {% endfor %}
+  </div>
+  {% if errors and errors.rating %}<div class="error">{{ errors.rating }}</div>{% endif %}
+  <details class="direct"{{ ' open' if (not any_cat and rating is not none) }}><summary>O poner una nota directa, sin examen</summary>
+    <div class="field" style="margin-top:8px"><input class="input" type="number" id="rating" name="rating" min="0" max="10" step="0.1" inputmode="decimal" value="{{ rating if (rating is not none and not any_cat) else '' }}" placeholder="0 – 10" style="width:140px">
+      <p class="hint">Si tocas alguna barra, cuenta el examen.</p></div></details>
+  {% if show_habit %}<label class="check"><input type="checkbox" name="is_habit" value="1"{{ ' checked' if habit }}> Lo veo por costumbre, no tanto por gusto (hábito)</label>{% endif %}
+  <div class="field"><label for="comment">{% if comment_required %}Comentario <span class="req">*</span>{% else %}Comentario (opcional){% endif %}</label>
+    <textarea class="input" id="comment" name="comment" placeholder="Qué te ha parecido…"{{ ' required' if comment_required }}>{{ comment if comment and comment != '-' else '' }}</textarea>
+    {% if errors and errors.comment %}<div class="error">{{ errors.comment }}</div>{% endif %}</div>
+  {% if show_date %}
+  <div class="field"><label for="watched_date">¿Cuándo la viste? (por defecto hoy)</label>
+    <div class="btn-row"><input class="input" type="date" id="watched_date" name="watched_date" value="">
+      {% if release_date %}<button type="button" class="btn sm quiet" onclick="document.getElementById('watched_date').value='{{ release_date }}'">Usar estreno ({{ release_date }})</button>{% endif %}</div></div>
+  {% endif %}
+  <div class="btn-row"><button class="btn lg">{{ ic('check') }} Guardar</button></div>
+  {{ caller() if caller else '' }}
+</form>
+<script>
+(() => {
+    const f = document.getElementById("exam"), n = f.querySelector("#exam-n"), how = f.querySelector("#exam-how"), direct = f.querySelector("#rating");
+    const fmt = (v) => (Math.round(v * 100) / 100).toString().replace(".", ",");
+    function calc() {
+        let tot = 0, w = 0, used = 0;
+        f.querySelectorAll(".exam-q").forEach((q) => {
+            const v = parseFloat(q.querySelector("input[type=hidden]").value);
+            if (isNaN(v)) return;
+            tot += v * +q.dataset.w; w += +q.dataset.w; used++;
+        });
+        let val = null;
+        if (w) { val = tot / w; how.textContent = "Media ponderada de " + used + " barra" + (used > 1 ? "s" : ""); }
+        else if (direct.value !== "") { val = +direct.value; how.textContent = "Nota directa"; }
+        else how.innerHTML = "Mueve las barras que quieras valorar.<br>La que no toques no cuenta.";
+        n.textContent = val == null ? "—" : fmt(val);
+        n.classList.toggle("none", val == null);
+    }
+    f.querySelectorAll(".exam-q").forEach((q) => {
+        const r = q.querySelector("input[type=range]"), h = q.querySelector("input[type=hidden]"), v = q.querySelector(".v");
+        r.addEventListener("input", () => { h.value = r.value; v.textContent = String(r.value).replace(".", ","); q.classList.remove("off"); calc(); });
+        q.querySelector(".clr").addEventListener("click", () => { h.value = ""; v.textContent = "—"; q.classList.add("off"); calc(); });
+    });
+    direct.addEventListener("input", calc);
+    calc();
+})();
+</script>
+{%- endmacro %}
+
+{% macro exam_side(t, ask, sub='', back=none) -%}
+<div class="exam-side">
+  {% from "partials/ui.html" import poster %}
+  {{ poster(t.poster_path, t.title, rb=t|show_status_ribbon, href='/titulo/' ~ t.tmdb_id ~ '/' ~ t.type, size='w500') }}
+  <div style="display:grid;gap:10px">
+    <div class="ask">{{ ask }}</div>
+    {% if t.logo_path %}<img class="logo" src="{{ t.logo_path|tmdb_img('w500') }}" alt="{{ t.title }}">{% else %}<h1>{{ t.title }}</h1>{% endif %}
+    <div class="meta-row"><span class="mchip">{{ t.year or '—' }} · {{ 'Serie' if t.type == 'show' else 'Película' }}</span>{% if sub %}<span class="mchip you">{{ sub }}</span>{% endif %}{% if t.vote_average %}<span class="mchip">Internet <b>{{ t.vote_average|fmt_rating(1) }}</b></span>{% endif %}</div>
+    {{ caller() if caller else '' }}
+    <a class="link" href="/titulo/{{ t.tmdb_id }}/{{ t.type }}" style="font-size:0.9rem">Ir a la ficha</a>
+  </div>
+</div>
+{%- endmacro %}

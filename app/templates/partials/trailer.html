@@ -1,3 +1,2 @@
-{% if trailer_url %}
-<a class="btn secondary" href="{{ trailer_url }}" target="_blank" rel="noopener">Ver tráiler ↗</a>
-{% endif %}
+{% from "partials/ui.html" import ic %}
+{% if trailer_url %}<a class="btn quiet" href="{{ trailer_url }}" target="_blank" rel="noopener">{{ ic('play', 'sm') }} Tráiler {{ ic('ext', 'sm') }}</a>{% endif %}

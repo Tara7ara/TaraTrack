@@ -1,11 +1,12 @@
+{% from "partials/ui.html" import ic, logo %}
 <!doctype html>
 <html lang="es">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>TaraTrack{% if title %} — {{ title }}{% endif %}</title>
-    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg?v={{ static_v }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png?v={{ static_v }}">
     <link rel="apple-touch-icon" href="{{ touch_icon_data_uri }}">
     <meta name="theme-color" content="#0f0f0f">
     <link rel="manifest" href="/static/manifest.webmanifest">
@@ -13,7 +14,6 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="TaraTrack">
-    {# Tipografía de titulares: solo h1/h2 y la marca; el resto sigue en system-ui. #}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
@@ -21,102 +21,165 @@
     <script src="/static/js/htmx.min.js"></script>
     <script src="/static/js/swipe.js?v={{ static_v }}" defer></script>
 </head>
-<body>
-    {# Se calcula una vez para los dos "Más" (escritorio y móvil): el punto en el
-       propio botón avisa sin abrir el desplegable. #}
-    {% set _comentarios_nuevos = comments_badge_count(request.state.user_id) %}
-    <nav class="topnav">
-        <a href="/" class="brand">TaraTrack</a>
-        <div class="nav-cluster">
-            <a href="/pendientes" class="{{ 'active' if request.url.path.startswith('/pendientes') else '' }}">Pendientes</a>
-            <a href="/buscar" class="{{ 'active' if request.url.path.startswith('/buscar') else '' }}">Buscar</a>
-            <a href="/vistas" class="{{ 'active' if request.url.path.startswith('/vistas') else '' }}">Vistas</a>
+{% set _p = request.url.path %}
+{% set _comentarios_nuevos = comments_badge_count(request.state.user_id) %}
+{% set _cola = puntuar_queue_count(request.state.user_id) %}
+{% macro act(prefixes) -%}{% for x in prefixes %}{% if _p == x or (x != '/' and _p.startswith(x)) %} active{% endif %}{% endfor %}{%- endmacro %}
+<body class="{{ body_class or '' }}">
+    <div class="nav-progress" aria-hidden="true"></div>
+    <nav class="topnav{{ '' if transparent_nav else ' solid' }}" id="topnav">
+        {% if _p not in ['/', '/pendientes', '/calendario', '/vistas'] %}<button class="icon-btn nav-back" type="button" onclick="ttBack()" aria-label="Volver">{{ ic('chevl', 'lg') }}</button>{% endif %}
+        <a class="brand" href="/" aria-label="TaraTrack">{{ logo(26) }}<span>TaraTrack</span></a>
+        <div class="nav-links">
+            <a href="/" class="{{ act(['/']) if _p == '/' }}">Inicio</a>
+            <a href="/pendientes" class="{{ act(['/pendientes', '/sorprendeme']) }}">Pendientes</a>
+            <a href="/vistas" class="{{ act(['/vistas']) }}">Vistas</a>
+            <a href="/puntuar" class="{{ act(['/puntuar', '/marcar-vista']) }}">Puntuar<span id="nav-cola-desktop" class="nav-cola" title="Tienes títulos por puntuar"{% if not _cola %} hidden{% endif %}>✦</span></a>
+            <span class="nav-sep"></span>
+            <a href="/calendario" class="{{ act(['/calendario']) }}" data-collapse="3">Calendario</a>
+            <a href="/recomendados" class="{{ act(['/recomendados']) }}" data-collapse="2">Recomendados</a>
+            <a href="/listas" class="{{ act(['/listas', '/lista/', '/waifus', '/estadisticas/episodios-favoritos', '/comentarios']) }}" data-collapse="1">Listas</a>
+            <details class="nav-more">
+                <summary class="{{ act(['/duelo', '/historial', '/estadisticas', '/gustos', '/resumen', '/discrepancias']) }}">Más {{ ic('chevd', 'sm') }}{% if _comentarios_nuevos %}<span class="nav-count">{{ _comentarios_nuevos }}</span>{% endif %}</summary>
+                <div class="nav-more-menu">
+                                        <a href="/listas" class="{{ act(['/listas', '/lista/', '/waifus', '/estadisticas/episodios-favoritos', '/comentarios']) }}" data-collapse-copy="1" hidden>{{ ic('list') }} Listas</a>
+                    <a href="/recomendados" class="{{ act(['/recomendados']) }}" data-collapse-copy="2" hidden>{{ ic('compass') }} Recomendados</a>
+                    <a href="/calendario" class="{{ act(['/calendario']) }}" data-collapse-copy="3" hidden>{{ ic('cal') }} Calendario</a>
+                    {% if _comentarios_nuevos %}<a href="/comentarios/siguiente">{{ ic('debate') }} Comentarios nuevos <span id="nav-comentarios-desktop" class="nav-count">{{ _comentarios_nuevos }}</span></a>{% endif %}
+                    <a href="/duelo">{{ ic('swords') }} Duelo</a>
+                    <a href="/historial">{{ ic('history') }} Historial</a>
+                    <a href="/estadisticas">{{ ic('chart') }} Estadísticas</a>
+                </div>
+            </details>
         </div>
-        <div class="nav-divider"></div>
-        <div class="nav-cluster">
-            <a href="/recomendados" class="{{ 'active' if request.url.path.startswith('/recomendados') else '' }}">Recomendados</a>
-            <a href="/calendario" class="{{ 'active' if request.url.path.startswith('/calendario') else '' }}">Calendario</a>
-            <a href="/puntuar" class="{{ 'active' if request.url.path.startswith('/puntuar') else '' }}">Puntuar{% set _cola = puntuar_queue_count(request.state.user_id) %}<span id="nav-cola-desktop" class="nav-cola" title="Tienes títulos pendientes de puntuar"{% if not _cola %} hidden{% endif %}>✦</span></a>
-            <a href="/duelo" class="{{ 'active' if request.url.path.startswith('/duelo') else '' }}">Duelo</a>
-            <a href="/listas" class="{{ 'active' if request.url.path.startswith('/listas') or request.url.path.startswith('/lista/') else '' }}">Listas</a>
+        <div class="nav-right">
+            <button class="icon-btn nav-search" type="button" onclick="ttSearch()" title="Buscar series, pelis y anime">{{ ic('search') }}<span>Buscar</span></button>
+                        <a class="nav-user{{ ' active' if request.url.path.startswith('/ajustes') }}" href="/ajustes" title="Tu cuenta y ajustes">{{ request.state.username|avatar(request.state.avatar_path) }}<span>{{ request.state.username }}</span>{{ ic('gear', 'sm') }}</a>
         </div>
-        <div class="nav-divider"></div>
-        {# Historial, Stats y Mosaico van en un menú propio de escritorio; en la fila
-           visible quedan uso diario y exploración. #}
-        <details class="topnav-more">
-            <summary class="{{ 'active' if request.url.path.startswith('/historial') or request.url.path.startswith('/estadisticas') or request.url.path.startswith('/mosaico') else '' }}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
-                <span>Más</span>
-                {% if _comentarios_nuevos %}<span class="nav-more-dot" title="Hay comentarios nuevos"></span>{% endif %}
-            </summary>
-            <div class="topnav-more-menu">
-                {# Sin comentarios nuevos no se enseña el enlace. #}
-                {% if _comentarios_nuevos %}
-                <a href="/comentarios/siguiente">Comentarios<span id="nav-comentarios-desktop" class="nav-cola">{{ _comentarios_nuevos }}</span></a>
-                {% endif %}
-                <a href="/historial">Historial</a>
-                <a href="/estadisticas">Estadísticas</a>
-                <a href="/mosaico">Mosaico</a>
-            </div>
-        </details>
-        {# Cuenta activa, para saber en qué sesión estás. #}
-        <a href="/ajustes" class="nav-user" title="Cuenta activa: {{ request.state.username }}">
-            {{ request.state.username|avatar(request.state.avatar_path) }}
-            <span class="nav-user-name">{{ request.state.username }}</span>
-        </a>
-        <a href="/ajustes" class="nav-gear {{ 'active' if request.url.path.startswith('/ajustes') else '' }}" title="Ajustes">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-        </a>
     </nav>
-    {# Contenedor del aviso "¿comentas?": vacío salvo cuando una respuesta htmx lo
-       rellena por hx-swap-oob (ver partials/comment_toast.html). #}
     <div id="comment-toast"></div>
-    <main class="container">
+    <main id="app">
         {% block content %}{% endblock %}
     </main>
     <nav class="bottomnav">
-        <a href="/pendientes" class="{{ 'active' if request.url.path.startswith('/pendientes') else '' }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-            <span>Pendientes</span>
-        </a>
-        <a href="/buscar" class="{{ 'active' if request.url.path.startswith('/buscar') else '' }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <span>Buscar</span>
-        </a>
-        <a href="/vistas" class="{{ 'active' if request.url.path.startswith('/vistas') else '' }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-            <span>Vistas</span>
-        </a>
-        {# Puntuar va dentro de "Más"; el icono de "Más" se marca activo en /puntuar. #}
-        <details class="bottomnav-more">
-            <summary class="{{ 'active' if request.url.path.startswith('/calendario') or request.url.path.startswith('/listas') or request.url.path.startswith('/lista/') or request.url.path.startswith('/recomendados') or request.url.path.startswith('/duelo') or request.url.path.startswith('/puntuar') else '' }}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
-                <span>Más</span>
-                {% if _comentarios_nuevos %}<span class="nav-more-dot" title="Hay comentarios nuevos"></span>{% endif %}
-            </summary>
-            <div class="bottomnav-more-menu">
-                <a href="/puntuar">Puntuar{% set _cola = puntuar_queue_count(request.state.user_id) %}<span id="nav-cola-mobile" class="nav-cola" title="Tienes títulos pendientes de puntuar"{% if not _cola %} hidden{% endif %}>✦</span></a>
-                {% if _comentarios_nuevos %}
-                <a href="/comentarios/siguiente">Comentarios<span id="nav-comentarios-mobile" class="nav-cola">{{ _comentarios_nuevos }}</span></a>
-                {% endif %}
-                <a href="/recomendados">Recomendados</a>
-                <a href="/calendario">Calendario</a>
-                <a href="/listas">Listas</a>
-                <a href="/duelo">Duelo: Anime</a>
-                <a href="/historial">Historial</a>
-                <a href="/estadisticas">Estadísticas</a>
-                <a href="/mosaico">Mosaico</a>
-            </div>
-        </details>
+        <a href="/" class="{{ 'active' if _p == '/' }}">{{ ic('home', 'lg') }}<span>Inicio</span></a>
+        <a href="/pendientes" class="{{ act(['/pendientes', '/sorprendeme']) }}">{{ ic('clock', 'lg') }}<span>Pendientes</span></a>
+        <a href="/vistas" class="{{ act(['/vistas']) }}">{{ ic('done', 'lg') }}<span>Vistas</span></a>
+        <button type="button" class="more-btn{{ act(['/calendario', '/puntuar', '/recomendados', '/listas', '/lista/', '/waifus', '/duelo', '/historial', '/estadisticas', '/gustos', '/comentarios', '/resumen', '/discrepancias']) }}" onclick="document.getElementById('more-dialog').showModal()">{{ ic('more', 'lg') }}<span>Más</span>{% if _cola or _comentarios_nuevos %}<i class="dot"></i>{% endif %}</button>
     </nav>
+
+        <dialog class="more-dialog" id="more-dialog">
+        <div class="sheet"><div class="sheet-grip"></div>
+            <a href="/calendario">{{ ic('cal') }} Calendario</a>
+            <a href="/puntuar">{{ ic('star') }} Puntuar <span id="nav-cola-mobile" class="nav-cola"{% if not _cola %} hidden{% endif %}>✦</span></a>
+            {% if _comentarios_nuevos %}<a href="/comentarios/siguiente">{{ ic('debate') }} Comentarios nuevos <span id="nav-comentarios-mobile" class="nav-count">{{ _comentarios_nuevos }}</span></a>{% endif %}
+            <a href="/recomendados">{{ ic('compass') }} Recomendados</a>
+            <a href="/listas">{{ ic('list') }} Listas</a>
+            <a href="/duelo">{{ ic('swords') }} Duelo</a>
+            <a href="/historial">{{ ic('history') }} Historial</a>
+            <a href="/estadisticas">{{ ic('chart') }} Estadísticas</a>
+            <button type="button" class="sheet-close" onclick="this.closest('dialog').close()">{{ ic('x') }} Cerrar</button>
+        </div>
+    </dialog>
+
+    <dialog class="search-dialog" id="search-dialog">
+        <div class="modal search-modal" role="search">
+            <div class="search-row"><label class="search-field big">{{ ic('search', 'lg') }}
+                <input id="gsearch" class="input" type="search" name="q" placeholder="Busca una serie, peli o anime…" autocomplete="off"
+                       hx-get="/buscar/resultados" hx-trigger="input changed delay:400ms, search" hx-target="#gresults" hx-indicator="#gsearching"></label>
+                <button type="button" class="icon-btn" onclick="this.closest('dialog').close()" aria-label="Cerrar">{{ ic('x', 'lg') }}</button></div>
+            <p id="gsearching" class="htmx-indicator hint"><span class="spinner"></span>Buscando en TMDB…</p>
+            <div id="gresults" class="gresults"><p class="hint" style="padding:6px 4px">Busca en TMDB (y en AniList si no aparece). Lo que ya tienes sale con su estado.</p></div>
+        </div>
+    </dialog>
+
 <script>
-// Teclado abierto = el viewport visible encoge mucho (iOS no cambia
-// innerHeight al sacar el teclado, solo visualViewport). Esconde el bottomnav, ver app.css.
+function ttSearch() { const d = document.getElementById("search-dialog"); if (!d.open) d.showModal(); const i = document.getElementById("gsearch"); i.focus(); i.select(); }
+document.querySelectorAll("#search-dialog, #more-dialog").forEach((d) => d.addEventListener("click", (e) => { if (e.target === d) d.close(); }));
+function ttBack() { if (history.length > 1 && document.referrer.startsWith(location.origin)) history.back(); else location.href = "/"; }
+document.addEventListener("keydown", (e) => {
+    if ((e.key === "/" || (e.key === "k" && (e.ctrlKey || e.metaKey))) && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); ttSearch(); }
+});
 if (window.visualViewport) {
-    const kb = () => document.documentElement.classList.toggle(
-        "kb-open", window.innerHeight - window.visualViewport.height > 120);
+    const kb = () => document.documentElement.classList.toggle("kb-open", window.innerHeight - window.visualViewport.height > 120);
     window.visualViewport.addEventListener("resize", kb);
 }
+(() => { const n = document.getElementById("topnav"); if (n.classList.contains("solid")) return;
+  const f = () => n.classList.toggle("scrolled", scrollY > 24); addEventListener("scroll", f, { passive: true }); f(); })();
+(() => {
+    const nav = document.getElementById("topnav"), links = nav && nav.querySelector(".nav-links"), right = nav && nav.querySelector(".nav-right");
+    if (!links || !right) return;
+    const more = links.querySelector(".nav-more > summary");
+    const fits = () => links.getBoundingClientRect().left + links.scrollWidth <= right.getBoundingClientRect().left - 8;
+    const apply = (level) => {
+        links.querySelectorAll("[data-collapse]").forEach((a) => { a.hidden = +a.dataset.collapse <= level; });
+        nav.querySelectorAll("[data-collapse-copy]").forEach((a) => { a.hidden = +a.dataset.collapseCopy > level; });
+        const sep = links.querySelector(".nav-sep"); if (sep) sep.hidden = level >= 3;
+        if (more) more.classList.toggle("collapsed-active", !!nav.querySelector("[data-collapse-copy].active:not([hidden])"));
+    };
+    const fit = () => {
+        if (getComputedStyle(links).display === "none") return;
+        let level = 0; apply(0);
+        while (!fits() && level < 3) apply(++level);
+    };
+    new ResizeObserver(fit).observe(nav);
+    document.fonts && document.fonts.ready.then(fit);
+    fit();
+})();
+document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[href]");
+    if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || a.target || a.hasAttribute("download")) return;
+    const u = new URL(a.href, location.href);
+    if (u.origin !== location.origin || (u.pathname === location.pathname && u.search === location.search)) return;
+    const boost = a.closest("[hx-boost]");
+    if ((boost && boost.getAttribute("hx-boost") === "true") || a.matches("[hx-get],[hx-post]")) return;
+    document.documentElement.classList.add("navigating");
+    if (a.closest(".bottomnav")) document.querySelectorAll(".bottomnav > a, .bottomnav > button").forEach((x) => x.classList.toggle("active", x === a));
+});
+addEventListener("pageshow", () => document.documentElement.classList.remove("navigating"));
+document.addEventListener("click", (e) => { if (!e.target.closest(".nav-more")) document.querySelectorAll(".nav-more[open]").forEach((d) => d.removeAttribute("open")); });
+window.ttHero = (() => {
+    let i = 0, t = null, hero = null, slides = [];
+    const busy = () => hero && hero.querySelector(".slide.on .hero-confirm");
+    function show(k) {
+        if (!slides.length) return;
+        i = (k + slides.length) % slides.length;
+        slides.forEach((s, n) => s.classList.toggle("on", n === i));
+        [i, (i + 1) % slides.length].forEach((n) => slides[n].querySelectorAll("img[data-src]").forEach((im) => {
+            if (im.dataset.srcset) im.srcset = im.dataset.srcset;
+            im.src = im.dataset.src; im.removeAttribute("data-src"); im.removeAttribute("data-srcset");
+        }));
+        hero.querySelectorAll(".hero-dots button").forEach((b, n) => { b.classList.toggle("on", n === i); });
+        document.querySelectorAll("[data-hero-card]").forEach((c) => c.classList.toggle("current", +c.dataset.heroCard === i));
+        clearTimeout(t);
+        if (!hero.querySelector(".hero-dots button")) t = setTimeout(tick, 15000);
+    }
+    function tick() {
+        if (busy()) { clearTimeout(t); t = setTimeout(tick, 1000); return; }
+        show(i + 1);
+    }
+    document.addEventListener("animationend", (e) => {
+        if (e.animationName === "dot" && hero && hero.contains(e.target)) tick();
+    });
+    function init() {
+        const h = document.getElementById("hero");
+        if (h === hero) return;
+        hero = h; clearTimeout(t);
+        slides = hero ? [...hero.querySelectorAll(".slide")] : [];
+        if (slides.length > 1) show(Math.min(i, slides.length - 1)); else i = 0;
+    }
+    document.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-hero-go],[data-hero-to],[data-hero-pick]");
+        if (!b || !hero) return;
+        e.preventDefault();
+        if (b.dataset.heroGo) show(i + +b.dataset.heroGo);
+        else if (b.dataset.heroTo) show(+b.dataset.heroTo);
+        else { show(+b.dataset.heroPick); scrollTo({ top: 0, behavior: "smooth" }); }
+    });
+    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("htmx:afterSettle", init);
+    return { show, init };
+})();
 </script>
 </body>
 </html>

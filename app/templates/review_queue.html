@@ -1,43 +1,27 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, head, empty %}
+{% from "partials/exam.html" import exam_form, exam_side %}
 {% block content %}
-<div class="decision-header">
-<h1>Puntuar</h1>
-{% if entry %}
-<p class="page-hint">{{ total }} serie{{ "s" if total != 1 else "" }}/pelis importadas todavía sin nota.</p>
-{% endif %}
+{% if entry and entry.backdrop_path %}<div class="bg-blur"><img src="{{ entry.backdrop_path|tmdb_img('w1280') }}" alt=""></div>{% endif %}
+<div class="page">
+  {{ head('¿Qué me falta por valorar?', 'Puntuar', (total ~ ' título' ~ ('s' if total != 1 else '') ~ ' sin nota') if entry else '') }}
+  {% if not entry %}
+    {{ empty('done', 'Al día', 'No hay nada pendiente de puntuar ahora mismo. Lo que marques como visto sin nota aparecerá aquí, y también las temporadas nuevas de las series que puntúas por temporada.', 'done') }}
+  {% else %}
+  <div class="exam-wrap">
+    {% call exam_side(entry, 'Temporada ' ~ entry.season_number ~ ' nueva' if entry.season_number else 'Sin nota', ('Temporada ' ~ entry.season_number) if entry.season_number else '') %}{% if entry.watched_at %}<span class="hint">Vista el {{ entry.watched_at[:10] }}</span>{% endif %}{% endcall %}
+    {% if entry.season_number %}
+      {% set action = '/titulo/' ~ entry.tmdb_id ~ '/' ~ entry.type ~ '/temporada/' ~ entry.season_number ~ '/puntuar' %}
+    {% else %}
+      {% set action = '/marcar-vista/' ~ entry.id %}
+    {% endif %}
+    {% call exam_form(action, {}, weights, habit=entry.is_habit, show_habit=not entry.season_number, comment_required=not entry.season_number, hidden={'volver': 'puntuar'}) %}
+      <div class="queue-alt"><span class="hint">¿No te acuerdas?</span>
+        <a class="btn ghost" href="/puntuar?excluir={{ excluir_siguiente }}">Paso, no me acuerdo</a>
+        <button class="btn quiet" type="submit" form="no-recuerdo">No me acuerdo de nada, 5 y ya</button></div>
+    {% endcall %}
+  </div>
+  <form id="no-recuerdo" method="post" action="/puntuar/{{ entry.id }}/no-recuerdo">{% if entry.season_number %}<input type="hidden" name="season_number" value="{{ entry.season_number }}">{% endif %}</form>
+  {% endif %}
 </div>
-{% if not entry %}
-<div class="empty-state done">
-    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
-    <h3>Al día</h3>
-    <p>No hay nada pendiente de puntuar ahora mismo.</p>
-</div>
-{% else %}
-<div class="review-card">
-    <a href="/titulo/{{ entry.tmdb_id }}/{{ entry.type }}" target="_blank" title="Ver ficha">
-        <img class="review-poster" src="{{ entry.poster_path|poster_size('w342') if entry.poster_path else '/static/img/sin-portada.svg' }}"{% if entry.poster_path %} srcset="{{ entry.poster_path|poster_size('w342') }} 1x, {{ entry.poster_path|poster_size('w500') }} 2x"{% endif %} alt="{{ entry.title }}">
-    </a>
-    <div class="review-info">
-        <h2>{{ entry.title }}</h2>
-        <div class="year">
-            {{ entry.year or "—" }} · {{ "Serie" if entry.type == "show" else "Película" }}
-            {%- if entry.season_number %} · Temporada {{ entry.season_number }} nueva{% endif %}
-        </div>
-    </div>
-    <div class="review-actions">
-        {% if entry.season_number %}
-        <a class="btn" href="/titulo/{{ entry.tmdb_id }}/{{ entry.type }}/temporada/{{ entry.season_number }}/puntuar">Puntuar esta temporada</a>
-        {% else %}
-        <a class="btn" href="/marcar-vista/{{ entry.tmdb_id }}/{{ entry.type }}?volver=puntuar">Puntuar esta</a>
-        {% endif %}
-        <a class="btn secondary" href="/puntuar?excluir={{ excluir_siguiente }}">Paso, no me acuerdo</a>
-    </div>
-    <form method="post" action="/puntuar/{{ entry.id }}/no-recuerdo" class="review-actions" style="margin-top:0.5rem">
-        {% if entry.season_number %}
-        <input type="hidden" name="season_number" value="{{ entry.season_number }}">
-        {% endif %}
-        <button class="secondary">No me acuerdo de nada, 5 y ya</button>
-    </form>
-</div>
-{% endif %}
 {% endblock %}

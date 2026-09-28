@@ -1,0 +1,13 @@
+{% from "partials/ui.html" import card %}
+      {% for e in pagina %}
+      {% set dur = ((e.episode_count ~ ' ep · ' ~ ((e.episode_count * e.runtime_minutes)|fmt_duration)) if e.type == 'show' and e.episode_count else (e.runtime_minutes|fmt_duration)) if e.runtime_minutes else '' %}
+      {% set extra = ('Internet ' ~ (e.vote_average|fmt_rating(1)) if e.vote_average else '') ~ (' · ' if e.vote_average and dur else '') ~ dur %}
+      {% set l1 = (e.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if e.type == 'show' else 'Peli') ~ (('<span class="sep">·</span>' ~ e.watched_at[:10]) if e.watched_at else '') %}
+      {% set l2 = ('Elo <b>' ~ (e.elo|round|int) ~ '</b> · ' ~ (e.rd|elo_confidence)) if e.is_anime else extra %}
+      {% call card(e.poster_path, e.title, href='/titulo/' ~ e.tmdb_id ~ '/' ~ e.type, rb=e|show_status_ribbon, l1=l1, l2=l2,
+                   x=(e.comment if e.comment and e.comment != '-' else '')) %}
+        {% if e.rating is not none %}<span class="score">{{ e.rating|fmt_rating }}<small>/10</small></span>{% else %}<a class="btn sm quiet" href="/marcar-vista/{{ e.tmdb_id }}/{{ e.type }}">Puntuar</a>{% endif %}
+        <span style="margin-left:auto">{% set entry_id = e.id %}{% set is_favorite = e.is_favorite %}{% include "partials/favorite_button.html" %}</span>
+      {% endcall %}
+      {% endfor %}
+      {% if siguiente %}<div class="vis-more" hx-get="/vistas?{{ qs_vis }}&desde={{ siguiente }}&parcial=1" hx-trigger="revealed" hx-swap="outerHTML"><span class="spinner"></span></div>{% endif %}

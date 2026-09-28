@@ -1,5 +1,6 @@
 """app.repo.titles - títulos, entries, episodios, puntuación y listados de la
 biblioteca. El resto del proyecto usa `from app import repo; repo.funcion(...)`."""
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -22,15 +23,12 @@ def get_title(conn, tmdb_id: int):
     return conn.execute("SELECT * FROM titles WHERE tmdb_id = ?", (tmdb_id,)).fetchone()
 
 
-
 def set_poster(conn, tmdb_id: int, poster_path: str):
     """Portada subida a mano desde la ficha (POST /titulo/{id}/{type}/portada).
     custom_poster=1 la distingue de una de TMDB en el Mosaico y la ficha."""
     conn.execute(
         "UPDATE titles SET poster_path = ?, custom_poster = 1 WHERE tmdb_id = ?", (poster_path, tmdb_id)
     )
-
-
 
 
 def ensure_title(conn, tmdb_id: int, media_type: str):
@@ -55,8 +53,8 @@ def ensure_title(conn, tmdb_id: int, media_type: str):
            (tmdb_id, type, title, year, poster_path, overview, genres, imdb_id,
             show_status, next_episode_air_date, next_episode_label, vote_average,
             runtime_minutes, episode_count, is_adult, release_date, original_language,
-            original_title)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            original_title, backdrop_path, logo_path)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             tmdb_id,
             media_type,
@@ -76,11 +74,11 @@ def ensure_title(conn, tmdb_id: int, media_type: str):
             details.get("release_date"),
             details.get("original_language"),
             details.get("original_title"),
+            details.get("backdrop_path"),
+            details.get("logo_path"),
         ),
     )
     return get_title(conn, tmdb_id)
-
-
 
 
 def _shift_date(value: str | None, offset_days: int) -> str | None:
@@ -92,6 +90,23 @@ def _shift_date(value: str | None, offset_days: int) -> str | None:
     day_part, _, rest = value.partition("T")
     shifted = date.fromisoformat(day_part[:10]) + timedelta(days=offset_days)
     return f"{shifted.isoformat()}T{rest}" if rest else shifted.isoformat()
+
+
+def hide_backdrop(conn, title_id: int, path: str):
+    row = conn.execute("SELECT backdrop_path, backdrops, hidden_backdrops FROM titles WHERE id = ?", (title_id,)).fetchone()
+    if not row:
+        return
+    hidden = json.loads(row["hidden_backdrops"] or "[]")
+    if path not in hidden:
+        hidden.append(path)
+    backs = [p for p in json.loads(row["backdrops"] or "[]") if p not in hidden]
+    main = row["backdrop_path"]
+    if main in hidden:
+        main = backs[0] if backs else None
+    conn.execute(
+        "UPDATE titles SET hidden_backdrops = ?, backdrops = ?, backdrop_path = ? WHERE id = ?",
+        (json.dumps(hidden), json.dumps(backs), main, title_id),
+    )
 
 
 def set_air_date_offset(conn, title_id: int, days: int):
@@ -108,11 +123,16 @@ def refresh_metadata(conn, title_row):
         return
     details = tmdb.get_details(title_row["tmdb_id"], title_row["type"])
     offset = title_row["air_date_offset_days"] or 0
+    # Un fondo quitado a mano desde la ficha no vuelve como principal al sincronizar.
+    hidden_row = conn.execute("SELECT hidden_backdrops FROM titles WHERE id = ?", (title_row["id"],)).fetchone()
+    if hidden_row and hidden_row[0] and details.get("backdrop_path") in json.loads(hidden_row[0]):
+        details["backdrop_path"] = None
     conn.execute(
         """UPDATE titles SET title = ?, overview = ?, genres = ?, show_status = ?,
            next_episode_air_date = ?, next_episode_label = ?,
            vote_average = ?, runtime_minutes = ?, episode_count = ?, release_date = ?,
-           original_language = ?, original_title = ? WHERE id = ?""",
+           original_language = ?, original_title = ?,
+           backdrop_path = COALESCE(?, backdrop_path), logo_path = COALESCE(?, logo_path) WHERE id = ?""",
         (
             details["title"],
             details["overview"],
@@ -126,11 +146,11 @@ def refresh_metadata(conn, title_row):
             details.get("release_date"),
             details.get("original_language"),
             details.get("original_title"),
+            details.get("backdrop_path"),
+            details.get("logo_path"),
             title_row["id"],
         ),
     )
-
-
 
 
 def sync_episodes(conn, title_row):
@@ -149,15 +169,14 @@ def sync_episodes(conn, title_row):
     for episodes in episodes_by_season:
         for ep in episodes:
             conn.execute(
-                """INSERT INTO episodes (title_id, season_number, episode_number, name, air_date)
-                   VALUES (?, ?, ?, ?, ?)
+                """INSERT INTO episodes (title_id, season_number, episode_number, name, air_date, still_path)
+                   VALUES (?, ?, ?, ?, ?, ?)
                    ON CONFLICT(title_id, season_number, episode_number)
-                   DO UPDATE SET name = excluded.name, air_date = excluded.air_date""",
+                   DO UPDATE SET name = excluded.name, air_date = excluded.air_date,
+                                 still_path = COALESCE(excluded.still_path, episodes.still_path)""",
                 (title_row["id"], ep["season_number"], ep["episode_number"], ep["name"],
-                 _shift_date(ep["air_date"], offset)),
+                 _shift_date(ep["air_date"], offset), ep.get("still_path")),
             )
-
-
 
 
 def list_episodes(conn, title_id):
@@ -170,8 +189,6 @@ def list_episodes(conn, title_id):
            FROM episodes WHERE title_id = ? ORDER BY season_number, episode_number""",
         (title_id,),
     ).fetchall()
-
-
 
 
 def toggle_episode(conn, episode_id, user_id):
@@ -210,8 +227,6 @@ def toggle_episode(conn, episode_id, user_id):
     # True = se acaba de marcar como visto (no desmarcar): dispara el aviso de
     # "¿comentas?".
     return True
-
-
 
 
 def rewatch_episode(conn, episode_id, user_id):
@@ -253,8 +268,6 @@ def mark_all_aired_watched(conn, entry_id):
     _promote_if_first_watch(conn, title_id, user_id)
 
 
-
-
 def get_season_rating(conn, entry_id: int, season_number: int):
     return conn.execute(
         "SELECT * FROM season_ratings WHERE entry_id = ? AND season_number = ?",
@@ -262,15 +275,11 @@ def get_season_rating(conn, entry_id: int, season_number: int):
     ).fetchone()
 
 
-
-
 def list_season_ratings(conn, entry_id: int) -> dict:
     """Notas por temporada ya puestas, indexadas por numero de temporada - para pintar
     el badge junto a la barra de progreso de cada temporada sin una query por temporada."""
     rows = conn.execute("SELECT * FROM season_ratings WHERE entry_id = ?", (entry_id,)).fetchall()
     return {row["season_number"]: row for row in rows}
-
-
 
 
 def set_season_rating(conn, entry_id: int, season_number: int, rating: float, comment: str,
@@ -302,8 +311,6 @@ def set_season_rating(conn, entry_id: int, season_number: int, rating: float, co
     conn.execute("UPDATE entries SET rating = ? WHERE id = ?", (round(avg, 2), entry_id))
 
 
-
-
 def mark_season_watched(conn, entry_id, season_number: int):
     """Marca vistos los episodios ya emitidos de una temporada concreta, para el dueño
     de la entry. Con rewatch en curso, igual que mark_all_aired_watched."""
@@ -323,8 +330,6 @@ def mark_season_watched(conn, entry_id, season_number: int):
     _promote_if_first_watch(conn, title_id, user_id)
 
 
-
-
 def toggle_episode_favorite(conn, episode_id, user_id) -> bool:
     """Favorito por episodio, propio de cada usuario (episode_user_state)."""
     row = conn.execute(
@@ -340,14 +345,10 @@ def toggle_episode_favorite(conn, episode_id, user_id) -> bool:
     return bool(new_value)
 
 
-
-
 def get_episode_user_state(conn, episode_id, user_id):
     return conn.execute(
         "SELECT * FROM episode_user_state WHERE episode_id = ? AND user_id = ?", (episode_id, user_id)
     ).fetchone()
-
-
 
 
 def set_episode_comment(conn, episode_id, user_id, comment: str):
@@ -361,22 +362,15 @@ def set_episode_comment(conn, episode_id, user_id, comment: str):
     )
 
 
-
-
 def list_history(conn, user_id, limit=300):
-    """Historial de este usuario, lo más reciente primero: episodios vistos, títulos
-    marcados vistos y rewatches. 'detail' es la etiqueta corta (T1E6, Vista entera,
-    Rewatch).
-
-    Cada rama se ordena y corta a `limit` antes del UNION ALL: el resultado nunca
-    necesita más de `limit` filas de una sola fuente, y así no se ordena todo el
-    historial. SQLite exige envolver cada rama en su subconsulta para eso."""
     return conn.execute(
         """SELECT * FROM (
              SELECT * FROM (
                SELECT episode_watches.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
                       titles.poster_path,
-                      'T' || episodes.season_number || 'E' || episodes.episode_number AS detail
+                      'T' || episodes.season_number || 'E' || episodes.episode_number AS detail,
+                      titles.backdrop_path, episodes.still_path, episodes.name AS ep_name,
+                      episodes.season_number, episodes.episode_number, titles.runtime_minutes
                FROM episode_watches
                JOIN episodes ON episodes.id = episode_watches.episode_id
                JOIN titles ON titles.id = episodes.title_id
@@ -386,7 +380,8 @@ def list_history(conn, user_id, limit=300):
              UNION ALL
              SELECT * FROM (
                SELECT entries.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
-                      titles.poster_path, 'Vista entera' AS detail
+                      titles.poster_path, 'Vista entera' AS detail,
+                      titles.backdrop_path, NULL, NULL, NULL, NULL, titles.runtime_minutes
                FROM entries JOIN titles ON titles.id = entries.title_id
                WHERE entries.watched_at IS NOT NULL AND entries.user_id = ?
                ORDER BY entries.watched_at DESC LIMIT ?
@@ -394,7 +389,8 @@ def list_history(conn, user_id, limit=300):
              UNION ALL
              SELECT * FROM (
                SELECT watch_sessions.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
-                      titles.poster_path, 'Volver a ver' AS detail
+                      titles.poster_path, 'Volver a ver' AS detail,
+                      titles.backdrop_path, NULL, NULL, NULL, NULL, titles.runtime_minutes
                FROM watch_sessions
                JOIN entries ON entries.id = watch_sessions.entry_id
                JOIN titles ON titles.id = entries.title_id
@@ -405,8 +401,6 @@ def list_history(conn, user_id, limit=300):
            ORDER BY at DESC LIMIT ?""",
         (user_id, limit, user_id, limit, user_id, limit, limit),
     ).fetchall()
-
-
 
 
 def get_similar(conn, title_row, limit=10):
@@ -435,13 +429,9 @@ def get_similar(conn, title_row, limit=10):
     return recs
 
 
-
-
 def list_calendar(conn, user_id, days_before=7, days_after=30):
-    """Episodios que caen en la ventana, solo de series que este usuario ha empezado
-    (al menos un episodio visto). `watched_now` indica si ya los ha visto."""
     return conn.execute(
-        """SELECT titles.tmdb_id, titles.title, titles.poster_path,
+        """SELECT episodes.id AS episode_id, titles.tmdb_id, titles.title, titles.poster_path, titles.backdrop_path,
                   episodes.season_number, episodes.episode_number, episodes.name AS ep_name,
                   episodes.air_date, entries.auto_watch,
                   EXISTS(SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
@@ -458,16 +448,11 @@ def list_calendar(conn, user_id, days_before=7, days_after=30):
     ).fetchall()
 
 
-
-
-# Series pendientes con sus contadores de episodios, para la pantalla de inicio.
-# "in_season" = algún episodio emitido o programado a ±21 días de hoy; 'Returning
-# Series' de TMDB no sirve de filtro (sigue activo entre temporadas). Los contadores
-# consultan episode_watches con el user_id de la propia fila de entries; el primer "?"
-# es el user_id de la sesión, para el WHERE final.
 _HOME_SHOWS_SQL = """
     SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type,
            titles.tmdb_id, titles.runtime_minutes, titles.release_date,
+           titles.backdrop_path, titles.logo_path, titles.show_status,
+           titles.next_episode_air_date, titles.next_episode_label,
            (SELECT count(*) FROM episodes
               WHERE episodes.title_id = titles.id
                 AND EXISTS(SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
@@ -494,8 +479,6 @@ _HOME_SHOWS_SQL = """
     WHERE titles.type = 'show' AND entries.user_id = ?"""
 
 
-
-
 def next_unwatched_episode(conn, title_id: int, rewatch_started_at: str | None, user_id: int):
     """El siguiente episodio ya emitido que le falta por ver a este usuario (el 'T1E6'
     de la tarjeta). Con rewatch en curso, lo visto antes de la ronda vuelve a contar."""
@@ -509,14 +492,10 @@ def next_unwatched_episode(conn, title_id: int, rewatch_started_at: str | None, 
     ).fetchone()
 
 
-
-
 def _with_next_episode(conn, row):
     data = dict(row)
     data["next_ep"] = next_unwatched_episode(conn, row["title_id"], row["rewatch_started_at"], row["user_id"])
     return data
-
-
 
 
 def library_version(conn, user_id):
@@ -545,13 +524,12 @@ def list_continue_watching(conn, user_id):
     sin que se le haya borrado ningun marcado viejo."""
     rows = conn.execute(_HOME_SHOWS_SQL, (user_id,)).fetchall()
     continuar = sorted(
-        (r for r in rows if (r["watched_eps"] or r["last_rewatch_at"]) and r["missing_eps"]),
+        (r for r in rows if (r["watched_eps"] or r["last_rewatch_at"]) and r["missing_eps"]
+         and not r["auto_watch"]),
         key=lambda r: max(r["last_watched_at"] or "", r["last_rewatch_at"] or ""),
         reverse=True,
     )
     return [_with_next_episode(conn, r) for r in continuar]
-
-
 
 
 def _current_anime_season_start() -> str:
@@ -569,8 +547,6 @@ def _current_anime_season_start() -> str:
     if today.month in (6, 7, 8):
         return date(today.year, 6, 1).isoformat()
     return date(today.year, 9, 1).isoformat()
-
-
 
 
 def list_new_airing(conn, user_id):
@@ -591,8 +567,6 @@ def list_new_airing(conn, user_id):
     return [_with_next_episode(conn, r) for r in nuevas]
 
 
-
-
 def get_home_card(conn, entry_id: int, user_id: int):
     """Re-render de una tarjeta tras marcar episodios. Aplica el mismo filtro que
     list_continue_watching: si ya no quedan emitidos por ver, devuelve None y la
@@ -604,16 +578,12 @@ def get_home_card(conn, entry_id: int, user_id: int):
     return _with_next_episode(conn, row)
 
 
-
-
 def list_trackable_titles(conn):
     """Todo lo seguido (pendiente o visto) con tmdb_id real: candidatos a refrescar metadatos."""
     return conn.execute(
         """SELECT DISTINCT titles.* FROM titles JOIN entries ON entries.title_id = titles.id
            WHERE titles.tmdb_id > 0"""
     ).fetchall()
-
-
 
 
 def ensure_manual_title(conn, media_type: str, title: str, year: int | None, imdb_id: str | None = None):
@@ -633,8 +603,6 @@ def ensure_manual_title(conn, media_type: str, title: str, year: int | None, imd
         (synthetic_id, media_type, title, year, imdb_id),
     )
     return get_title(conn, synthetic_id)
-
-
 
 
 def create_manual_entry(conn, media_type: str, title: str, year: int | None, poster_url: str | None, user_id: int):
@@ -672,8 +640,6 @@ def create_manual_entry(conn, media_type: str, title: str, year: int | None, pos
     return get_title(conn, title_row["tmdb_id"])
 
 
-
-
 def get_entry_states(conn, tmdb_ids: list[int], user_id: int) -> dict[int, str]:
     """Estado (pending/watched) de este usuario para una tanda de tmdb_ids, para que
     búsqueda y similares no ofrezcan '+ Pendientes' en algo que ya tienes. Lo que no
@@ -688,8 +654,6 @@ def get_entry_states(conn, tmdb_ids: list[int], user_id: int) -> dict[int, str]:
         (*tmdb_ids, user_id),
     ).fetchall()
     return {row["tmdb_id"]: row["status"] for row in rows}
-
-
 
 
 def ensure_entry(conn, tmdb_id: int, media_type: str, user_id: int):
@@ -708,12 +672,12 @@ def ensure_entry(conn, tmdb_id: int, media_type: str, user_id: int):
     ).fetchone()
 
 
-
-
 def get_entry_with_title(conn, entry_id: int):
     return conn.execute(
         """SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type,
-                  titles.tmdb_id, titles.release_date
+                  titles.tmdb_id, titles.release_date, titles.backdrop_path, titles.logo_path,
+                  titles.vote_average, titles.show_status, titles.next_episode_air_date,
+                  titles.next_episode_label
            FROM entries JOIN titles ON titles.id = entries.title_id
            WHERE entries.id = ?""",
         (entry_id,),
@@ -727,8 +691,6 @@ def get_owned_entry_with_title(conn, entry_id: int, user_id: int):
     if entry and entry["user_id"] == user_id:
         return entry
     return None
-
-
 
 
 def _snapshot_rating_history(conn, entry_id: int):
@@ -751,14 +713,10 @@ def _snapshot_rating_history(conn, entry_id: int):
         )
 
 
-
-
 def list_rating_history(conn, entry_id: int):
     return conn.execute(
         "SELECT * FROM rating_history WHERE entry_id = ? ORDER BY replaced_at DESC", (entry_id,)
     ).fetchall()
-
-
 
 
 def mark_watched(conn, entry_id: int, rating: float, comment: str, categories: dict | None = None,
@@ -813,8 +771,6 @@ def mark_watched(conn, entry_id: int, rating: float, comment: str, categories: d
             set_season_rating(conn, entry_id, 1, rating, comment, categories)
 
 
-
-
 def set_watched_at(conn, entry_id: int, date_str: str):
     """Corrige la fecha de visionado de una entry ya vista, sin pasar por el formulario
     de nota (p. ej. series importadas con la fecha de hoy). Solo el día; la hora se fija
@@ -848,8 +804,6 @@ def set_watched_at(conn, entry_id: int, date_str: str):
             conn.execute("UPDATE episode_watches SET watched_at = ? WHERE id = ?", (ep_value, last_watch["id"]))
 
 
-
-
 def undo_mark_watched(conn, entry_id: int):
     """Deshace un "Marcar vista" por error: la entry vuelve a pending y se desmarcan
     solo los episodios marcados en ese mismo instante (mismo watched_at que puso
@@ -868,8 +822,6 @@ def undo_mark_watched(conn, entry_id: int):
             _unlog_episode_watch(conn, ep["id"], row["user_id"])
 
 
-
-
 def clear_rating(conn, entry_id: int):
     """Quita la nota (y las categorias del examen) sin desmarcar como vista - pensado
     para notas puestas antes de tiempo (p.ej. un 10 a mitad de una serie que aun no
@@ -884,8 +836,6 @@ def clear_rating(conn, entry_id: int):
     )
 
 
-
-
 def toggle_habit(conn, entry_id: int) -> bool:
     """Toggle binario desde la ficha (a): NULL o 0 pasan a 1, 1 pasa a 0. El propio
     toggle ES la respuesta a la pregunta, nunca deja NULL."""
@@ -895,8 +845,6 @@ def toggle_habit(conn, entry_id: int) -> bool:
     return bool(new_value)
 
 
-
-
 def toggle_auto_watch(conn, entry_id: int) -> bool:
     """Activa o desactiva el autover de una serie: sync_library marca vistos solos los
     episodios nuevos emitidos. Independiente de is_habit (ver MIGRATIONS)."""
@@ -904,8 +852,6 @@ def toggle_auto_watch(conn, entry_id: int) -> bool:
     new_value = 0 if row["auto_watch"] else 1
     conn.execute("UPDATE entries SET auto_watch = ? WHERE id = ?", (new_value, entry_id))
     return bool(new_value)
-
-
 
 
 def mark_watched_quick(conn, entry_id: int, title_row=None):
@@ -926,11 +872,7 @@ def mark_watched_quick(conn, entry_id: int, title_row=None):
             _log_episode_watch(conn, first_ep["id"], row["user_id"], now)
 
 
-
-
 TIPOS = {"series": "show", "pelis": "movie"}
-
-
 
 
 def _tipo_sql(tipo):
@@ -940,8 +882,6 @@ def _tipo_sql(tipo):
         return f" AND {_IS_ANIME_SQL}"
     media_type = TIPOS.get(tipo)
     return (f" AND titles.type = '{media_type}'" if media_type else "")
-
-
 
 
 ORDENES_PENDIENTES = {
@@ -957,16 +897,12 @@ ORDENES_PENDIENTES = {
 ORDENES_PENDIENTES_DEFAULT_DIR = {"anadido": "desc", "lanzamiento": "desc", "nota_internet": "desc", "titulo": "asc"}
 
 
-
-
 def _orden_sql(columnas: dict, defaults: dict, orden: str, direccion: str) -> str:
     """ORDER BY final: columna según `orden`, dirección explícita (asc/desc) o la de
     por defecto. NULLS LAST siempre, para que lo que no tiene dato no suba arriba."""
     columna = columnas.get(orden, columnas[next(iter(columnas))])
     direccion = direccion if direccion in ("asc", "desc") else defaults.get(orden, "desc")
     return f"{columna} {direccion.upper()} NULLS LAST"
-
-
 
 
 def list_pending(conn, user_id, tipo="", orden="anadido", q="", genero="", direccion=""):
@@ -990,21 +926,23 @@ def list_pending(conn, user_id, tipo="", orden="anadido", q="", genero="", direc
     ).fetchall()
 
 
-
-
-def random_pending(conn, user_id, tipo="", excluir: int | None = None):
-    """Un pendiente al azar de ESTE usuario para el boton "Sorprendeme". excluir
-    descarta el que se acaba de enseñar, para que "Otro" no repita el mismo dos
-    veces seguidas."""
+def random_pending(conn, user_id, tipo="", excluir: int | None = None, tmdb_id: int | None = None):
     params: list = [user_id]
     filtro_excluir = ""
-    if excluir:
+    if tmdb_id:
+        filtro_excluir = " AND titles.tmdb_id = ?"
+        params.append(tmdb_id)
+    elif excluir:
         filtro_excluir = " AND titles.tmdb_id != ?"
         params.append(excluir)
     return conn.execute(
         f"""SELECT entries.*, titles.tmdb_id, titles.type, titles.title, titles.year,
                    titles.poster_path, titles.overview, titles.vote_average,
-                   titles.runtime_minutes, titles.episode_count, titles.is_adult
+                   titles.runtime_minutes, titles.episode_count, titles.is_adult,
+                   titles.backdrop_path, titles.logo_path, titles.show_status,
+                   titles.next_episode_air_date, titles.next_episode_label, titles.genres,
+                   titles.anilist_id, titles.anilist_genres, titles.anilist_studio, titles.anilist_tags,
+                   titles.anilist_prequel_ids, titles.anilist_cross_rec_ids
            FROM entries JOIN titles ON titles.id = entries.title_id
            WHERE entries.status = 'pending' AND entries.user_id = ?{_tipo_sql(tipo)}{filtro_excluir}
            ORDER BY RANDOM() LIMIT 1""",
@@ -1012,14 +950,11 @@ def random_pending(conn, user_id, tipo="", excluir: int | None = None):
     ).fetchone()
 
 
-
-
 # Duracion total: en series, minutos por episodio x episodios; en pelis, el runtime tal cual.
 DURACION_TOTAL_SQL = (
     "titles.runtime_minutes * CASE WHEN titles.type = 'show' "
     "THEN COALESCE(titles.episode_count, 1) ELSE 1 END"
 )
-
 
 
 ORDENES_VISTAS = {
@@ -1038,8 +973,6 @@ ORDENES_VISTAS_DEFAULT_DIR = {
     "recientes": "desc", "mi_nota": "desc", "nota_internet": "desc", "elo": "desc",
     "duracion": "desc", "anadido": "desc", "lanzamiento": "desc", "titulo": "asc",
 }
-
-
 
 
 def list_watched(conn, user_id: int, orden="recientes", tipo="", q="", genero="", direccion=""):
@@ -1065,8 +998,6 @@ def list_watched(conn, user_id: int, orden="recientes", tipo="", q="", genero=""
     ).fetchall()
 
 
-
-
 def start_rewatch(conn, entry_id: int):
     """Botón "Volver a ver": registra una ronda en watch_sessions y, en series, la
     devuelve a "Continuar viendo" desde el principio. Nota, comentario y fecha del
@@ -1082,14 +1013,10 @@ def start_rewatch(conn, entry_id: int):
     conn.execute("UPDATE entries SET rewatch_started_at = ? WHERE id = ?", (now, entry_id))
 
 
-
-
 def list_watch_sessions(conn, entry_id: int):
     return conn.execute(
         "SELECT * FROM watch_sessions WHERE entry_id = ? ORDER BY watched_at DESC", (entry_id,)
     ).fetchall()
-
-
 
 
 def count_plays(conn, entry_id: int) -> int:
@@ -1100,8 +1027,6 @@ def count_plays(conn, entry_id: int) -> int:
     return 1 + extra
 
 
-
-
 def set_predicted_score(conn, entry_id: int, predicted: int):
     """Guarda el "% que te gustará" del momento de añadir, solo si no había uno ya, para
     compararlo después con la nota (predicted_outcome_label)."""
@@ -1109,8 +1034,6 @@ def set_predicted_score(conn, entry_id: int, predicted: int):
         "UPDATE entries SET predicted_score = ? WHERE id = ? AND predicted_score IS NULL",
         (predicted, entry_id),
     )
-
-
 
 
 def predicted_outcome_label(predicted: int, rating: float) -> str | None:
@@ -1128,8 +1051,6 @@ def predicted_outcome_label(predicted: int, rating: float) -> str | None:
     if predicted >= 80 and actual <= 45:
         return "El timo de la temporada"
     return None
-
-
 
 
 def get_prediction_calibration(conn, user_id, n_surprises: int = 10):
@@ -1176,8 +1097,6 @@ def get_prediction_calibration(conn, user_id, n_surprises: int = 10):
     }
 
 
-
-
 def list_all_posters(conn):
     """Todas las portadas con imagen real (no el placeholder), para el mosaico
     puramente visual de /mosaico - la "estanteria" de toda la biblioteca."""
@@ -1186,8 +1105,6 @@ def list_all_posters(conn):
            WHERE poster_path IS NOT NULL AND poster_path != ''
            ORDER BY title COLLATE NOCASE"""
     ).fetchall()
-
-
 
 
 # 'Returning Series' de TMDB no significa "en emisión": mucho anime se queda así años
@@ -1216,8 +1133,6 @@ _SIN_PENDIENTES_SQL = """(
           AND date(episodes.air_date) <= date('now')
     )
 )"""
-
-
 
 
 def _entry_unrated_season(conn, entry_id: int, title_id: int, user_id: int, rewatch_started_at) -> int | None:
@@ -1254,8 +1169,10 @@ def _season_review_candidates(conn, user_id: int):
     """Entries de ESTE usuario que ya usan puntuacion por temporada - candidatas a
     tener una temporada nueva completa sin puntuar todavia (ver _entry_unrated_season)."""
     return conn.execute(
-        """SELECT DISTINCT entries.id, entries.title_id, entries.rewatch_started_at,
-                  titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id
+        """SELECT DISTINCT entries.id, entries.title_id, entries.rewatch_started_at, entries.is_habit,
+                  entries.watched_at, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id,
+                  titles.backdrop_path, titles.logo_path, titles.vote_average, titles.show_status,
+                  titles.next_episode_air_date, titles.next_episode_label
            FROM entries
            JOIN season_ratings ON season_ratings.entry_id = entries.id
            JOIN titles ON titles.id = entries.title_id
@@ -1282,14 +1199,10 @@ def count_review_queue(conn, user_id: int) -> int:
     return base + extra
 
 
-
-
 def next_review_item(conn, user_id: int, excluir_ids: list[int]):
-    """Una entry al azar de este usuario sin nota, con los mismos filtros que
-    count_review_queue y excluyendo las ya pasadas en esta ronda. Si no queda ninguna,
-    una serie con temporada nueva sin puntuar: `season_number` (None en el caso normal)
-    indica a la plantilla si enlazar al examen general o a /temporada/{n}/puntuar."""
-    query = f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id
+    query = f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type, titles.tmdb_id,
+                      titles.backdrop_path, titles.logo_path, titles.vote_average, titles.show_status,
+                      titles.next_episode_air_date, titles.next_episode_label
                FROM entries JOIN titles ON titles.id = entries.title_id
                WHERE entries.status = 'watched' AND entries.rating IS NULL AND entries.user_id = ?
                  AND {_NO_EN_EMISION_SQL} AND {_SIN_PENDIENTES_SQL}"""
@@ -1316,8 +1229,6 @@ def next_review_item(conn, user_id: int, excluir_ids: list[int]):
             result["season_number"] = season_number
             return result
     return None
-
-
 
 
 def remove_pending_entry(conn, entry_id: int):
@@ -1363,8 +1274,6 @@ def remove_pending_entry(conn, entry_id: int):
     conn.execute("DELETE FROM titles WHERE id = ?", (title_id,))
 
 
-
-
 def _genero_sql(genero):
     """Filtro de género compartido por /pendientes y /vistas: LIKE sobre titles.genres
     probando el nombre en español y en inglés (depende del idioma de TMDB al cachear,
@@ -1381,8 +1290,6 @@ def _genero_sql(genero):
     clauses = " OR ".join("titles.genres LIKE ?" for _ in variants)
     params = [f"%{v}%" for v in variants]
     return f" AND ({clauses})", params
-
-
 
 
 def list_genres(conn):

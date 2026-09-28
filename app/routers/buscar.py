@@ -13,6 +13,30 @@ from app.web import templates
 router = APIRouter()
 
 
+def _with_status(conn, results):
+    """Tira de estado (Emisión, Próx., Pausa, Acabada, Cancel.) tambien en el buscador:
+    lo que ya esta en la biblioteca la saca de titles, lo demas de tmdb_extra (la misma
+    cache que /recomendados, que solo pide a TMDB lo que falta o tiene mas de una semana)."""
+    shows = [r for r in results if r["type"] == "show" and r["tmdb_id"] > 0]
+    if not shows:
+        return results
+    ids = [r["tmdb_id"] for r in shows]
+    ph = ",".join("?" * len(ids))
+    status = {
+        row["tmdb_id"]: dict(row) for row in conn.execute(
+            f"""SELECT tmdb_id, show_status, next_episode_air_date, next_episode_label
+                FROM titles WHERE type = 'show' AND tmdb_id IN ({ph})""", ids,
+        )
+    }
+    fuera = [r for r in shows if r["tmdb_id"] not in status]
+    if fuera:
+        repo.refresh_tmdb_extra(conn, [(r["tmdb_id"], "show") for r in fuera])
+        status.update({r["tmdb_id"]: r for r in repo.recommendation_extras(conn, fuera)})
+    for r in shows:
+        s = status.get(r["tmdb_id"], {})
+        for k in ("show_status", "next_episode_air_date", "next_episode_label"):
+            r[k] = s.get(k)
+    return results
 
 
 @router.get("/buscar", response_class=HTMLResponse)
@@ -30,8 +54,6 @@ def buscar(request: Request, q: str = ""):
     return templates.TemplateResponse(request, "search.html", {"recs": recs, "q": q})
 
 
-
-
 @router.get("/buscar/resultados", response_class=HTMLResponse)
 def buscar_resultados(request: Request, q: str = ""):
     """Busqueda permisiva: TMDB en español y, si no hay nada (romaji, typos, motes,
@@ -39,11 +61,9 @@ def buscar_resultados(request: Request, q: str = ""):
     se reintenta con el. tmdb.search() sin proteger tumbaba la ruta entera (500, sin
     resultados en pantalla) si un solo timeout de TMDB reventaba - "Black Clover" a
     veces desaparecia del buscador sin más explicación por esto."""
-    # Con el buscador vacío se devuelven las mismas sugerencias que al entrar: si no,
-    # al borrar lo escrito desaparecían para siempre.
     if not q.strip():
         with get_connection() as conn:
-            recs = repo.list_recommendations(conn, request.state.user_id, limit=11)
+            recs = repo.recommendation_extras(conn, repo.list_recommendations(conn, request.state.user_id, limit=11))
         for r in recs:
             r["state"] = "new"
         return templates.TemplateResponse(
@@ -71,13 +91,12 @@ def buscar_resultados(request: Request, q: str = ""):
             pass
     with get_connection() as conn:
         states = repo.get_entry_states(conn, [r["tmdb_id"] for r in results], request.state.user_id)
+        results = _with_status(conn, results)
     for r in results:
         r["state"] = states.get(r["tmdb_id"], "new")
     return templates.TemplateResponse(
         request, "partials/search_results.html", {"results": results, "query": q}
     )
-
-
 
 
 @router.post("/alta-manual", response_class=HTMLResponse)

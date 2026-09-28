@@ -1,84 +1,36 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, card, head, empty %}
 {% block content %}
-<h1>{{ waifus_label(request.state.user_id) }}</h1>
-{% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todas.</p>{% endif %}
-{# Buscador y Jugar duelos en una fila a partes iguales (.search-actions-row). #}
-<div class="search-actions-row">
-    <details class="manual-add" id="waifu-buscador">
-        <summary>Buscador</summary>
-        <input type="text" name="q" placeholder="Nombre..." autocomplete="off"
-               hx-get="/waifus/buscar"
-               hx-trigger="input changed delay:400ms, search"
-               hx-target="#waifu-search-results"
-               hx-indicator="#waifu-buscando">
-        <span id="waifu-buscando" class="htmx-indicator empty"><span class="spinner"></span>Buscando...</span>
-        <div id="waifu-search-results" class="char-grid"></div>
-    </details>
-    {% if chars|length > 2 %}
-    <a class="btn secondary" href="/waifus/duelo">Jugar duelos</a>
-    {% endif %}
+{% set wl = waifus_label(request.state.user_id) %}
+<div class="page">
+  <a class="link" href="/listas" style="font-size:0.88rem;display:inline-flex;gap:4px;align-items:center">{{ ic('chevl', 'sm') }} Listas</a>
+  {{ head('¿Quién me gusta más?', wl, chars|length ~ ' personaje' ~ ('s' if chars|length != 1 else '')) }}
+  {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todas.</p>{% endif %}
+    <div class="toolbar waifu-bar">
+    <details class="del-confirm" id="waifu-buscador" ontoggle="if (this.open) this.querySelector('input').focus()"><summary class="btn ghost">{{ ic('search', 'sm') }} Buscar personaje para añadir</summary>
+      <div class="panel waifu-search-panel"><input class="input" type="text" name="q" placeholder="Nombre…" autocomplete="off" hx-get="/waifus/buscar" hx-trigger="input changed delay:400ms, search" hx-target="#waifu-search-results" hx-indicator="#waifu-buscando">
+        <span id="waifu-buscando" class="htmx-indicator hint"><span class="spinner"></span>Buscando…</span><div id="waifu-search-results" class="chars"></div></div></details>
+    {% if chars|length > 2 %}<a class="btn ghost" href="/waifus/duelo">{{ ic('swords', 'sm') }} Jugar duelos</a>
+    <div class="btn-row waifu-right">
+      <div class="seg"><form method="post" action="/waifus/orden"><input type="hidden" name="modo" value="manual"><button class="{{ 'active' if order_mode == 'manual' }}">Manual</button></form>
+        <form method="post" action="/waifus/orden"><input type="hidden" name="modo" value="duelo"><button class="{{ 'active' if order_mode == 'duelo' }}">Por duelos</button></form></div>
+      <details class="del-confirm"><summary class="btn danger">Reiniciar Elo</summary><form method="post" action="/waifus/elo/reiniciar" class="btn-row" style="margin-top:8px"><span class="hint">¿Todo a 1500?</span><button class="btn sm danger-solid">Sí</button></form></details>
+    </div>{% endif %}
+  </div>
+  {% if chars|length > 2 and coverage and not coverage.done %}<p class="hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>{% endif %}
+  {% if not chars %}{{ empty('star', 'Ningún favorito todavía', 'Marca personajes con la estrella desde la ficha de cualquier serie y aparecen aquí solos.') }}{% endif %}
+  <div class="pgrid">
+    {% for w in chars %}
+    {% set d = elo_deltas.get(w.fav_id) %}
+    {% set dl = ((' <span class="delta ' ~ ('up' if d[0] > 0 else 'down' if d[0] < 0 else '') ~ '">' ~ ('+' if d[0] > 0 else '') ~ d[0] ~ ((' ' ~ ('↑' if d[1] > 0 else '↓') ~ (d[1]|abs)) if d[1] else '') ~ '</span>') if d and (d[0] or d[1]) else '') %}
+    {% call card(w.profile_path, w.character_name or w.name,
+                 corner='<span class="rank-tag' ~ (' top' if loop.index <= 3 else '') ~ '">#' ~ loop.index ~ '</span>',
+                 l1='<a href="/titulo/' ~ w.tmdb_id ~ '/' ~ w.type ~ '" style="color:var(--text-dim)">' ~ (w.show_title|replace('<', '&lt;')) ~ '</a>',
+                 l2='Elo <b>' ~ (w.elo|round|int) ~ '</b> · ' ~ (w.rd|elo_confidence) ~ dl, has_acts=(order_mode == 'manual')) %}
+      <form method="post" action="/waifu/{{ w.fav_id }}/mover/subir"><button class="btn sm quiet icon" title="Subir"{{ ' disabled' if loop.first }}>{{ ic('up', 'sm') }}</button></form>
+      <form method="post" action="/waifu/{{ w.fav_id }}/mover/bajar"><button class="btn sm quiet icon" title="Bajar"{{ ' disabled' if loop.last }}>{{ ic('down', 'sm') }}</button></form>
+    {% endcall %}
+    {% endfor %}
+  </div>
 </div>
-{% if not chars %}
-<div class="empty-state">
-    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
-    <h3>Ningún favorito todavía</h3>
-    <p>Marca personajes con la estrella desde la ficha de cualquier serie y aparecen aquí solos.</p>
-</div>
-{% elif chars|length > 2 %}
-{% if coverage and not coverage.done %}
-<p class="page-hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>
-{% endif %}
-<div class="sort-bar">
-    <form method="post" action="/waifus/orden">
-        <input type="hidden" name="modo" value="manual">
-        <button class="{{ 'active' if order_mode == 'manual' }}">Manual</button>
-    </form>
-    <form method="post" action="/waifus/orden">
-        <input type="hidden" name="modo" value="duelo">
-        <button class="{{ 'active' if order_mode == 'duelo' }}">Duelos</button>
-    </form>
-    {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
-    <details class="del-confirm">
-        <summary class="btn secondary danger">Reiniciar Elo</summary>
-        <form method="post" action="/waifus/elo/reiniciar">
-            <button class="danger-solid">Confirmar, todo a 1500 otra vez</button>
-        </form>
-    </details>
-</div>
-{% endif %}
-<div class="char-grid">
-{% for w in chars %}
-<div class="char-card">
-    <div class="char-rank">#{{ loop.index }}</div>
-    <img src="{{ w.profile_path or '/static/img/sin-portada.svg' }}" alt="{{ w.character_name or w.name }}" loading="lazy">
-    <div class="char-name">{{ w.character_name or w.name }}</div>
-    <a class="char-show" href="/titulo/{{ w.tmdb_id }}/{{ w.type }}">{{ w.show_title }}</a>
-    <div class="elo-badge">
-        Elo {{ w.elo|round|int }} · {{ w.rd|elo_confidence }}
-        {% set d = elo_deltas.get(w.fav_id) %}
-        {% if d and (d[0] != 0 or d[1] != 0) %}
-        <span class="elo-delta {{ 'up' if d[0] > 0 else 'down' if d[0] < 0 else '' }}">
-            {{ "+" if d[0] > 0 }}{{ d[0] }}{% if d[1] != 0 %} ({{ "↑" if d[1] > 0 else "↓" }}{{ d[1]|abs }}){% endif %}
-        </span>
-        {% endif %}
-    </div>
-    {% if order_mode == 'manual' %}
-    <div class="actions reorder">
-        {% if not loop.first %}
-        <form method="post" action="/waifu/{{ w.fav_id }}/mover/subir"><button title="Subir">&uarr;</button></form>
-        {% endif %}
-        {% if not loop.last %}
-        <form method="post" action="/waifu/{{ w.fav_id }}/mover/bajar"><button title="Bajar">&darr;</button></form>
-        {% endif %}
-    </div>
-    {% endif %}
-</div>
-{% endfor %}
-</div>
-<script>
-// Al abrir el buscador se puede escribir directamente, sin pulsar antes la caja.
-document.getElementById("waifu-buscador").addEventListener("toggle", (e) => {
-    if (e.target.open) e.target.querySelector('input[name="q"]').focus();
-});
-</script>
 {% endblock %}

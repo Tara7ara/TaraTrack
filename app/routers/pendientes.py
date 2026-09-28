@@ -1,10 +1,12 @@
 """app.routers.pendientes - pendientes, Continuar viendo y acciones de sus tarjetas."""
 import logging
+import random
 from collections import Counter
+from datetime import date, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from app import repo, web
 from app.db import get_connection
@@ -13,14 +15,40 @@ from app.web import templates
 router = APIRouter()
 
 
+_DOW3_ES = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"]
 
 
 @router.get("/", response_class=HTMLResponse)
-def home():
-    # La pantalla por defecto son los pendientes (semanales + series/pelis enteras).
-    return RedirectResponse("/pendientes")
-
-
+def inicio(request: Request):
+    uid = request.state.user_id
+    with get_connection() as conn:
+        version = repo.library_version(conn, uid)
+        continuar = repo.list_continue_watching(conn, uid)
+        nuevas = repo.list_new_airing(conn, uid)
+        habit_ids = {
+            row["tmdb_id"] for row in conn.execute(
+                """SELECT titles.tmdb_id FROM entries JOIN titles ON titles.id = entries.title_id
+                   WHERE entries.user_id = ? AND entries.is_habit = 1""", (uid,))
+        }
+        today = date.today().isoformat()
+        cal = [i for i in repo.list_calendar(conn, uid) if not i["auto_watch"] and i["tmdb_id"] not in habit_ids]
+    hoy = [i for i in cal if i["air_date"] == today]
+    dias = [date.today() + timedelta(days=k) for k in range(7)]
+    semana = [
+        {"iso": d.isoformat(), "dow": _DOW3_ES[d.weekday()], "num": d.day,
+         "items": [i for i in cal if i["air_date"] == d.isoformat()]}
+        for d in dias
+    ]
+    ahora = {
+        "por_ver": sum(c["missing_eps"] or 0 for c in continuar),
+        "hoy": sum(1 for i in hoy if not i["watched_now"]),
+        "temporada": len(nuevas),
+    }
+    return templates.TemplateResponse(
+        request, "inicio.html",
+        {"continuar": continuar, "nuevas": nuevas, "hoy": hoy, "semana": semana, "ahora": ahora,
+         "library_version": version, "today": today, "transparent_nav": bool(continuar or nuevas), "title": "Inicio"},
+    )
 
 
 def _parse_tags(raw: str) -> list[str]:
@@ -63,12 +91,11 @@ def pendientes_version(request: Request):
 @router.get("/pendientes", response_class=HTMLResponse)
 def pendientes(
     request: Request, tipo: str = "", orden: str = "anadido", q: str = "", genero: str = "",
-    direccion: str = "", afinidad_alta: str = "", tags: str = "",
+    direccion: str = "", afinidad_alta: str = "", tags: str = "", vista: str = "",
 ):
+    vista_actual = vista if vista in ("grid", "lista") else request.cookies.get("tt_vista", "grid")
     with get_connection() as conn:
         try:
-            # La foto diaria del perfil no es vital: si coincide con el recálculo de
-            # fondo y da "database is locked", la página sigue sin ella.
             repo.snapshot_profile_progress(conn, request.state.user_id)
         except Exception:
             logging.warning("snapshot_profile_progress: fallo, se salta esta vez", exc_info=True)
@@ -89,14 +116,17 @@ def pendientes(
                 key=lambda e: e["predict"] if e["predict"] is not None else -1,
                 reverse=(direccion != "asc"),
             )
-        # Filtro "solo 95% o más": el percentil está calibrado contra la propia
-        # biblioteca, así que significa lo mismo que en el calendario de temporada.
         if afinidad_alta:
             entries = [e for e in entries if e["predict"] is not None and e["predict"] >= 95]
         generos = repo.list_genres(conn)
     tag_tokens = _parse_tags(tags)
     tag_counts = Counter(t for e in entries for t in _entry_tags(e))
     entries = [e for e in entries if _matches_tags(e, tag_tokens)]
+    n_top = sum(
+        1 for e in entries
+        if e.get("predict") is not None and e["predict"] >= 95
+        and (e.get("predict_confidence") or 0) > repo.MASTERPIECE_MIN_CONFIDENCE
+    )
     base_qs = urlencode(
         {"tipo": tipo, "orden": orden, "q": q, "genero": genero,
          "afinidad_alta": afinidad_alta, "direccion": direccion}
@@ -110,11 +140,12 @@ def pendientes(
         key=lambda x: x[0].casefold(),
     )
     direccion_actual = direccion if direccion in ("asc", "desc") else repo.ORDENES_PENDIENTES_DEFAULT_DIR.get(orden, "desc")
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "pending.html",
         {
             "entries": entries,
+            "n_top": n_top,
             "library_version": version,
             "continuar": continuar,
             "nuevas": nuevas,
@@ -129,10 +160,13 @@ def pendientes(
             "tag_chips": tag_chips,
             "tag_options": tag_options,
             "base_qs": base_qs,
+            "vista": vista_actual,
+            "title": "Pendientes",
         },
     )
-
-
+    if vista in ("grid", "lista"):
+        response.set_cookie("tt_vista", vista, max_age=31536000, samesite="lax")
+    return response
 
 
 def _home_card_response(request: Request, entry_id: int, confirm_all=False, oob: str = ""):
@@ -147,14 +181,10 @@ def _home_card_response(request: Request, entry_id: int, confirm_all=False, oob:
     return HTMLResponse(html + oob)
 
 
-
-
 @router.get("/entrada/{entry_id}/tarjeta", response_class=HTMLResponse)
 def tarjeta_inicio(request: Request, entry_id: int):
     """Re-render de una tarjeta de inicio (el 'no' de la confirmacion del doble tick)."""
     return _home_card_response(request, entry_id)
-
-
 
 
 @router.get("/entrada/{entry_id}/todos/confirmar", response_class=HTMLResponse)
@@ -162,8 +192,6 @@ def confirmar_todos_episodios(request: Request, entry_id: int):
     """Primer toque del doble tick: la tarjeta pasa a modo confirmación. Confirmación
     renderizada por el servidor: window.confirm no salta en algunos navegadores móviles."""
     return _home_card_response(request, entry_id, confirm_all=True)
-
-
 
 
 @router.post("/entrada/{entry_id}/todos", response_class=HTMLResponse)
@@ -176,8 +204,6 @@ def marcar_todos_episodios(request: Request, entry_id: int):
             repo.mark_all_aired_watched(conn, entry_id)
             oob = web.render_nav_cola_oob(conn, request.state.user_id)
     return _home_card_response(request, entry_id, oob=oob)
-
-
 
 
 @router.post("/entrada/{entry_id}/siguiente", response_class=HTMLResponse)
@@ -200,18 +226,21 @@ def marcar_siguiente_episodio(request: Request, entry_id: int):
     return _home_card_response(request, entry_id, oob=oob)
 
 
-
-
 @router.get("/sorprendeme")
-def sorprendeme(request: Request, tipo: str = "", excluir: int = 0):
-    """Un pendiente al azar (respetando Series/Pelis): portada grande + sinopsis en
-    vez de ir directo a la ficha, para poder decidir "ahora no" con 'Otro' sin
-    perder tiempo entrando y saliendo de fichas."""
+def sorprendeme(request: Request, tipo: str = "", excluir: int = 0, ver: int = 0):
+    uid = request.state.user_id
     with get_connection() as conn:
-        entry = repo.random_pending(conn, request.state.user_id, tipo, excluir=excluir or None)
-    return templates.TemplateResponse(request, "surprise.html", {"entry": entry, "tipo": tipo})
-
-
+        entry = repo.random_pending(conn, uid, tipo, tmdb_id=ver or None) if ver else None
+        entry = entry or repo.random_pending(conn, uid, tipo, excluir=excluir or None)
+        if entry:
+            entry = repo.add_predictions(conn, uid, [entry])[0]
+        pool = [e for e in repo.list_pending(conn, uid, tipo) if not entry or e["tmdb_id"] != entry["tmdb_id"]]
+    otros = random.sample(pool, min(6, len(pool)))
+    return templates.TemplateResponse(
+        request, "surprise.html",
+        {"entry": entry, "tipo": tipo, "otros": otros, "n_pendientes": len(pool) + (1 if entry else 0),
+         "transparent_nav": bool(entry and entry.get("backdrop_path"))},
+    )
 
 
 @router.post("/pendiente/{tmdb_id}/{type}", response_class=HTMLResponse)
@@ -240,8 +269,6 @@ def anadir_pendiente(request: Request, tmdb_id: int, type: str):
     )
 
 
-
-
 @router.get("/pendiente/{tmdb_id}/{type}/estado", response_class=HTMLResponse)
 def pendiente_estado(request: Request, tmdb_id: int, type: str):
     """El 'No' de la confirmacion: vuelve al estado real (sin asumir que sigue pending)."""
@@ -252,8 +279,6 @@ def pendiente_estado(request: Request, tmdb_id: int, type: str):
     )
 
 
-
-
 @router.get("/pendiente/{tmdb_id}/{type}/confirmar", response_class=HTMLResponse)
 def quitar_pendiente_confirmar(request: Request, tmdb_id: int, type: str):
     """Primer toque de 'quitar de pendientes': pasa a modo confirmar en vez de
@@ -261,8 +286,6 @@ def quitar_pendiente_confirmar(request: Request, tmdb_id: int, type: str):
     return templates.TemplateResponse(
         request, "partials/entry_actions.html", {"tmdb_id": tmdb_id, "type": type, "state": "pending_confirm"}
     )
-
-
 
 
 def _entry_state(conn, tmdb_id: int, user_id: int) -> str:

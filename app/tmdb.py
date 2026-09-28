@@ -51,8 +51,18 @@ def search(query: str) -> list[dict]:
     return results
 
 
+GENRE_NAMES = {
+    10759: "Action & Adventure", 16: "Animación", 35: "Comedia", 80: "Crimen", 99: "Documental",
+    18: "Drama", 10751: "Familia", 10762: "Kids", 9648: "Misterio", 10763: "News", 10764: "Reality",
+    10765: "Sci-Fi & Fantasy", 10766: "Soap", 10767: "Talk", 10768: "War & Politics", 37: "Western",
+    28: "Acción", 12: "Aventura", 14: "Fantasía", 36: "Historia", 27: "Terror", 10402: "Música",
+    10749: "Romance", 878: "Ciencia ficción", 10770: "Película de TV", 53: "Suspense", 10752: "Bélica",
+}
+
+
 def _normalize(item: dict, media_type: str) -> dict:
     return {
+        "genres": [GENRE_NAMES[g] for g in item.get("genre_ids") or [] if g in GENRE_NAMES],
         "tmdb_id": item["id"],
         "type": media_type,
         "title": item.get("name") or item.get("title"),
@@ -68,9 +78,62 @@ def _normalize(item: dict, media_type: str) -> dict:
     }
 
 
+def _pick_images(data: dict) -> tuple[str | None, str | None]:
+    """(fondo, logo) de un detalle pedido con append_to_response=images: fondo sin
+    texto si lo hay (queda mejor bajo el titulo propio), logo en español, ingles,
+    sin idioma o japones, por ese orden."""
+    images = data.get("images") or {}
+    backs = images.get("backdrops") or []
+    textless = [b for b in backs if b.get("iso_639_1") is None]
+    backdrop = (textless[0]["file_path"] if textless else None) or data.get("backdrop_path")
+    logos = images.get("logos") or []
+    logo = None
+    for lang in ("es", "en", None, "ja"):
+        match = [lg for lg in logos if lg.get("iso_639_1") == lang]
+        if match:
+            logo = match[0]["file_path"]
+            break
+    return backdrop, logo
+
+
+def _next_label(next_ep: dict | None) -> str | None:
+    if not next_ep:
+        return None
+    return f"T{next_ep.get('season_number')}E{next_ep.get('episode_number')}"
+
+
+def get_extra(tmdb_id: int, media_type: str) -> dict:
+    """Fondo, logo y estado de emision de un titulo que no esta en la biblioteca."""
+    endpoint = "/tv" if media_type == "show" else "/movie"
+    data = _get(f"{endpoint}/{tmdb_id}", append_to_response="images", include_image_language="es,en,ja,null")
+    backdrop, logo = _pick_images(data)
+    next_ep = data.get("next_episode_to_air")
+    return {
+        "backdrop_path": backdrop, "logo_path": logo, "show_status": data.get("status") if media_type == "show" else None,
+        "next_episode_air_date": (next_ep or {}).get("air_date"), "next_episode_label": _next_label(next_ep),
+    }
+
+
+def get_backdrops(tmdb_id: int, media_type: str, limit: int = 8) -> list[str]:
+    """Varios fondos del titulo para rotarlos en la ficha: primero los que no llevan
+    texto (quedan mejor bajo el titulo propio), por votos de TMDB."""
+    endpoint = "/tv" if media_type == "show" else "/movie"
+    data = _get(f"{endpoint}/{tmdb_id}/images", include_image_language="null,en,ja,es")
+    backs = sorted(
+        data.get("backdrops") or [],
+        key=lambda b: (b.get("iso_639_1") is not None, -(b.get("vote_average") or 0), -(b.get("width") or 0)),
+    )
+    return [b["file_path"] for b in backs if b.get("file_path")][:limit]
+
+
+def get_episode_still(tmdb_id: int, season_number: int, episode_number: int) -> str | None:
+    data = _get(f"/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}")
+    return data.get("still_path")
+
+
 def get_details(tmdb_id: int, media_type: str) -> dict:
     endpoint = "/tv" if media_type == "show" else "/movie"
-    details_future = _pool.submit(_get, f"{endpoint}/{tmdb_id}")
+    details_future = _pool.submit(_get, f"{endpoint}/{tmdb_id}", append_to_response="images", include_image_language="es,en,ja,null")
     external_future = _pool.submit(_get, f"{endpoint}/{tmdb_id}/external_ids")
     data = details_future.result()
     external = external_future.result()
@@ -93,6 +156,7 @@ def get_details(tmdb_id: int, media_type: str) -> dict:
         # encuentra nunca "Knights of Sidonia" (ver repo.backfill_anilist_profile).
         "original_title": data.get("original_name") or data.get("original_title"),
     }
+    result["backdrop_path"], result["logo_path"] = _pick_images(data)
     if media_type == "show":
         # episode_run_time viene vacio en muchas series modernas; el runtime del
         # ultimo episodio emitido es mas fiable como "minutos por episodio".
@@ -137,6 +201,7 @@ def get_season_episodes(tmdb_id: int, season_number: int) -> list[dict]:
             "episode_number": ep["episode_number"],
             "name": ep.get("name"),
             "air_date": ep.get("air_date"),
+            "still_path": ep.get("still_path"),
         }
         for ep in data.get("episodes", [])
     ]

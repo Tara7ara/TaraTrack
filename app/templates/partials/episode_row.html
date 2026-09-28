@@ -1,105 +1,39 @@
-<div class="ep-row {{ 'ep-watched' if ep.watch_count else '' }}" id="ep-{{ ep.id }}">
-    <button class="ep-toggle {{ 'seen' if ep.watched_now else ('stale' if ep.watch_count else '') }}"
-            hx-post="/episodio/{{ ep.id }}/toggle" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
-            title="{{ 'Visto - pulsa para desmarcar' if ep.watched_now else ('Visto antes - pulsa para marcarlo en esta vuelta' if ep.watch_count else 'Marcar visto') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        {% if ep.watch_count and ep.watch_count >= 2 %}<span class="ep-watch-count">×{{ ep.watch_count }}</span>{% endif %}
-    </button>
-    <span class="ep-num">E{{ ep.episode_number }}</span>
-    {# Fechas y comentario junto al título, con menos peso que el resto de la fila. #}
-    <span class="ep-name">{{ ep.name or "" }}
-        {% if ep.air_date %}<span class="ep-date">{{ ep.air_date }}</span>{% endif %}
-        {# La fecha de visto se enseña aunque no cuente para esta ronda de rewatch. #}
-        {% if ep.watched_at %}<span class="ep-seen-label">Visto {{ ep.watched_at[:10] }}</span>{% endif %}
-        {% if ep.comment %}<span class="ep-comment">{{ ep.comment }}</span>{% endif %}
-    </span>
-    {# Acciones del episodio agrupadas en una zona derecha coherente - antes
-       fav-star y "comentar" iban sueltos, cada uno pegado a su vecino sin
-       relacion visual entre si. #}
-    <div class="ep-actions">
-        {# Volver a ver este episodio suelto: solo si ya está visto en esta ronda; si
-           no, el checkbox de arriba sirve para marcarlo. #}
-        {% if ep.watched_now %}
-        <button class="ep-rewatch" hx-post="/episodio/{{ ep.id }}/volver-a-ver"
-                hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
-                title="Volver a ver este episodio">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-        </button>
-        {% endif %}
-        {% if ep.watch_count and ep.watch_count >= 2 %}
-        {# El evento nativo "toggle" de <details> no hace bubbling a un hijo, asi que
-           hx-get/hx-trigger van en el propio <details> (hx-target="find" apunta al
-           div interior) - carga perezosa, solo al abrirse la primera vez, para no
-           disparar una query por episodio con muchas repeticiones al cargar la ficha. #}
-        <details class="ep-more ep-history" onclick="event.stopPropagation()"
-                  hx-get="/episodio/{{ ep.id }}/historial" hx-trigger="toggle once"
-                  hx-target="find .ep-history-body" hx-swap="innerHTML">
-            <summary title="Ver todas las fechas">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
-            </summary>
-            <div class="ep-history-body">Cargando...</div>
-        </details>
-        {% endif %}
-        <button class="fav-star {{ 'is-fav' if ep.is_favorite else '' }}"
-                hx-post="/episodio/{{ ep.id }}/favorito" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
-                title="Episodio favorito">{{ "★" if ep.is_favorite else "☆" }}</button>
-        {# ontoggle enfoca el input al abrir (se dispara también al cerrar, de ahí el
-           "if (this.open)"). #}
-        <details class="ep-more" {{ 'open' if ep.open_note else '' }} onclick="event.stopPropagation()"
-                  ontoggle="if (this.open) this.querySelector('input').focus()">
-            <summary title="Comentar episodio">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-            </summary>
-            <form class="ep-comment-form" hx-post="/episodio/{{ ep.id }}/comentario" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">
-                {# Llegada desde el aviso "¿comentas?" (pendientes.py, comment_toast.html) -
-                   abierto server-side, asi que ontoggle (arriba) no dispara solo con esto
-                   (no hay cambio de estado en la carga inicial de la pagina) - autofocus
-                   nativo cubre este caso, ontoggle cubre abrir a mano despues. #}
-                <input type="text" name="comment" placeholder="Comentario del episodio..." value="{{ ep.comment or '' }}"
-                       {{ 'autofocus' if ep.open_note else '' }}>
-                <button type="submit">Guardar</button>
-            </form>
-        </details>
-        {# Debate por episodio, compartido entre usuarios. Difuminado hasta que este
-           usuario ha visto el episodio, con opción de verlo antes: checkbox oculto +
-           label + filter:blur() + :has(), sin JS. #}
-        <details class="ep-more ep-debate" {{ 'open' if ep.open_debate else '' }} onclick="event.stopPropagation()">
-            <summary title="Comentarios ({{ ep.debate|length }})">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v3l-3-3H9a2 2 0 0 1-1.8-1.1"></path><path d="M17 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1v3z"></path></svg>
-                {% if ep.debate %}<span class="ep-comment-count">{{ ep.debate|length }}</span>{% endif %}
-            </summary>
-            <div class="ep-debate-form {{ 'spoiler-frame' if not ep.watched_now else '' }}">
-                <div class="spoiler-body">
-                    <ul class="ep-debate-list">
-                        {% for c in ep.debate %}
-                        <li>
-                            {{ c.username|avatar(c.avatar_path) }}
-                            <div class="ep-debate-msg">
-                                <strong>{{ c.username }}</strong><span class="ep-debate-date">{{ c.created_at|fmt_ago }}</span>
-                                <p>{{ c.body }}</p>
-                            </div>
-                            {% if c.user_id == request.state.user_id or request.state.is_admin %}
-                            <button type="button" class="ep-debate-del" title="Borrar comentario"
-                                    hx-post="/episodio/{{ ep.id }}/debate/{{ c.id }}/borrar"
-                                    hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">×</button>
-                            {% endif %}
-                        </li>
-                        {% else %}
-                        <li class="empty">Sin comentarios todavía.</li>
-                        {% endfor %}
-                    </ul>
-                    <form hx-post="/episodio/{{ ep.id }}/debate" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">
-                        <input type="text" name="body" placeholder="Comenta este episodio..." required>
-                        <button type="submit">Enviar</button>
-                    </form>
-                </div>
-                {% if not ep.watched_now %}
-                {# Si la respuesta viene de enviar un comentario (open_debate), el checkbox
-                   nace marcado para no volver a difuminar lo que acabas de escribir. #}
-                <input type="checkbox" id="spoiler-ep-{{ ep.id }}" class="spoiler-check" {{ 'checked' if ep.open_debate else '' }}>
-                <label for="spoiler-ep-{{ ep.id }}" class="spoiler-label">Spoiler · Toca para ver</label>
-                {% endif %}
-            </div>
-        </details>
-    </div>
+{% from "partials/ui.html" import ic %}
+<div class="ep{{ ' ep-watched' if ep.watch_count }}" id="ep-{{ ep.id }}">
+  <button class="ep-tick {{ 'seen' if ep.watched_now else ('stale' if ep.watch_count else '') }}"
+          hx-post="/episodio/{{ ep.id }}/toggle" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML"
+          title="{{ 'Visto · pulsa para desmarcar' if ep.watched_now else ('Visto antes · marcar en esta vuelta' if ep.watch_count else 'Marcar visto') }}">{{ ic('check', 'sm') }}{% if ep.watch_count and ep.watch_count >= 2 %}<span class="x">×{{ ep.watch_count }}</span>{% endif %}</button>
+  <span class="ep-n">E{{ ep.episode_number }}</span>
+  <div class="ep-main"><span class="nm">{{ ep.name or "" }}</span>
+    <span class="sub">{% if ep.air_date %}<span>{{ ep.air_date|fmt_day if ep.air_date > (today if today is defined else '') else ep.air_date }}</span>{% endif %}{% if ep.watched_at %}<span class="seen-lbl">Visto {{ ep.watched_at[:10] }}</span>{% endif %}</span>
+    {% if ep.comment %}<span class="cm">{{ ep.comment }}</span>{% endif %}</div>
+  <div class="ep-acts">
+    {% if ep.watched_now %}<button class="ep-btn" hx-post="/episodio/{{ ep.id }}/volver-a-ver" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML" title="Volver a ver este episodio">{{ ic('rewatch', 'sm') }}</button>{% endif %}
+    {% if ep.watch_count and ep.watch_count >= 2 %}
+    <details class="ep-more ep-history" hx-get="/episodio/{{ ep.id }}/historial" hx-trigger="toggle once" hx-target="find .ep-history-body" hx-swap="innerHTML">
+      <summary class="ep-btn" title="Ver todas las fechas">{{ ic('clock', 'sm') }}</summary>
+      <div class="ep-pop ep-history-body">Cargando…</div></details>
+    {% endif %}
+    <button class="ep-btn{{ ' on' if ep.is_favorite }}" hx-post="/episodio/{{ ep.id }}/favorito" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML" title="Episodio favorito">{{ ic('star', 'sm') }}</button>
+    <details class="ep-more"{{ ' open' if ep.open_note }} ontoggle="if (this.open) this.querySelector('input').focus()">
+      <summary class="ep-btn{{ ' has' if ep.comment }}" title="Tu comentario del episodio">{{ ic('note', 'sm') }}</summary>
+      <form class="ep-pop ep-comment-form" hx-post="/episodio/{{ ep.id }}/comentario" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">
+        <input class="input" type="text" name="comment" placeholder="Tu comentario del episodio…" value="{{ ep.comment or '' }}"{{ ' autofocus' if ep.open_note }}>
+        <button class="btn sm">Guardar</button></form></details>
+    <details class="ep-more ep-debate"{{ ' open' if ep.open_debate }}>
+      <summary class="ep-btn{{ ' has' if ep.debate }}" title="Debate ({{ ep.debate|length }})">{{ ic('debate', 'sm') }}{% if ep.debate %}<span class="n">{{ ep.debate|length }}</span>{% endif %}</summary>
+      <div class="ep-pop ep-debate-form {{ 'spoiler-frame' if not ep.watched_now }}">
+        <div class="spoiler-body">
+          <ul class="debate">
+            {% for c in ep.debate %}
+            <li>{{ c.username|avatar(c.avatar_path) }}<div><strong>{{ c.username }}</strong><span class="when">{{ c.created_at|fmt_ago }}</span><p>{{ c.body }}</p></div>
+              {% if c.user_id == request.state.user_id or request.state.is_admin %}<button type="button" class="ep-btn" title="Borrar comentario" hx-post="/episodio/{{ ep.id }}/debate/{{ c.id }}/borrar" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">{{ ic('x', 'sm') }}</button>{% endif %}</li>
+            {% else %}<li class="hint">Sin comentarios todavía.</li>{% endfor %}
+          </ul>
+          <form class="ep-comment-form" hx-post="/episodio/{{ ep.id }}/debate" hx-target="#ep-{{ ep.id }}" hx-swap="outerHTML">
+            <input class="input" type="text" name="body" placeholder="Comenta este episodio…" required><button class="btn sm">Enviar</button></form>
+        </div>
+        {% if not ep.watched_now %}<input type="checkbox" id="spoiler-ep-{{ ep.id }}" class="spoiler-check"{{ ' checked' if ep.open_debate }}><label for="spoiler-ep-{{ ep.id }}" class="spoiler-label">Spoiler · Toca para ver</label>{% endif %}
+      </div></details>
+  </div>
 </div>

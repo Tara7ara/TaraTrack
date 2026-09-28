@@ -36,8 +36,6 @@ MAX_PER_SEED = 6
 ANILIST_CANDIDATES = 60
 
 
-
-
 def _seed_ban_counts(conn, user_id: int):
     """Cuántos BAN salieron de cada semilla ("porque te gustó X"), por usuario."""
     rows = conn.execute(
@@ -46,8 +44,6 @@ def _seed_ban_counts(conn, user_id: int):
         (user_id,),
     ).fetchall()
     return {row["seed_title"]: row["c"] for row in rows}
-
-
 
 
 def _seed_weight(rating, seed_title, ban_counts):
@@ -111,10 +107,6 @@ def _match_anilist_to_tmdb(names: dict):
 
 
 def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_COUNT):
-    """Recalcula la tanda de recomendados en recommendations_cache, para que
-    /recomendados sea una lectura local. Sin user_id recalcula la de todos los usuarios
-    (sync de fondo); con user_id, solo la de ese usuario (cuando visita con la caché
-    vacía)."""
     if user_id is None:
         with get_connection() as conn:
             user_ids = [row["id"] for row in list_users(conn)]
@@ -133,8 +125,6 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
                ORDER BY RANDOM() LIMIT ?""",
             (user_id, seed_count),
         ).fetchall()
-        # "Conocido" es lo que este usuario tiene en su biblioteca, no todo el catálogo
-        # compartido.
         known = {
             row["tmdb_id"] for row in conn.execute(
                 """SELECT titles.tmdb_id FROM entries JOIN titles ON titles.id = entries.title_id
@@ -206,21 +196,24 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
             conn.execute(
                 """INSERT INTO recommendations_cache
                    (user_id, tmdb_id, type, title, year, poster_url, overview, vote_average,
-                    popularity, is_adult, seeds, score)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    popularity, is_adult, seeds, score, genres)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     user_id, item["tmdb_id"], item["type"], item["title"], item.get("year"),
                     item.get("poster_url"), item.get("overview"), item.get("vote_average"),
                     item.get("popularity"), int(bool(item.get("adult"))),
-                    ",".join(item["seeds"]), item["score"],
+                    ",".join(item["seeds"]), item["score"], ",".join(item.get("genres") or []),
                 ),
             )
     logging.info(
         "recomendados: cache recalculada para usuario %s, %d titulos (%d semillas)",
         user_id, len(capped), len(seeds),
     )
-
-
+    try:
+        with get_connection() as conn:
+            refresh_tmdb_extra(conn, [(item["tmdb_id"], item["type"]) for item in capped])
+    except Exception:
+        logging.exception("recomendados: fallo al traer fondos/estado de TMDB")
 
 
 def list_recommendations(conn, user_id: int, tipo="", limit=40, tanda=0, with_pages=False):
@@ -261,7 +254,8 @@ def list_recommendations(conn, user_id: int, tipo="", limit=40, tanda=0, with_pa
         params,
     ).fetchall()
     pool = [
-        {**dict(r), "seeds": r["seeds"].split(","), "adult": bool(r["is_adult"])}
+        {**dict(r), "seeds": r["seeds"].split(","), "adult": bool(r["is_adult"]),
+         "genres": [g for g in (r["genres"] or "").split(",") if g]}
         for r in rows
         if r["tmdb_id"] not in banned and r["tmdb_id"] not in known
     ]
@@ -270,8 +264,6 @@ def list_recommendations(conn, user_id: int, tipo="", limit=40, tanda=0, with_pa
     start = (tanda % pages) * limit
     shown = pool[start:start + limit]
     return (shown, pages) if with_pages else shown
-
-
 
 
 def reject_recommendation(
@@ -287,14 +279,10 @@ def reject_recommendation(
     )
 
 
-
-
 def list_rejected_recommendations(conn, user_id):
     return conn.execute(
         "SELECT * FROM rejected_recommendations WHERE user_id = ? ORDER BY rejected_at DESC", (user_id,)
     ).fetchall()
-
-
 
 
 def unreject_recommendation(conn, rejected_id: int, user_id: int):
@@ -307,3 +295,69 @@ def unreject_recommendation(conn, rejected_id: int, user_id: int):
 def _anilist_community_candidates_for(user_id, ban_counts):
     with get_connection() as conn:
         return _anilist_community_candidates(conn, user_id, ban_counts)
+
+
+TMDB_EXTRA_MAX_AGE_DAYS = 7
+
+
+def refresh_tmdb_extra(conn, items, max_age_days=TMDB_EXTRA_MAX_AGE_DAYS):
+    """Rellena tmdb_extra (fondo, logo, estado de emision) para titulos fuera de la
+    biblioteca - la portada y las tiras de /recomendados salen de aqui sin llamar a
+    TMDB al abrir la pagina. Solo pide lo que falta o tiene mas de una semana."""
+    fresh = {
+        (row["tmdb_id"], row["type"]) for row in conn.execute(
+            "SELECT tmdb_id, type FROM tmdb_extra WHERE fetched_at > datetime('now', ?)",
+            (f"-{max_age_days} days",),
+        )
+    }
+    todo = [it for it in dict.fromkeys(items) if it not in fresh and it[0] > 0]
+    if not todo:
+        return 0
+
+    def fetch(it):
+        try:
+            return it, tmdb.get_extra(*it)
+        except Exception:
+            return it, None
+
+    with ThreadPoolExecutor(max_workers=MAX_RECS_WORKERS) as pool:
+        results = list(pool.map(fetch, todo))
+    for (tmdb_id, media_type), extra in results:
+        if extra is None:
+            continue
+        conn.execute(
+            """INSERT INTO tmdb_extra (tmdb_id, type, backdrop_path, logo_path, show_status,
+                   next_episode_air_date, next_episode_label, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(tmdb_id, type) DO UPDATE SET backdrop_path = excluded.backdrop_path,
+                   logo_path = excluded.logo_path, show_status = excluded.show_status,
+                   next_episode_air_date = excluded.next_episode_air_date,
+                   next_episode_label = excluded.next_episode_label, fetched_at = excluded.fetched_at""",
+            (tmdb_id, media_type, extra["backdrop_path"], extra["logo_path"], extra["show_status"],
+             extra["next_episode_air_date"], extra["next_episode_label"]),
+        )
+    return len(results)
+
+
+def recommendation_extras(conn, recs):
+    """Añade a cada recomendado su fondo, logo y fila de estado (para la tira) desde tmdb_extra."""
+    if not recs:
+        return recs
+    ids = [r["tmdb_id"] for r in recs]
+    ph = ",".join("?" * len(ids))
+    extra = {
+        (row["tmdb_id"], row["type"]): row
+        for row in conn.execute(f"SELECT * FROM tmdb_extra WHERE tmdb_id IN ({ph})", ids)
+    }
+    out = []
+    for r in recs:
+        e = extra.get((r["tmdb_id"], r["type"]))
+        out.append({
+            **r,
+            "backdrop_path": e["backdrop_path"] if e else None,
+            "logo_path": e["logo_path"] if e else None,
+            "show_status": e["show_status"] if e else None,
+            "next_episode_air_date": e["next_episode_air_date"] if e else None,
+            "next_episode_label": e["next_episode_label"] if e else None,
+        })
+    return out

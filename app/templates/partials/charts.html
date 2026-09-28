@@ -1,0 +1,34 @@
+{% macro columns(rows, cls='months', height=200) -%}
+{% set vals = rows|map(attribute=2)|list %}
+{% set s = vals|sort(reverse=true) %}
+{% set cut = s|length > 1 and s[1] > 0 and s[0] > s[1] * 2.5 %}
+{% set scale = (s[1] * 1.15) if cut else ((s[0] if s else 1) or 1) %}
+<div class="{{ cls }}" role="img" style="height:{{ height }}px">
+  {% for lbl, tit, c in rows %}{% set h = [c / scale * 100, 100]|min %}
+  <div class="c{{ ' cut' if cut and c > scale }}" title="{{ tit }}: {{ c }}"><span class="bw"><i style="height:{{ h|round(1) }}%"></i><span class="val" style="bottom:calc({{ [h, 88]|min|round(1) }}% + 3px)">{{ c if c else '' }}</span></span><span>{{ lbl }}</span></div>
+  {% endfor %}
+</div>
+{% if cut %}<p class="hint">La columna rayada no está a escala: se sale del gráfico.</p>{% endif %}
+{%- endmacro %}
+
+{% macro bars(rows) -%}
+{% set m = rows[0][1] if rows else 1 %}
+<div class="bars">{% for l, c in rows %}<div class="bar"><span class="lb">{{ l }}</span><span class="tr"><i style="width:{{ (c / m * 100)|round(1) }}%"></i></span><span class="ct">{{ c }}</span></div>{% endfor %}</div>
+{%- endmacro %}
+
+{% macro diverging(items, with_type=false) -%}
+{% if not items %}<p class="hint">Sin datos suficientes.</p>{% else %}
+{% set m = (items|map(attribute='inercia')|map('abs')|max) or 1 %}
+<div class="dv">
+  <div class="dv-legend"><span></span><span class="both"><span class="neg">← te encanta y apenas lo buscas</span><span class="pos">lo buscas más de lo que te gusta →</span></span><span></span><span></span></div>
+  {% for a in items %}
+  <div class="dv-row" title="{{ a.detalle or '' }}">
+    <span class="lb">{% if with_type %}<em>{{ a.tipo_es }}</em>{% endif %}{{ a.name }}</span>
+    <span class="tr"><i class="{{ 'pos' if a.inercia > 0 else 'neg' }}" style="width:{{ ((a.inercia|abs) / m * 50)|round(1) }}%"></i></span>
+    <span class="v {{ 'pos' if a.inercia > 0 else 'neg' }}">{{ '+' if a.inercia > 0 else '−' }}{{ a.inercia|abs }}</span>
+    <span class="n">{{ a.n_titulos }} tít.</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{%- endmacro %}

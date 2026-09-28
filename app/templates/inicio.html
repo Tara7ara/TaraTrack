@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import ic, head, empty, hero_img %}
+{% block content %}
+{% set todos = continuar + nuevas %}
+<div id="inicio-page" hx-get="/" hx-select="#inicio-page" hx-target="this" hx-swap="outerHTML" hx-disinherit="hx-select"
+     data-version="{{ library_version }}"
+     hx-trigger="tt-refresh, visibilitychange[document.visibilityState=='visible' && !document.querySelector('.home-card-check.no, .hero-confirm')] from:document">
+{% if todos %}
+<section class="hero carousel home-hero" id="hero">
+  {% for c in todos %}
+  {% set ep = c.next_ep %}
+  {% set total_visible = (c.watched_eps or 0) + (c.missing_eps or 0) %}
+  <div class="slide{{ ' on' if loop.first }}" data-i="{{ loop.index0 }}">
+    {% if c.backdrop_path %}<div class="hero-bg">{{ hero_img(c.backdrop_path, loop.first) }}</div>{% endif %}
+    <div class="hero-body">
+      <div class="ask">¿Qué me toca ver?{% if c.last_watched_at %} · lo dejaste {{ c.last_watched_at|fmt_ago }}{% elif c in nuevas %} · sin empezar{% endif %}</div>
+      {% if c.logo_path %}<img class="hero-logo" src="{{ c.logo_path|tmdb_img('w500') }}" alt="{{ c.title }}">{% else %}<h1 class="hero-title">{{ c.title }}</h1>{% endif %}
+      {% if ep %}
+      {% set nm = ep.name if ep.name and not (ep.name.startswith('Episodio ') or ep.name.startswith('Episode ')) else '' %}
+      <div class="hero-ep"><b>T{{ ep.season_number }} · E{{ ep.episode_number }}</b>{{ nm }}<span>{{ c.runtime_minutes|fmt_duration if c.runtime_minutes else '' }}{% if c.missing_eps > 1 %} · {{ c.missing_eps }} emitidos sin ver{% endif %}</span></div>
+      {% endif %}
+      <div class="hero-progress"><div class="progress"><i style="width:{{ ((c.watched_eps or 0) / total_visible * 100)|round if total_visible else 0 }}%"></i></div>{{ c.watched_eps or 0 }} de {{ total_visible }} emitidos</div>
+      <div class="hero-actions">
+        {% if ep %}
+        <button class="btn lg" type="button" onclick="ttHeroNext({{ c.id }})">{{ ic('check') }} Visto</button>
+        <span class="hero-all" data-id="{{ c.id }}" data-n="{{ c.missing_eps }}">
+          <button class="btn lg ghost" type="button" onclick="ttHeroAll(this)"{% if c.missing_eps <= 1 %} disabled title="Solo queda uno emitido"{% endif %}>{{ ic('checks') }} Todos{% if c.missing_eps > 1 %} ({{ c.missing_eps }}){% endif %}</button>
+        </span>
+        {% endif %}
+        <a class="btn lg ghost" href="/titulo/{{ c.tmdb_id }}/show">{{ ic('info') }} Ficha</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% if todos|length > 1 %}
+  <button class="hero-arrow prev" type="button" data-hero-go="-1" aria-label="Anterior">{{ ic('chevl', 'lg') }}</button>
+  <button class="hero-arrow next" type="button" data-hero-go="1" aria-label="Siguiente">{{ ic('chevr', 'lg') }}</button>
+  <div class="hero-dots">{% for c in todos %}<button type="button" class="{{ 'on' if loop.first }}" data-hero-to="{{ loop.index0 }}" aria-label="{{ c.title }}"><i></i></button>{% endfor %}</div>
+  {% endif %}
+  <aside class="hero-queue" aria-label="En cola">
+    <div class="hq-head"><b>En cola</b><span>{{ todos|length }} serie{{ 's' if todos|length != 1 }}</span></div>
+    <div class="hq-list">
+      {% if continuar %}<div class="ccards" id="continuar-carousel">{% for c in continuar %}{% set hero_index = loop.index0 %}{% include "partials/home_card.html" %}{% endfor %}</div>{% endif %}
+      {% if nuevas %}<div class="hq-sub">De la temporada, sin empezar</div>
+      <div class="ccards">{% for c in nuevas %}{% set hero_index = continuar|length + loop.index0 %}{% include "partials/home_card.html" %}{% endfor %}</div>{% endif %}
+    </div>
+  </aside>
+</section>
+{% endif %}
+
+<div class="page"{% if todos %} style="padding-top:12px"{% endif %}>
+  {% if not todos %}
+  {{ head('¿Qué me toca ver?', 'Inicio') }}
+  {% call empty('done', 'Estás al día', 'No tienes episodios emitidos sin ver de lo que estás siguiendo.', 'done') %}<a class="btn ghost" href="/pendientes">Elegir algo de pendientes</a>{% endcall %}
+  {% endif %}
+
+  {% set _cola = puntuar_queue_count(request.state.user_id) %}
+  {% if ahora.por_ver or ahora.hoy or _cola or ahora.temporada %}
+  <nav class="now-strip" aria-label="Ahora">
+    <span class="now-l">Ahora</span>
+    {% if ahora.por_ver %}<a href="#hero" class="now-i">{{ ic('play', 'sm') }}<b>{{ ahora.por_ver }}</b> episodio{{ 's' if ahora.por_ver != 1 }} por ver</a>{% endif %}
+    {% if ahora.hoy %}<a href="/calendario" class="now-i">{{ ic('cal', 'sm') }}<b>{{ ahora.hoy }}</b> sale{{ 'n' if ahora.hoy != 1 }} hoy</a>{% endif %}
+    {% if _cola %}<a href="/puntuar" class="now-i hot">{{ ic('star', 'sm') }}<b>{{ _cola }}</b> por puntuar</a>{% endif %}
+    {% if ahora.temporada %}<a href="#hero" class="now-i">{{ ic('grid', 'sm') }}<b>{{ ahora.temporada }}</b> de temporada sin empezar</a>{% endif %}
+  </nav>
+  {% endif %}
+
+    {% set dias_con = semana|selectattr('items')|list %}
+  {% if dias_con %}
+  <section class="section">
+    <div class="section-head"><h2>Esta semana</h2><span class="meta">lo que sale de lo que sigues</span><a class="more" href="/calendario">Calendario {{ ic('chevr', 'sm') }}</a></div>
+    <div class="home-week" style="--days: {{ dias_con|length }}">
+      {% for d in dias_con %}
+      <div class="hw-day{{ ' today' if d.iso == today }}">
+        <div class="hw-h"><span>{{ 'HOY' if d.iso == today else d.dow }}</span><b>{{ d.num }}</b></div>
+        {% for i in d['items'] %}
+        <a class="hw-i{{ ' seen' if i.watched_now }}" href="/titulo/{{ i.tmdb_id }}/show" title="{{ i.title }}">
+          <img src="{{ i.backdrop_path|tmdb_img('w300') if i.backdrop_path else (i.poster_path|poster_size('w185') if i.poster_path else '') }}" alt="" loading="lazy" onerror="this.remove()">
+          <span><b>{{ i.title }}</b><small>T{{ i.season_number }}E{{ i.episode_number }}{% if i.watched_now %} · visto{% endif %}</small></span></a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</div>
+</div>
+<script>
+function ttHeroNext(id) { const b = document.querySelector('#home-card-' + id + ' [data-next]'); if (b) b.click(); }
+function ttHeroAll(btn) {
+    const box = btn.closest('.hero-all'), id = box.dataset.id, n = box.dataset.n, old = box.innerHTML;
+    box.innerHTML = '<span class="confirm-inline hero-confirm"><span>¿Los ' + n + '?</span><button class="btn">Sí, marcar</button><button class="btn quiet">No</button></span>';
+    const [yes, no] = box.querySelectorAll('button');
+    yes.onclick = () => htmx.ajax('POST', '/entrada/' + id + '/todos', { target: '#home-card-' + id, swap: 'outerHTML' });
+    no.onclick = () => { box.innerHTML = old; };
+}
+document.body.addEventListener('htmx:afterSwap', (e) => {
+    if (!e.detail.target.id || !e.detail.target.id.startsWith('home-card-')) return;
+    if (document.querySelector('.home-card-check.no, .hero-confirm')) return;
+    clearTimeout(window.__ttRef); window.__ttRef = setTimeout(() => htmx.trigger('#inicio-page', 'tt-refresh'), 700);
+});
+if (!window.__ttVersionPoll) {
+    window.__ttVersionPoll = true;
+    const busy = () => document.querySelector('.home-card-check.no, .hero-confirm, details[open]') || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement && document.activeElement.tagName);
+    const check = async () => {
+        const page = document.getElementById('inicio-page');
+        if (!page || document.visibilityState !== 'visible' || busy()) return;
+        try { const r = await fetch('/pendientes/version', { cache: 'no-store' }); if (r.ok && (await r.text()) !== page.dataset.version) htmx.trigger(page, 'tt-refresh'); } catch (e) {}
+    };
+    setInterval(check, 20000);
+    window.addEventListener('focus', check);
+}
+</script>
+{% endblock %}

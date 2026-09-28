@@ -1,58 +1,118 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, card, empty, hero_img %}
 {% block content %}
-<h1>Recomendados</h1>
-<div class="sort-bar">
-    <a href="/recomendados" class="{{ 'active' if not tipo }}">Mix</a>
-    <a href="/recomendados?tipo=series" class="{{ 'active' if tipo == 'series' }}">Series</a>
-    <a href="/recomendados?tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}">Pelis</a>
-</div>
-<div class="page-actions">
-    {% if pages > 1 %}
-    <a class="btn secondary" href="/recomendados?tanda={{ (tanda + 1) % pages }}{{ '&tipo=' + tipo if tipo }}">{{ "Volver a las mejores" if tanda + 1 == pages else "Otra tanda" }}</a>
-    <span class="page-hint">Tanda {{ tanda + 1 }} de {{ pages }}</span>
-    {% endif %}
-</div>
-
-{% if not recs %}
-<div class="empty-state">
-    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg></span>
-    <h3>Todavía no hay de dónde tirar</h3>
-    <p>Puntúa cosas (8.5 o más) o mete títulos en Favoritos y vuelve por aquí.</p>
-</div>
+{% macro ban_form(r, hero=false) -%}
+<form class="{{ 'ban-hero' if hero else 'ban-card' }}" hx-post="/recomendados/rechazar" hx-target="{{ 'body' if hero else 'closest .pcard' }}" hx-swap="{{ 'none' if hero else 'outerHTML' }}"{% if hero %} hx-on::after-request="location.reload()"{% endif %}>
+  <input type="hidden" name="tmdb_id" value="{{ r.tmdb_id }}"><input type="hidden" name="type" value="{{ r.type }}"><input type="hidden" name="title" value="{{ r.title }}">
+  <input type="hidden" name="poster_path" value="{{ r.poster_url or '' }}"><input type="hidden" name="seed_title" value="{{ r.seeds[0] if r.seeds else '' }}">
+  <button class="{{ 'btn danger' if hero else 'ban-btn left' }}" title="No recomendar más">BAN</button></form>
+{%- endmacro %}
+{% macro rec_hover(r, why) -%}
+<span class="rec-hover" aria-hidden="true"><b>{{ r.title }}</b>{% if r.overview %}<span class="ov">{{ r.overview }}</span>{% endif %}{% if why %}<span class="why">{{ why }}</span>{% endif %}</span>
+{%- endmacro %}
+{% macro rowhead(title, meta='', link='') -%}
+<div class="section-head"><h2>{{ title }}</h2>{% if meta %}<span class="meta">{{ meta }}</span>{% endif %}
+  <span class="row-nav">{% if link %}<a class="more" href="{{ link }}">Ver todas {{ ic('chevr', 'sm') }}</a>{% endif %}<button type="button" class="row-btn" data-row="-1" aria-label="Anterior">{{ ic('chevl', 'sm') }}</button><button type="button" class="row-btn" data-row="1" aria-label="Siguiente">{{ ic('chevr', 'sm') }}</button></span></div>
+{%- endmacro %}
+{% macro rec_card(r, in_row=false) -%}
+{% set why = ('Porque te gustó ' ~ r.seeds[:3]|join(', ') ~ (' y ' ~ (r.seeds|length - 3) ~ ' más' if r.seeds|length > 3 else '')) if r.seeds else '' %}
+{% call card(r.poster_url, r.title, href='/titulo/' ~ r.tmdb_id ~ '/' ~ r.type, rb=r|show_status_ribbon, right=true, adult=r.adult, uid='rec-' ~ r.tmdb_id,
+             l1=(r.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if r.type == 'show' else 'Película'),
+             l2=('Internet <b>' ~ (r.vote_average|fmt_rating(1)) ~ '</b>') if r.vote_average else '', x=(none if in_row else why),
+             corner=ban_form(r)|string ~ (rec_hover(r, why)|string if in_row else '')) %}
+  {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = "new" %}{% include "partials/entry_actions.html" %}
+{% endcall %}
+{%- endmacro %}
+{% if top %}
+<section class="hero carousel" id="hero">
+  {% for h in top %}
+  {% set why = ('Porque te gustó ' ~ h.seeds[:3]|join(', ') ~ (' y ' ~ (h.seeds|length - 3) ~ ' más' if h.seeds|length > 3 else '')) if h.seeds else '' %}
+  <div class="slide{{ ' on' if loop.first }}">
+    {% if h.backdrop_path %}<div class="hero-bg">{{ hero_img(h.backdrop_path, loop.first) }}</div>{% endif %}
+    <div class="hero-body">
+      <div class="ask">¿Qué me puede gustar? · {{ 'tu mejor recomendación' if loop.first else 'tu recomendación nº ' ~ loop.index }}</div>
+      {% if h.logo_path %}<img class="hero-logo" src="{{ h.logo_path|tmdb_img('w500') }}" alt="{{ h.title }}">{% else %}<h1 class="hero-title">{{ h.title }}</h1>{% endif %}
+      <div class="meta-row"><span class="mchip">{{ h.year or '—' }} · {{ 'Serie' if h.type == 'show' else 'Película' }}</span>{% if h.vote_average %}<span class="mchip">Internet <b>{{ h.vote_average|fmt_rating(1) }}</b></span>{% endif %}</div>
+      {% if h.overview %}<p class="overview-short">{{ h.overview }}</p>{% endif %}
+      {% if why %}<span class="disc-why">{{ ic('info', 'sm') }} {{ why }}</span>{% endif %}
+      <div class="hero-actions">{% set tmdb_id = h.tmdb_id %}{% set type = h.type %}{% set state = "new" %}{% include "partials/entry_actions.html" %}
+        <a class="btn ghost" href="/titulo/{{ h.tmdb_id }}/{{ h.type }}">{{ ic('info', 'sm') }} Ficha</a>{{ ban_form(h, true) }}</div>
+    </div>
+  </div>
+  {% endfor %}
+  {% if top|length > 1 %}
+  <button class="hero-arrow prev" type="button" data-hero-go="-1" aria-label="Anterior">{{ ic('chevl', 'lg') }}</button>
+  <button class="hero-arrow next" type="button" data-hero-go="1" aria-label="Siguiente">{{ ic('chevr', 'lg') }}</button>
+  <div class="hero-dots">{% for h in top %}<button type="button" class="{{ 'on' if loop.first }}" data-hero-to="{{ loop.index0 }}" aria-label="{{ h.title }}"><i></i></button>{% endfor %}</div>
+  {% endif %}
+</section>
 {% endif %}
-
-<div class="grid discover" id="rec-grid">
-{% for r in recs %}
-<div class="card" id="rec-{{ r.tmdb_id }}">
-    <div class="nsfw-frame">
-        <a href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">
-            {% if r.poster_url %}
-            <img class="{{ 'nsfw-img' if r.adult }}" src="{{ r.poster_url }}" alt="{{ r.title }}" loading="lazy">
-            {% else %}
-            <img src="/static/img/sin-portada.svg" alt="Sin portada">
-            {% endif %}
-        </a>
-        {% if r.adult %}
-        <input type="checkbox" id="nsfw-r-{{ r.tmdb_id }}" class="nsfw-check">
-        <label for="nsfw-r-{{ r.tmdb_id }}" class="nsfw-label">+18 · Toca para ver</label>
-        {% endif %}
-    </div>
-    <div class="card-body">
-        <a class="card-title" href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">{{ r.title }}</a>
-        <div class="card-year">{{ r.year or "—" }} · {{ "Serie" if r.type == "show" else "Película" }}{% if r.vote_average %} · Internet: {{ r.vote_average|fmt_rating(1) }}{% endif %}</div>
-        {% if r.seeds %}<div class="rec-seeds">Porque te gustó {{ r.seeds[:3]|join(", ") }}{% if r.seeds|length > 3 %} y {{ r.seeds|length - 3 }} más{% endif %}</div>{% endif %}
-        {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = "new" %}
-        {% include "partials/entry_actions.html" %}
-        <form hx-post="/recomendados/rechazar" hx-target="#rec-{{ r.tmdb_id }}" hx-swap="outerHTML" style="margin:0">
-            <input type="hidden" name="tmdb_id" value="{{ r.tmdb_id }}">
-            <input type="hidden" name="type" value="{{ r.type }}">
-            <input type="hidden" name="title" value="{{ r.title }}">
-            <input type="hidden" name="poster_path" value="{{ r.poster_url or '' }}">
-            <input type="hidden" name="seed_title" value="{{ r.seeds[0] if r.seeds else '' }}">
-            <button class="secondary rec-dislike" title="No lo recomiendes más">BAN</button>
-        </form>
-    </div>
+<div class="page"{% if top %} style="padding-top:12px"{% endif %}>
+  {% if not top %}<header class="page-head"><div class="ask">¿Qué me puede gustar?</div><h1>Recomendados</h1></header>{% endif %}
+  <div class="toolbar"><div class="seg">{% for v, l in [('', 'Mix'), ('series', 'Series'), ('pelis', 'Pelis')] %}<a class="{{ 'active' if tipo == v }}" href="/recomendados{{ '?tipo=' ~ v if v }}">{{ l }}</a>{% endfor %}</div>
+    <span class="hint">Sale de lo que has puntuado con 8,5 o más y de tu lista de Favoritos · {{ total }} títulos</span></div>
+  {% if not top and todas is not defined %}{{ empty('compass', 'Todavía no hay de dónde tirar', 'Puntúa cosas con 8,5 o más, o mete títulos en Favoritos, y vuelve por aquí.') }}{% endif %}
+  {% if todas is defined %}
+  <section class="section"><div class="section-head"><h2>Todas las recomendaciones</h2><span class="meta">{{ todas|length }} títulos, de mejor a peor</span><a class="more" href="/recomendados{{ '?tipo=' ~ tipo if tipo }}">{{ ic('chevl', 'sm') }} Volver</a></div>
+    <div class="pgrid">{% for r in todas %}{{ rec_card(r) }}{% endfor %}</div></section>
+  {% else %}
+  {% if top|length > 3 %}
+  <section class="section netflix-row">{{ rowhead('Top 10 para ti', 'tus mejores recomendaciones ahora mismo') }}
+    <div class="row-scroll top10">{% for r in top %}
+      <a class="top10-item" href="/titulo/{{ r.tmdb_id }}/{{ r.type }}" title="{{ r.title }}"><span class="top10-n">{{ loop.index }}</span>
+        <span class="top10-poster">{% if r.poster_url %}<img src="{{ r.poster_url|poster_size('w342') }}" alt="{{ r.title }}" loading="lazy">{% endif %}</span></a>
+    {% endfor %}</div></section>
+  {% endif %}
+  {% for seed, items in filas %}
+  <section class="section netflix-row">{{ rowhead('Porque te gustó ' ~ seed, items|length ~ ' títulos') }}
+    <div class="row-scroll cards">{% for r in items %}{{ rec_card(r, true) }}{% endfor %}</div></section>
+  {% if loop.index == 1 and temporada %}
+  <section class="section netflix-row">{{ rowhead('Anime de esta temporada para ti', 'lo que no tienes, de lo que más te gustará a lo que menos', '/calendario/anual?vista=porcentaje') }}
+    <div class="row-scroll cards">{% for it in temporada %}
+      {% set href = '/calendario/abrir?title=' ~ (it.title|urlencode) ~ '&romaji=' ~ ((it.title_romaji or '')|urlencode) ~ '&anilist_id=' ~ (it.anilist_id or 0) %}
+      {% call card(it.image, it.title, href=href, uid='temp-' ~ it.anilist_id, l1=(it.studio or 'Anime'), l2=(('Nota <b>' ~ (it.score|fmt_rating(1)) ~ '</b>') if it.score else '')) %}
+        <form hx-post="/calendario/anadir" hx-target="this" hx-swap="outerHTML">
+          <input type="hidden" name="title" value="{{ it.title }}"><input type="hidden" name="romaji" value="{{ it.title_romaji or '' }}">
+          <input type="hidden" name="anilist_id" value="{{ it.anilist_id or 0 }}"><input type="hidden" name="predict" value="{{ it.predict if it.predict is not none else '' }}">
+          <button class="btn sm ghost">{{ ic('plus', 'sm') }} Pendientes</button></form>
+      {% endcall %}
+    {% endfor %}</div></section>
+  {% endif %}
+  {% if loop.index == 2 %}{% for g, items in por_genero %}
+  <section class="section netflix-row">{{ rowhead(g, 'de tus géneros fuertes') }}
+    <div class="row-scroll cards">{% for r in items %}{{ rec_card(r, true) }}{% endfor %}</div></section>
+  {% endfor %}{% endif %}
+  {% endfor %}
+  {% if filas|length < 2 %}{% for g, items in por_genero %}
+  <section class="section netflix-row">{{ rowhead(g, 'de tus géneros fuertes') }}
+    <div class="row-scroll cards">{% for r in items %}{{ rec_card(r, true) }}{% endfor %}</div></section>
+  {% endfor %}{% endif %}
+  {% if not filas and temporada %}
+  <section class="section netflix-row">{{ rowhead('Anime de esta temporada para ti', 'lo que no tienes', '/calendario/anual?vista=porcentaje') }}
+    <div class="row-scroll cards">{% for it in temporada %}{% set href = '/calendario/abrir?title=' ~ (it.title|urlencode) ~ '&romaji=' ~ ((it.title_romaji or '')|urlencode) ~ '&anilist_id=' ~ (it.anilist_id or 0) %}{% call card(it.image, it.title, href=href, uid='temp-' ~ it.anilist_id, l1=(it.studio or 'Anime'), l2='') %}{% endcall %}{% endfor %}</div></section>
+  {% endif %}
+  {% if mas %}
+  <section class="section netflix-row">{{ rowhead('Más para ti', mas|length ~ ' títulos', '/recomendados?todas=1' ~ ('&tipo=' ~ tipo if tipo else '')) }}
+    <div class="row-scroll cards">{% for r in mas %}{{ rec_card(r, true) }}{% endfor %}</div></section>
+  {% endif %}
+  {% endif %}
 </div>
-{% endfor %}
-</div>
+<script>
+(() => {
+  const upd = (sec) => {
+    const r = sec.querySelector(".row-scroll"); if (!r) return;
+    const [prev, next] = sec.querySelectorAll(".row-btn");
+    prev.disabled = r.scrollLeft <= 4; next.disabled = r.scrollLeft + r.clientWidth >= r.scrollWidth - 4;
+  };
+  document.querySelectorAll(".netflix-row").forEach((sec) => {
+    const r = sec.querySelector(".row-scroll");
+    sec.querySelectorAll(".row-btn").forEach((b) => b.addEventListener("click", () => {
+      r.scrollBy({ left: +b.dataset.row * Math.max(r.clientWidth * 0.85, 200), behavior: "smooth" });
+    }));
+    r.addEventListener("scroll", () => upd(sec), { passive: true });
+    upd(sec);
+  });
+  addEventListener("resize", () => document.querySelectorAll(".netflix-row").forEach(upd));
+})();
+</script>
 {% endblock %}

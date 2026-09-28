@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "partials/ui.html" import ic, head, empty %}
+{% block content %}
+<div class="page">
+  <a class="link" href="/listas" style="font-size:0.88rem;display:inline-flex;gap:4px;align-items:center">{{ ic('chevl', 'sm') }} Listas</a>
+  {{ head('¿Qué he dicho de cada cosa?', 'Tus comentarios', (counts.titles + counts.seasons + counts.episodes) ~ ' comentarios') }}
+  <form class="toolbar" method="get" action="/comentarios">
+    <input type="hidden" name="pestana" value="{{ pestana }}">
+    <div class="seg">{% for k, l in [('titles', 'Títulos'), ('seasons', 'Temporadas'), ('episodes', 'Episodios'), ('debate', 'Debate')] %}<a class="{{ 'active' if pestana == k }}" href="/comentarios?pestana={{ k }}&q={{ q|urlencode }}">{{ l }} <span style="color:var(--text-dim);font-weight:400">{{ counts[k] }}</span></a>{% endfor %}</div>
+    <label class="search-field grow" style="max-width:420px">{{ ic('search', 'sm') }}<input class="input" type="search" name="q" value="{{ q }}" placeholder="Buscar en comentarios…"></label>
+  </form>
+  {% if filas %}
+  <div class="clist">
+    {% for r in filas %}
+    {% set href = '/titulo/' ~ r.tmdb_id ~ '/' ~ r.type ~ (('?apunte=' ~ r.episode_id ~ '#ep-' ~ r.episode_id) if pestana == 'episodes' else (('?comentar=' ~ r.episode_id ~ '#ep-' ~ r.episode_id) if pestana == 'debate' else '')) %}
+    <a class="crow" href="{{ href }}"><img src="{{ r.poster_path|poster_size('w185') if r.poster_path else '' }}" alt="" loading="lazy" onerror="this.remove()">
+      <span class="ch"><b>{{ r.title }}</b><span>
+        {% if pestana == 'titles' %}{% if r.rating is not none %}Tu nota <b>{{ r.rating|fmt_rating }}</b>{% endif %}
+        {% elif pestana == 'seasons' %}Temporada {{ r.season_number }}{% if r.rating is not none %} · <b>{{ r.rating|fmt_rating }}</b>{% endif %}
+        {% elif pestana == 'episodes' %}T{{ r.season_number }}E{{ r.episode_number }}{% if r.name and not (r.name.startswith('Episodio ') or r.name.startswith('Episode ')) %} · {{ r.name }}{% endif %}
+        {% else %}T{{ r.season_number }}E{{ r.episode_number }} · {{ r.username }}{% endif %}</span></span>
+      <span class="cb">{{ r.comment }}</span><span class="cd">{{ r.at[:10] if r.at else '' }}</span></a>
+    {% endfor %}
+  </div>
+  {% else %}{{ empty('note', ('Nada con «' ~ q ~ '»') if q else 'Sin comentarios aquí todavía') }}{% endif %}
+</div>
+{% endblock %}

@@ -1,244 +1,122 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, head %}
 {% block content %}
-<h1>Ajustes</h1>
-
-{# Perfil propio: cada cuenta gestiona su foto y su nombre. #}
-<div class="settings-section">
-    <h2>Tu perfil</h2>
-    {% if perfil_error %}<p class="empty" style="color:var(--danger)">{{ perfil_error }}</p>{% endif %}
-    {% if perfil_ok %}<p class="confirm-banner">{{ perfil_ok }}</p>{% endif %}
-    <div class="profile-row">
-        {{ request.state.username|avatar(request.state.avatar_path) }}
-        <form method="post" action="/ajustes/perfil/foto" enctype="multipart/form-data" class="profile-photo-form">
-            <label class="btn secondary">
-                Cambiar foto
-                <input type="file" name="imagen" accept="image/png, image/jpeg, image/webp"
-                       class="file-input-hidden" onchange="this.form.submit()">
-            </label>
-        </form>
-    </div>
-    <form method="post" action="/ajustes/perfil/nombre" class="page-actions">
-        <input type="text" name="username" placeholder="Nuevo nombre de usuario" value="{{ request.state.username }}" minlength="3" required>
-        <button class="btn secondary">Cambiar nombre</button>
-    </form>
-    <details class="ep-more" style="margin-top:0.6rem" onclick="event.stopPropagation()">
-        <summary title="Cambiar contraseña" style="display:inline-flex; gap:0.3rem; cursor:pointer; color:var(--text-dim)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-            Cambiar contraseña
-        </summary>
-        <form method="post" action="/ajustes/perfil/password" class="page-actions tight">
-            <input type="password" name="password_actual" placeholder="Contraseña actual" autocomplete="current-password" required>
-            <input type="password" name="password_nueva" placeholder="Contraseña nueva" autocomplete="new-password" minlength="8" required>
-            <input type="password" name="password_nueva2" placeholder="Repite la nueva" autocomplete="new-password" minlength="8" required>
-            <button class="btn secondary">Guardar</button>
-        </form>
-    </details>
-</div>
-
-{# El calendario de temporada se detecta solo (repo.user_has_anime), pero cada uno
-   puede forzarlo aquí. #}
-<div class="settings-section">
-    <h2>Preferencias</h2>
-    <form method="post" action="/ajustes/perfil/calendario-anime">
-        <label class="filter-checkbox">
-            <input type="checkbox" name="mostrar" value="1" {{ "checked" if show_anime_calendar }} onchange="this.form.submit()">
-            Calendario de temporada (anime)
-        </label>
-    </form>
-</div>
-
-{# "Tus datos" y "Sesión" son acciones poco frecuentes: tarjetas compactas en fila. #}
-<div class="settings-compact-row">
-    <div class="settings-section compact">
-        <div class="settings-compact-head">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            <div>
-                <div class="settings-compact-title">Tus datos</div>
-                <div class="settings-compact-hint">Notas, listas y {{ waifus_label(request.state.user_id)|lower }} en JSON</div>
-            </div>
+<div class="page">
+  {{ head('¿Cómo lo tengo montado?', 'Ajustes') }}
+  <div class="settings">
+    <nav class="settings-nav"><a href="#s-perfil">Tu perfil</a><a href="#s-pref">Preferencias</a>{% if request.state.is_admin %}<a href="#s-users">Usuarios</a>{% endif %}<a href="#s-ban">Títulos con BAN</a><a href="#s-datos">Tus datos y sesión</a></nav>
+    <div style="display:grid;gap:18px">
+      <section class="sblock" id="s-perfil"><h2>Tu perfil</h2>
+        {% if perfil_error %}<p class="error">{{ perfil_error }}</p>{% endif %}
+        {% if perfil_ok %}<p class="confirm-banner">{{ perfil_ok }}</p>{% endif %}
+        <div class="profile-head">
+          <span class="profile-avatar">{{ request.state.username|avatar(request.state.avatar_path) }}</span>
+          <div class="profile-id"><b>{{ request.state.username }}</b>{% if request.state.is_admin %}<span class="chip acc">admin</span>{% endif %}</div>
+          <form method="post" action="/ajustes/perfil/foto" enctype="multipart/form-data"><label class="btn ghost">{{ ic('image', 'sm') }} Cambiar foto<input type="file" name="imagen" accept="image/png, image/jpeg, image/webp" class="file-input-hidden" onchange="this.form.submit()"></label></form>
         </div>
-        <a class="btn secondary" href="/ajustes/exportar">Exportar</a>
-    </div>
-    <div class="settings-section compact">
-        <div class="settings-compact-head">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-            <div>
-                <div class="settings-compact-title">Sesión</div>
-                <div class="settings-compact-hint">Conectado como {{ request.state.username }}</div>
-            </div>
+        <div class="profile-fields">
+          <form method="post" action="/ajustes/perfil/nombre" class="field"><label for="p-nombre">Nombre de usuario</label>
+            <span class="field-row"><input class="input" type="text" id="p-nombre" name="username" value="{{ request.state.username }}" minlength="3" required autocapitalize="none"><button class="btn ghost">Guardar</button></span></form>
+          <details class="acc-item"><summary><span style="display:flex;gap:8px;align-items:center">{{ ic('lock', 'sm') }} Cambiar contraseña</span></summary>
+            <form method="post" action="/ajustes/perfil/password" class="acc-body pass-grid">
+              <input class="input" type="password" name="password_actual" placeholder="Contraseña actual" autocomplete="current-password" required>
+              <input class="input" type="password" name="password_nueva" placeholder="Nueva (8 o más)" autocomplete="new-password" minlength="8" required>
+              <input class="input" type="password" name="password_nueva2" placeholder="Repite la nueva" autocomplete="new-password" minlength="8" required>
+              <button class="btn ghost">Guardar</button></form></details>
         </div>
-        <form method="post" action="/logout">
-            <button class="secondary">Cerrar sesión</button>
-        </form>
-    </div>
-</div>
-
-{# Cuentas: solo las ven los admin. #}
-{% if request.state.is_admin %}
-<div class="settings-section">
-    <h2>Usuarios</h2>
-    <p class="page-hint">Cada cuenta tiene su propio seguimiento (pendientes, notas, listas).</p>
-    {% if usuario_creado %}<p class="confirm-banner">Cuenta «{{ usuario_creado }}» creada.</p>{% endif %}
-    {% if usuario_ok %}<p class="confirm-banner">{{ usuario_ok }}</p>{% endif %}
-    {% if usuario_error %}<p class="empty" style="color:var(--danger)">{{ usuario_error }}</p>{% endif %}
-    <ul class="user-list">
-        {% for u in usuarios %}
-        <li>
-            {{ u.username|avatar(u.avatar_path) }}
-            {{ u.username }}{% if u.is_admin %} <span class="badge">admin</span>{% endif %}
+      </section>
+      <section class="sblock" id="s-pref"><h2>Preferencias</h2>
+        <form method="post" action="/ajustes/perfil/calendario-anime"><label class="check"><input type="checkbox" name="mostrar" value="1"{{ ' checked' if show_anime_calendar }} onchange="this.form.submit()"> Calendario de temporada (anime)</label></form>
+        <p class="hint">Enseña en Calendario el acceso a todo el anime de la temporada.</p></section>
+      {% if request.state.is_admin %}
+      <section class="sblock" id="s-users"><h2>Usuarios</h2><p class="hint">Cada cuenta tiene su propio seguimiento. Tú creas la cuenta y la persona elige su contraseña con un código de un solo uso: nunca llegas a saberla.</p>
+        {% if usuario_ok %}<p class="confirm-banner">{{ usuario_ok }}</p>{% endif %}
+        {% if usuario_error %}<p class="error">{{ usuario_error }}</p>{% endif %}
+        <div>{% for u in usuarios %}
+          <div class="urow{{ ' blocked' if u.is_blocked }}">{{ u.username|avatar(u.avatar_path) }}
+            <span class="uname">{{ u.username }}{% if u.id == request.state.user_id %} <span class="hint">(tú)</span>{% endif %}{% if u.is_admin %} <span class="chip acc">admin</span>{% endif %}{% if u.is_blocked %} <span class="chip danger">bloqueada</span>{% elif u.invite_pending %} <span class="chip">{{ 'código caducado' if u.invite_expires_at and u.invite_expires_at < now_iso else 'sin activar' }}</span>{% endif %}</span>
             {% if u.id != request.state.user_id %}
-            <form method="post" action="/ajustes/usuarios/{{ u.id }}/admin" class="user-admin-toggle">
-                <input type="hidden" name="valor" value="{{ 0 if u.is_admin else 1 }}">
-                <button class="btn-text">{{ "Quitar admin" if u.is_admin else "Hacer admin" }}</button>
-            </form>
-            {% endif %}
-            {# Sin email en un self-host: un admin pone una contraseña nueva a quien se
-               quede fuera. #}
-            <details class="ep-more" onclick="event.stopPropagation()">
-                <summary class="btn-text" title="Resetear contraseña" style="cursor:pointer">Resetear pass</summary>
-                <form method="post" action="/ajustes/usuarios/{{ u.id }}/password" class="ep-comment-form">
-                    <input type="password" name="password" placeholder="Contraseña nueva" minlength="8" required>
-                    <button class="btn secondary">Guardar</button>
-                </form>
+                        <details class="row-menu">
+              <summary class="btn sm quiet icon" aria-label="Gestionar {{ u.username }}">{{ ic('more', 'sm') }}</summary>
+              <div class="row-menu-panel">
+                <form method="post" action="/ajustes/usuarios/{{ u.id }}/codigo">
+                  <button class="rm-item">{{ ic('lock', 'sm') }}<span><b>Nuevo código</b><small>{{ 'El código anterior deja de valer' if u.invite_pending else 'Su contraseña actual deja de valer' }}</small></span></button></form>
+                <form method="post" action="/ajustes/usuarios/{{ u.id }}/admin"><input type="hidden" name="valor" value="{{ 0 if u.is_admin else 1 }}">
+                  <button class="rm-item">{{ ic('user', 'sm') }}<span><b>{{ "Quitar admin" if u.is_admin else "Hacer admin" }}</b><small>{{ 'Deja de poder gestionar cuentas' if u.is_admin else 'Podrá crear y gestionar cuentas' }}</small></span></button></form>
+                <form method="post" action="/ajustes/usuarios/{{ u.id }}/bloquear"><input type="hidden" name="valor" value="{{ 0 if u.is_blocked else 1 }}">
+                  <button class="rm-item">{{ ic('warn', 'sm') }}<span><b>{{ "Desbloquear" if u.is_blocked else "Bloquear" }}</b><small>{{ 'Vuelve a poder entrar' if u.is_blocked else 'Sus datos se quedan, pero no puede entrar' }}</small></span></button></form>
+                <form method="post" action="/ajustes/usuarios/{{ u.id }}/borrar" class="rm-danger">
+                  <label for="del-{{ u.id }}"><b>Borrar cuenta</b><small>Se borra todo lo suyo y no se puede deshacer. Escribe <code>{{ u.username }}</code> para confirmar.</small></label>
+                  <span class="field-row"><input class="input" id="del-{{ u.id }}" name="confirmar" autocomplete="off" autocapitalize="none" placeholder="{{ u.username }}" required pattern="{{ u.username }}"><button class="btn sm danger-solid">Borrar</button></span></form>
+              </div>
             </details>
-        </li>
-        {% endfor %}
-    </ul>
-    <form method="post" action="/ajustes/usuarios" class="page-actions">
-        <input type="text" name="username" placeholder="Usuario" autocomplete="off" required>
-        <input type="password" name="password" placeholder="Contraseña" required>
-        <button class="btn">Crear cuenta</button>
-    </form>
+            {% endif %}
+          </div>
+        {% endfor %}</div>
+        <form method="post" action="/ajustes/usuarios" class="field"><label for="u-nuevo">Invitar a alguien</label>
+          <span class="field-row"><input class="input" type="text" id="u-nuevo" name="username" placeholder="Nombre de usuario" autocomplete="off" autocapitalize="none" required><button class="btn">{{ ic('plus', 'sm') }} Crear e invitar</button></span></form>
+      </section>
+      {% endif %}
+      <section class="sblock" id="s-ban"><h2>Títulos con BAN</h2><p class="hint">Ya no salen en Recomendados. Quítalos de aquí si te equivocaste.</p>
+        {% if rechazados %}<div class="lrows">{% for r in rechazados %}
+          <div class="lrow"><div class="lrow-in" style="grid-template-columns:44px 1fr auto"><img src="{{ r.poster_path|poster_size('w185') if r.poster_path else '' }}" alt="" loading="lazy" style="width:44px;aspect-ratio:2/3;object-fit:cover;border-radius:5px" onerror="this.remove()">
+            <div class="info"><a href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">{{ r.title }}</a><div class="m">{{ "Serie" if r.type == "show" else "Película" }}{% if r.seed_title %} · salió por {{ r.seed_title }}{% endif %}</div></div>
+            <form method="post" action="/ajustes/rechazados/{{ r.id }}/quitar"><button class="btn sm quiet">Quitar del ban</button></form></div></div>
+        {% endfor %}</div>{% else %}<p class="hint">Ninguno todavía.</p>{% endif %}</section>
+      <section class="sblock" id="s-datos"><h2>Tus datos y sesión</h2>
+        <div class="btn-row" style="justify-content:space-between"><span><b style="color:var(--text-bright)">Exportar</b><br><span class="hint">Notas, listas y {{ waifus_label(request.state.user_id)|lower }} en JSON</span></span><a class="btn ghost" href="/ajustes/exportar">{{ ic('dl', 'sm') }} Exportar</a></div>
+        <div class="btn-row" style="justify-content:space-between"><span><b style="color:var(--text-bright)">Sesión</b><br><span class="hint">Conectada como {{ request.state.username }}</span></span><form method="post" action="/logout"><button class="btn danger">{{ ic('out', 'sm') }} Cerrar sesión</button></form></div>
+      </section>
+    </div>
+  </div>
 </div>
+{% if invitacion %}
+{% set link = '/activar?usuario=' ~ invitacion.username %}
+<dialog class="invite-dialog" id="invite-dialog">
+  <div class="invite-card">
+    <p class="invite-title">{{ 'Cuenta «' ~ invitacion.username ~ '» creada' if invitacion.nueva else 'Código nuevo para «' ~ invitacion.username ~ '»' }}</p>
+    <p class="hint">Solo se enseña ahora. Sirve una vez y caduca en {{ invite_days }} días.{% if not invitacion.nueva %} Su contraseña anterior ya no vale.{% endif %}</p>
+    <code class="invite-code-big" id="invite-code">{{ invitacion.code }}</code>
+    <div class="invite-msg" id="invite-msg">Te he invitado a TaraTrack.
+1. Entra en <span data-origin></span>{{ link }}
+2. Usuario: {{ invitacion.username }}
+3. Código: {{ invitacion.code }}
+Ahí mismo eliges tu contraseña. El código sirve una sola vez y caduca en {{ invite_days }} días.</div>
+    <div class="btn-row invite-actions">
+      <button type="button" class="btn ghost" data-copy="#invite-code">{{ ic('copy', 'sm') }} Copiar código</button>
+      <button type="button" class="btn" data-copy="#invite-msg">{{ ic('copy', 'sm') }} Copiar mensaje con el enlace</button>
+      <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Hecho</button>
+    </div>
+  </div>
+</dialog>
+<script>
+(() => {
+  const dlg = document.getElementById("invite-dialog");
+  dlg.querySelectorAll("[data-origin]").forEach((el) => { el.textContent = location.origin; });
+  const copy = async (text) => {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch (e) {
+      const ta = Object.assign(document.createElement("textarea"), { value: text });
+      document.body.append(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); return ok;
+    }
+  };
+  dlg.querySelectorAll("[data-copy]").forEach((btn) => btn.addEventListener("click", async () => {
+    const label = btn.innerHTML;
+    if (await copy(dlg.querySelector(btn.dataset.copy).textContent.trim())) {
+      btn.textContent = "Copiado"; setTimeout(() => { btn.innerHTML = label; }, 1800);
+    }
+  }));
+  dlg.showModal();
+  history.replaceState(null, "", "/ajustes#s-users");
+})();
+</script>
 {% endif %}
-
-<div class="settings-section">
-    <h2>Perfil de gustos</h2>
-    <p class="page-hint">Títulos puntuados ya cubiertos por el perfil (para la predicción "% que te gustará" del calendario de temporada), día a día.</p>
-    {% if not profile_history %}
-    <p class="empty">Todavía no hay ninguna foto — vuelve mañana.</p>
-    {% else %}
-    <div class="stat-bars profile-bars">
-        {% for h in profile_history %}
-        <div class="stat-bar-row">
-            <span class="stat-bar-label wide">{{ h.date }}</span>
-            <div class="stat-bar-track">
-                <div class="stat-bar-fill" style="width: {{ (h.covered / h.total_rated * 100) if h.total_rated else 0 }}%"></div>
-            </div>
-            <span class="stat-bar-count">{{ h.covered }}/{{ h.total_rated }}</span>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-</div>
-
-<div class="settings-section hero">
-    <div class="section-head">
-        <h2>Índice de afinidad — pesos</h2>
-        <span class="hero-tag">Avanzado</span>
-    </div>
-    <p class="page-hint">Cómo se combinan las señales de apetito y calidad en /estadísticas y en la predicción "% que te gustará". Guardar recalcula el perfil en segundo plano, tarda alrededor de un minuto en aplicarse.</p>
-
-    {# Estado de recálculo, "Ver calibración" y el desplegable en una fila. #}
-    <div class="hero-controls">
-        <div hx-get="/afinidad/estado" hx-trigger="load" hx-swap="outerHTML"></div>
-        <a class="btn secondary" href="/afinidad/calibracion">Ver calibración de la predicción</a>
-        <input type="checkbox" id="weights-toggle" class="weights-toggle-check">
-        <label for="weights-toggle" class="weights-summary">
-            <span>Ver / editar pesos</span>
-            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-        </label>
-    </div>
-    <div class="weights-body">
-    <form method="post" action="/ajustes/afinidad" class="affinity-weights-form">
-        <fieldset class="weight-section">
-            <legend>Apetito</legend>
-            <div class="weight-grid">
-            {% for key, label in [("volumen","Volumen"), ("lift","Lift"), ("ritmo","Ritmo"), ("dia1","Día 1"), ("rewatch","Rewatch"), ("curacion","Curación")] %}
-            <div class="weight-field">
-                <label>{{ label }}</label>
-                <input type="number" step="0.01" name="appetite_weights__{{ key }}" value="{{ affinity_config.appetite_weights[key] }}">
-                <span class="weight-hint">por defecto: {{ affinity_defaults.appetite_weights[key] }}</span>
-            </div>
-            {% endfor %}
-            </div>
-        </fieldset>
-        <fieldset class="weight-section">
-            <legend>Calidad</legend>
-            <div class="weight-grid">
-            {% for key, label in [("techo","Techo"), ("suelo","Suelo"), ("disfrute","Disfrute"), ("media","Media suavizada"), ("elo","Corrección Elo")] %}
-            <div class="weight-field">
-                <label>{{ label }}</label>
-                <input type="number" step="0.01" name="quality_weights__{{ key }}" value="{{ affinity_config.quality_weights[key] }}">
-                <span class="weight-hint">por defecto: {{ affinity_defaults.quality_weights[key] }}</span>
-            </div>
-            {% endfor %}
-            </div>
-        </fieldset>
-        <fieldset class="weight-section">
-            <legend>Combinación</legend>
-            <div class="weight-grid">
-            <div class="weight-field">
-                <label>Exponente apetito</label>
-                <input type="number" step="0.01" name="appetite_exp" value="{{ affinity_config.appetite_exp }}">
-                <span class="weight-hint">por defecto: {{ affinity_defaults.appetite_exp }}</span>
-            </div>
-            <div class="weight-field">
-                <label>Exponente calidad</label>
-                <input type="number" step="0.01" name="quality_exp" value="{{ affinity_config.quality_exp }}">
-                <span class="weight-hint">por defecto: {{ affinity_defaults.quality_exp }}</span>
-            </div>
-            <div class="weight-field">
-                <label>Umbral de desfase</label>
-                <input type="number" step="1" name="gap_threshold" value="{{ affinity_config.gap_threshold }}">
-                <span class="weight-hint">por defecto: {{ affinity_defaults.gap_threshold }}</span>
-            </div>
-            <div class="weight-field">
-                <label>Castigo por desfase</label>
-                <input type="number" step="0.01" name="gap_factor" value="{{ affinity_config.gap_factor }}">
-                <span class="weight-hint">por defecto: {{ affinity_defaults.gap_factor }}</span>
-            </div>
-            </div>
-        </fieldset>
-        <fieldset class="weight-section">
-            <legend>Predicción "% que te gustará"</legend>
-            <div class="weight-grid">
-            {% for key, label in [("precuela","Precuela puntuada"), ("cross_rec","Cross-recs AniList"), ("estudio","Estudio"), ("tags","Tags"), ("genero","Género")] %}
-            <div class="weight-field">
-                <label>{{ label }}</label>
-                <input type="number" step="0.1" name="predict_weights__{{ key }}" value="{{ affinity_config.predict_weights[key] }}">
-                <span class="weight-hint">por defecto: {{ affinity_defaults.predict_weights[key] }}</span>
-            </div>
-            {% endfor %}
-            </div>
-        </fieldset>
-        <div class="weights-actions">
-            <button class="secondary" type="submit">Guardar y recalcular</button>
-        </div>
-    </form>
-    <form method="post" action="/ajustes/afinidad/restablecer">
-        <button class="btn-text" type="submit">Restablecer por defecto</button>
-    </form>
-    </div>
-</div>
-
-<div class="settings-section">
-    <h2>Títulos con BAN</h2>
-    <p class="page-hint">Estos ya no salen en Recomendados. Quítalos de aquí si te equivocaste.</p>
-    {% if not rechazados %}
-    <p class="empty">Ninguno todavía.</p>
-    {% endif %}
-    {% for r in rechazados %}
-    <div class="list-row">
-        <img src="{{ r.poster_path|poster_size('w185') if r.poster_path else '/static/img/sin-portada.svg' }}"{% if r.poster_path %} srcset="{{ r.poster_path|poster_size('w185') }} 1x, {{ r.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ r.title }}" loading="lazy">
-        <div class="info">
-            <span>{{ r.title }}</span>
-            <div class="year">{{ "Serie" if r.type == "show" else "Película" }}</div>
-        </div>
-        <form method="post" action="/ajustes/rechazados/{{ r.id }}/quitar">
-            <button class="secondary">Quitar del ban</button>
-        </form>
-    </div>
-    {% endfor %}
-</div>
+<script>
+document.addEventListener("click", (e) => {
+  document.querySelectorAll("details.row-menu[open]").forEach((d) => { if (!d.contains(e.target)) d.open = false; });
+});
+document.querySelectorAll("details.row-menu").forEach((d) => d.addEventListener("toggle", () => {
+  if (d.open) document.querySelectorAll("details.row-menu[open]").forEach((o) => { if (o !== d) o.open = false; });
+}));
+</script>
 {% endblock %}

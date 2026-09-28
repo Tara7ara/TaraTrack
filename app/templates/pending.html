@@ -1,199 +1,134 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, card, poster, pct, head, empty %}
 {% block content %}
-{# Al volver a la pestaña (visibilitychange a "visible") se vuelve a pedir la página
-   entera, sin websockets ni polling. No se refresca mientras haya una confirmación de
-   doble tick abierta, o se perdería el segundo toque.
-
-   hx-select se hereda en htmx: hx-disinherit evita que los botones de dentro filtren
-   sus respuestas con "#pendientes-page" y acaben sustituyendo su contenido por nada.
-   Los filtros que necesitan hx-select lo declaran explícito. #}
+{% set qs = "tipo=" ~ tipo ~ "&orden=" ~ orden ~ "&direccion=" ~ direccion ~ "&q=" ~ (q|urlencode) ~ "&genero=" ~ (genero|urlencode) ~ "&afinidad_alta=" ~ afinidad_alta ~ "&tags=" ~ (tags|urlencode) %}
+{% set nf = (1 if genero else 0) + (1 if afinidad_alta else 0) + (tag_chips|length if tag_chips else 0) %}
 <div id="pendientes-page"
-     hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo={{ tipo }}"
-     hx-select="#pendientes-page" hx-disinherit="hx-select" hx-target="#pendientes-page" hx-swap="outerHTML"
+     hx-get="/pendientes" hx-include="#pend-form" hx-select="#pendientes-page" hx-disinherit="hx-select hx-include" hx-target="#pendientes-page" hx-swap="outerHTML"
      data-version="{{ library_version }}"
-     hx-trigger="visibilitychange[document.visibilityState=='visible' && !document.querySelector('.home-card-check.no')] from:document, tt-refresh">
+     hx-trigger="visibilitychange[document.visibilityState=='visible' && !document.querySelector('.confirm-inline, details[open], .actions .danger-solid')] from:document, tt-refresh">
+<div class="page">
+    <div id="pend-head" class="lib-head">
+    {{ head('¿Qué tengo por ver?', 'Pendientes') }}
+    <div class="lib-stats">
+      <span><b>{{ entries|length }}</b> por ver</span>
+      {% if nuevas %}<span><b>{{ nuevas|length }}</b> de esta temporada</span>{% endif %}
+      {% if n_top %}<a href="/pendientes?{{ qs|replace('afinidad_alta=' ~ afinidad_alta, 'afinidad_alta=1') }}" class="gold"><b>{{ n_top }}</b> candidato{{ 's' if n_top != 1 }} a obra maestra</a>{% endif %}
+    </div>
+    <div class="lib-acts">
+      <a class="btn ghost" href="/sorprendeme?tipo={{ tipo }}" hx-boost="false">{{ ic('shuffle', 'sm') }} Sorpréndeme</a>
+      <button class="btn" type="button" onclick="ttSearch()">{{ ic('plus', 'sm') }} Añadir algo nuevo</button>
+    </div>
+  </div>
 
-{% if continuar %}
-<h1>Continuar viendo</h1>
-{# id fijo para que marcar_vista_rapido inserte aquí la tarjeta nueva por OOB
-   (hx-swap-oob="afterbegin:#continuar-carousel", ver titulo.py). #}
-<div class="carousel" id="continuar-carousel">
-    {% for c in continuar %}
-    {% include "partials/home_card.html" %}
-    {% endfor %}
-</div>
-{% endif %}
-
-{% if nuevas %}
-<h1{% if continuar %} class="section-gap"{% endif %}>Animes pendientes de la temporada</h1>
-<div class="carousel">
-    {% for c in nuevas %}
-    {% include "partials/home_card.html" %}
-    {% endfor %}
-</div>
-{% endif %}
-
-<h1{% if continuar or nuevas %} class="section-gap"{% endif %}>Pendientes</h1>
-<p class="page-hint">{{ entries|length }} título{{ "s" if entries|length != 1 else "" }} pendiente{{ "s" if entries|length != 1 else "" }}{% if nuevas %} · {{ nuevas|length }} de esta temporada{% endif %}</p>
-{# En móvil, solo buscador y "Filtros" a la vista; el resto (.filter-extra) se despliega
-   con el checkbox oculto (ver .mobile-filters en app.css). #}
-{% set filtros_activos = (1 if genero else 0) + (1 if afinidad_alta else 0) + (tag_chips|length if tag_chips else 0) %}
-<div class="mobile-filters">
-<input type="checkbox" id="filters-toggle" class="filters-toggle" hidden>
-<form class="filter-bar" action="/pendientes" method="get">
-    <input type="hidden" name="tipo" value="{{ tipo }}">
+  <form class="toolbar" id="pend-form" action="/pendientes" method="get"
+        hx-get="/pendientes" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-select-oob="#pend-head, #pend-tabs, #pend-dir, #pend-vista, #pend-filters-sum, #pend-tagfilter, #pend-chips" hx-swap="outerHTML" hx-push-url="true"
+        hx-trigger="submit, change from:#pend-orden, change from:#pend-genero, change from:#pend-95"
+        hx-boost="true">
     <input type="hidden" name="direccion" value="{{ direccion }}">
     <input type="hidden" name="tags" value="{{ tags }}">
-    <input type="text" name="q" value="{{ q }}" placeholder="Buscar en pendientes..." autocomplete="off"
-           hx-get="/pendientes" hx-include="closest form"
-           hx-trigger="input changed delay:400ms, search"
-           hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
-    <label for="filters-toggle" class="btn secondary filters-toggle-label">Filtros{% if filtros_activos %} ({{ filtros_activos }}){% endif %}</label>
-    <span class="sort-control filter-extra">
-    <select name="orden" hx-get="/pendientes" hx-include="closest form"
-            hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
-        <option value="anadido" {{ "selected" if orden == "anadido" }}>Añadido</option>
-        <option value="lanzamiento" {{ "selected" if orden == "lanzamiento" }}>Estreno</option>
-        <option value="nota_internet" {{ "selected" if orden == "nota_internet" }}>Nota internet</option>
-        <option value="titulo" {{ "selected" if orden == "titulo" }}>Título</option>
-        <option value="prediccion" {{ "selected" if orden == "prediccion" }}>Predicción</option>
-    </select>
-    <a class="btn secondary sort-dir" title="Cambiar a {{ 'ascendente' if direccion == 'desc' else 'descendente' }}"
-       href="/pendientes?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
-       hx-get="/pendientes?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
-       hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
-        {{ "↓" if direccion == "desc" else "↑" }}
-    </a>
-    </span>
-    {% if generos %}
-    <select name="genero" class="filter-extra" hx-get="/pendientes" hx-include="closest form"
-            hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
-        <option value="">Todos los géneros</option>
-        {% for g in generos %}
-        <option value="{{ g }}" {{ "selected" if g == genero }}>{{ g }}</option>
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    <div class="seg" role="tablist" id="pend-tabs" hx-target="#pendientes-page" hx-select="#pendientes-page" hx-select-oob="unset">
+      {% for v, l in tipo_tabs(request.state.user_id) %}
+      <a href="/pendientes?{{ qs|replace('tipo=' ~ tipo ~ '&', 'tipo=' ~ v ~ '&') }}" class="{{ 'active' if tipo == v }}">{{ l }}</a>
+      {% endfor %}
+    </div>
+    <label class="search-field grow">{{ ic('search', 'sm') }}<input class="input" type="search" name="q" id="pend-q" value="{{ q }}" placeholder="Filtrar pendientes…" autocomplete="off"
+           hx-get="/pendientes" hx-include="#pend-form" hx-trigger="input changed delay:400ms, search" hx-push-url="unset" hx-replace-url="true" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-select-oob="#pend-head, #pend-tabs, #pend-dir, #pend-vista, #pend-filters-sum, #pend-tagfilter, #pend-chips" hx-swap="outerHTML"></label>
+    <span class="sort-group">
+      <select class="input" name="orden" id="pend-orden" aria-label="Ordenar">
+        {% for v, l in [('anadido', 'Añadido'), ('lanzamiento', 'Estreno'), ('nota_internet', 'Nota internet'), ('titulo', 'Título'), ('prediccion', 'Te gustará')] %}
+        <option value="{{ v }}"{{ ' selected' if orden == v }}>{{ l }}</option>
         {% endfor %}
-    </select>
-    {% endif %}
-    <label class="filter-checkbox filter-extra">
-        <input type="checkbox" name="afinidad_alta" value="1" {{ "checked" if afinidad_alta }}
-               hx-get="/pendientes" hx-include="closest form"
-               hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">
-        Solo 95%+
-    </label>
-    <a class="btn secondary filter-extra" href="/sorprendeme?tipo={{ tipo }}">Sorpréndeme</a>
-</form>
-{% if tag_options or tag_chips %}
-{# Filtro por tags de AniList: cada tag se añade como "con" o "sin" y cada chip se
-   quita con un clic. Navegación normal (no htmx): chips y campo oculto `tags` cambian
-   a la vez. #}
-<div class="filter-bar tag-filter filter-extra" data-base="/pendientes?{{ base_qs }}" data-tags="{{ tags }}">
-    <select data-prefix="">
-        <option value="">Con tag…</option>
-        {% for t, n in tag_options %}<option value="{{ t }}">{{ t }} ({{ n }})</option>{% endfor %}
-    </select>
-    <select data-prefix="-">
-        <option value="">Sin tag…</option>
-        {% for t, n in tag_options %}<option value="{{ t }}">{{ t }} ({{ n }})</option>{% endfor %}
-    </select>
-    {% for tok, resto in tag_chips %}
-    <a class="tag-chip {{ 'tag-chip-sin' if tok.startswith('-') else '' }}"
-       href="/pendientes?{{ base_qs }}&tags={{ resto|urlencode }}" title="Quitar">
-        {{ "sin " ~ tok[1:] if tok.startswith("-") else tok }} ×</a>
-    {% endfor %}
-</div>
-<script>
-document.querySelectorAll(".tag-filter select").forEach((sel) => {
-    sel.addEventListener("change", () => {
-        if (!sel.value) return;
-        const bar = sel.closest(".tag-filter");
-        const tags = [bar.dataset.tags, sel.dataset.prefix + sel.value].filter(Boolean).join(",");
-        location.href = bar.dataset.base + "&tags=" + encodeURIComponent(tags);
-    });
-});
-</script>
-{% endif %}
-</div>
-<div id="pendientes-section">
-<div class="sort-bar">
-    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}" class="{{ 'active' if not tipo }}"
-       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Todo</a>
-    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=series" class="{{ 'active' if tipo == 'series' }}"
-       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=series" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Series</a>
-    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}"
-       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=pelis" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Pelis</a>
-    <a href="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=anime" class="{{ 'active' if tipo == 'anime' }}"
-       hx-get="/pendientes?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&afinidad_alta={{ afinidad_alta }}&tags={{ tags|urlencode }}&tipo=anime" hx-target="#pendientes-section" hx-select="#pendientes-section" hx-swap="outerHTML">Anime</a>
-</div>
-<div id="pendientes-list">
-{% if not entries and not continuar %}
-{# Estado vacío "primera vez" (bandeja), distinto del de filtro sin resultados (lupa). #}
-<div class="empty-state">
-    <span class="empty-icon">
-        <svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+      </select>
+      <a class="btn quiet icon" id="pend-dir" hx-target="#pendientes-page" hx-select="#pendientes-page" hx-select-oob="unset" title="{{ 'Descendente' if direccion == 'desc' else 'Ascendente' }}"
+         href="/pendientes?{{ qs|replace('direccion=' ~ direccion, 'direccion=' ~ ('asc' if direccion == 'desc' else 'desc')) }}">{{ ic('down' if direccion == 'desc' else 'up', 'sm') }}</a>
     </span>
-    <h3>Nada pendiente todavía</h3>
-    <p>Busca una serie o película y añádela para empezar a hacer seguimiento.</p>
-    <a href="/buscar" class="manual-link-inline">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        Buscar algo
-    </a>
-</div>
-{% elif not entries %}
-<div class="empty-state">
-    <span class="empty-icon">
-        <svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8.3" y1="8.3" x2="13.7" y2="13.7" stroke-width="1.3"></line><line x1="13.7" y1="8.3" x2="8.3" y2="13.7" stroke-width="1.3"></line></svg>
-    </span>
-    <h3>{{ "Nada con «" + q + "»" if q else "Nada con este filtro" }}</h3>
-    <p>Prueba a cambiar el filtro o busca otro título.</p>
-</div>
-{% endif %}
-{% for e in entries %}
-<div class="list-row swipeable">
-    <div class="swipe-bg">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        <span>Vista</span>
-    </div>
-    <div class="swipe-content">
-        <span class="poster-ribbon-host">
-        {% if e.poster_path %}
-        <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
-        {% else %}
-        <img src="/static/img/sin-portada.svg" alt="Sin portada" loading="lazy">
-        {% endif %}
-        {% with row = e %}{% include "partials/status_ribbon.html" %}{% endwith %}
-        </span>
-        <div class="info">
-            <a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">{{ e.title }}</a>
-            <div class="meta-row">
-                <span class="meta-chip">{{ e.year or "—" }} · {{ "Serie" if e.type == "show" else "Película" }}</span>
-                {% if e.vote_average %}<span class="meta-chip rating">Internet: {{ e.vote_average|fmt_rating(1) }}</span>{% endif %}
-                {% if e.predict is not none %}<span class="meta-chip rating">{{ e.predict }}%</span>{% endif %}
-            </div>
-        </div>
-        {% set tmdb_id = e.tmdb_id %}{% set type = e.type %}{% set state = "pending" %}
-        {% include "partials/entry_actions.html" %}
-    </div>
-</div>
-{% endfor %}
-</div>
-</div>
+    <details class="filters-pop"{% if nf %} data-active{% endif %}>
+      <summary class="btn {{ 'on' if nf else 'quiet' }}" id="pend-filters-sum">{{ ic('filter', 'sm') }} Filtros{% if nf %} ({{ nf }}){% endif %}</summary>
+      <div class="filters-panel">
+        <div class="row"><label class="lbl">Vista</label>
+    <div class="seg" id="pend-vista" hx-target="#pendientes-page" hx-select="#pendientes-page" hx-select-oob="unset">
+      <a href="/pendientes?{{ qs }}&vista=grid" class="{{ 'active' if vista == 'grid' }}" title="Carátulas">{{ ic('grid', 'sm') }}&nbsp;Carátulas</a>
+      <a href="/pendientes?{{ qs }}&vista=lista" class="{{ 'active' if vista == 'lista' }}" title="Lista">{{ ic('list', 'sm') }}&nbsp;Lista</a>
+    </div></div>
+        <div class="row"><label class="lbl" for="pend-genero">Género</label>
+          <select class="input" name="genero" id="pend-genero">
+            <option value="">Todos los géneros</option>
+            {% for g in generos %}<option value="{{ g }}"{{ ' selected' if g == genero }}>{{ g }}</option>{% endfor %}
+          </select>
+          <label class="check"><input type="checkbox" name="afinidad_alta" value="1" id="pend-95"{{ ' checked' if afinidad_alta }}> Solo 95%+</label></div>
+        <div id="pend-tagfilter">{% if tag_options or tag_chips %}
+        <div class="row tag-filter" data-base="/pendientes?{{ base_qs }}" data-tags="{{ tags }}"><label class="lbl">Tags</label>
+          <select class="input" data-prefix=""><option value="">Con tag…</option>{% for t, n in tag_options %}<option value="{{ t }}">{{ t }} ({{ n }})</option>{% endfor %}</select>
+          <select class="input" data-prefix="-"><option value="">Sin tag…</option>{% for t, n in tag_options %}<option value="{{ t }}">{{ t }} ({{ n }})</option>{% endfor %}</select></div>
+        {% endif %}</div>
+      </div>
+    </details>
+  </form>
 
+  <div class="chips" id="pend-chips"{% if not (genero or afinidad_alta or tag_chips) %} hidden{% endif %}
+       hx-boost="true" hx-target="#pendientes-page" hx-select="#pendientes-page" hx-swap="outerHTML">
+    {% if genero %}<a class="chip acc" href="/pendientes?{{ qs|replace('genero=' ~ (genero|urlencode), 'genero=') }}">{{ genero }} {{ ic('x', 'sm') }}</a>{% endif %}
+    {% if afinidad_alta %}<a class="chip acc" href="/pendientes?{{ qs|replace('afinidad_alta=1', 'afinidad_alta=') }}">95%+ {{ ic('x', 'sm') }}</a>{% endif %}
+    {% for tok, resto in tag_chips %}<a class="chip {{ 'not' if tok.startswith('-') else 'acc' }}" href="/pendientes?{{ base_qs }}&tags={{ resto|urlencode }}">{{ 'sin ' ~ tok[1:] if tok.startswith('-') else tok }} {{ ic('x', 'sm') }}</a>{% endfor %}
+  </div>
+
+  <div id="pendientes-section">
+    {% if not entries and not continuar and not q and not nf and not tipo %}
+      {% call empty('inbox', 'Nada pendiente todavía', 'Busca una serie o película y añádela para empezar a hacer seguimiento.') %}<button class="btn ghost" type="button" onclick="ttSearch()">{{ ic('search', 'sm') }} Buscar algo</button>{% endcall %}
+    {% elif not entries %}
+      {% call empty('search', ('Nada en pendientes con «' ~ q ~ '»') if q else 'Nada con este filtro', '¿Buscas algo nuevo?') %}<button class="btn ghost" type="button" onclick="ttSearch()">{{ ic('search', 'sm') }} Buscar fuera de tu lista</button>{% endcall %}
+    {% elif vista == 'lista' %}
+    <div class="lrows">
+      {% for e in entries %}
+      {% set rb = e|show_status_ribbon %}
+      <div class="list-row swipeable lrow">
+        <div class="swipe-bg">{{ ic('check') }} Vista</div>
+        <div class="swipe-content lrow-in">
+          {{ poster(e.poster_path, e.title, rb=rb, href='/titulo/' ~ e.tmdb_id ~ '/' ~ e.type, small=true, size='w185') }}
+          <div class="info"><a href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">{{ e.title }}</a>
+            <div class="m"><span>{{ e.year or '—' }} · {{ 'Serie' if e.type == 'show' else 'Película' }}</span>{% if e.vote_average %}<span>Internet {{ e.vote_average|fmt_rating(1) }}</span>{% endif %}{% if e.predict is not none %}<span>{{ pct(e.predict, e.predict_confidence) }} te gustará</span>{% endif %}</div></div>
+          <div class="acts">{% set tmdb_id = e.tmdb_id %}{% set type = e.type %}{% set state = "pending" %}{% include "partials/entry_actions.html" %}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="pgrid">
+      {% for e in entries %}
+      {% set gold = e.predict is not none and e.predict >= 95 and e.predict_confidence is not none and e.predict_confidence > 10 %}
+      {% set l2 = ('Internet <b>' ~ (e.vote_average|fmt_rating(1)) ~ '</b>' if e.vote_average else '') ~ ('<span class="sep">·</span>' if e.vote_average and e.predict is not none else '') ~ ('<span class="pct' ~ (' gold' if gold else '') ~ '">' ~ e.predict ~ '%</span> te gustará' if e.predict is not none else '') %}
+      {% call card(e.poster_path, e.title, href='/titulo/' ~ e.tmdb_id ~ '/' ~ e.type, rb=e|show_status_ribbon,
+                   l1=(e.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if e.type == 'show' else 'Película'), l2=l2,
+                   gold=gold) %}
+        {% set tmdb_id = e.tmdb_id %}{% set type = e.type %}{% set state = "pending" %}{% include "partials/entry_actions.html" %}
+      {% endcall %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
 </div>
 <script>
-// Con la página abierta y visible (p. ej. en el ordenador mientras marcas desde el
-// móvil), cada 20 s y al volver a la ventana se pide la huella de la biblioteca; si ha
-// cambiado, se refresca #pendientes-page. No se refresca a mitad de una interacción.
-if (!window.__ttVersionPoll) {
-    window.__ttVersionPoll = true;
-    const busy = () => document.querySelector(".home-card-check.no, .filters-toggle:checked, details[open]")
-        || ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement && document.activeElement.tagName);
+if (!window.__ttPendTags) {
+    window.__ttPendTags = true;
+    document.addEventListener("change", (e) => {
+        const sel = e.target.closest(".tag-filter select");
+        if (!sel || !sel.value) return;
+        const bar = sel.closest(".tag-filter");
+        const url = bar.dataset.base + "&tags=" + encodeURIComponent([bar.dataset.tags, sel.dataset.prefix + sel.value].filter(Boolean).join(","));
+        htmx.ajax("GET", url, { target: "#pendientes-page", select: "#pendientes-page", swap: "outerHTML" })
+            .then(() => history.pushState({ htmx: true }, "", url));
+    });
+}
+if (!window.__ttPendPoll) {
+    window.__ttPendPoll = true;
+    const busy = () => document.querySelector(".confirm-inline, details[open], .actions .danger-solid") || ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement && document.activeElement.tagName);
     const check = async () => {
         const page = document.getElementById("pendientes-page");
         if (!page || document.visibilityState !== "visible" || busy()) return;
-        try {
-            const r = await fetch("/pendientes/version", { cache: "no-store" });
-            if (r.ok && (await r.text()) !== page.dataset.version) htmx.trigger(page, "tt-refresh");
-        } catch (e) { /* sin red: se reintenta en la siguiente vuelta */ }
+        try { const r = await fetch("/pendientes/version", { cache: "no-store" }); if (r.ok && (await r.text()) !== page.dataset.version) htmx.trigger(page, "tt-refresh"); } catch (e) {}
     };
     setInterval(check, 20000);
     window.addEventListener("focus", check);

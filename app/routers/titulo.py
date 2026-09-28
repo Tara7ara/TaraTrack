@@ -1,17 +1,18 @@
 """app.routers.titulo - ficha técnica y todas sus acciones."""
+import json
+import logging
 import os
+from datetime import date
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app import anime, config, repo, tmdb, web
+from app import anime, config, repo, thumbs, tmdb, web
 from app.db import get_connection
 from app.web import templates
 
 router = APIRouter()
-
-
 
 
 @router.post("/vista/{tmdb_id}/{type}", response_class=HTMLResponse)
@@ -53,8 +54,6 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
     return HTMLResponse(html + oob)
 
 
-
-
 @router.get("/marcar-vista/{tmdb_id}/{type}", response_class=HTMLResponse)
 def marcar_vista_form(request: Request, tmdb_id: int, type: str, volver: str = ""):
     with get_connection() as conn:
@@ -82,11 +81,7 @@ def marcar_vista_form(request: Request, tmdb_id: int, type: str, volver: str = "
     )
 
 
-
-
 CATEGORY_FIELDS = ["historia", "animacion", "personajes", "musica", "disfrute"]
-
-
 
 
 @router.post("/marcar-vista/{entry_id}", response_class=HTMLResponse)
@@ -178,8 +173,6 @@ def marcar_vista_submit(
     return RedirectResponse(destino, status_code=303)
 
 
-
-
 @router.get("/titulo/{tmdb_id}/{type}", response_class=HTMLResponse)
 def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0, apunte: int = 0):
     """Unica ruta que llamaba a TMDB sin ningun try/except: abrir por primera vez la
@@ -207,15 +200,10 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0,
                 episodes = repo.list_episodes(conn, title_row["id"])
             except Exception:
                 episodes = repo.list_episodes(conn, title_row["id"])
-        # Filtrado por user_id: si no, los botones de la ficha actuarían sobre la
-        # entry de otro usuario que tenga el mismo título.
         entry = conn.execute(
             "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",
             (title_row["id"], request.state.user_id),
         ).fetchone()
-        # "Visto ahora" tiene en cuenta el rewatch en curso. Visto, veces, comentario y
-        # favorito son de este usuario; se cargan en una sola pasada por los ids de la
-        # serie. dict() porque sqlite3.Row no admite claves nuevas.
         rewatch_started_at = entry["rewatch_started_at"] if entry else None
         episodes = [dict(ep) for ep in episodes]
         ep_ids = [ep["id"] for ep in episodes]
@@ -237,7 +225,6 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0,
                 (*ep_ids, request.state.user_id),
             ):
                 state_by_ep[row["episode_id"]] = row
-            # Debate por episodio: una sola query para toda la ficha.
             for row in conn.execute(
                 f"""SELECT episode_comments.id, episode_comments.episode_id, episode_comments.body,
                            episode_comments.created_at, episode_comments.user_id, users.username,
@@ -261,15 +248,15 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0,
             # pendientes.py) - abre solo el hilo de ESE episodio, con el enlace
             # llevando ademas a "#ep-{id}" para que el navegador haga scroll solo.
             ep["open_debate"] = comentar == ep["id"]
-            # `apunte` abre el comentario privado del episodio (lo usa el aviso
-            # "¿comentas?"); `comentar` abre el debate y lo usa /comentarios/siguiente.
             ep["open_note"] = apunte == ep["id"]
         is_favorite = repo.is_entry_favorite(conn, entry["id"], request.state.user_id) if entry else False
 
         try:
             repo.sync_characters(conn, title_row)
         except Exception:
-            pass
+            # Best-effort (la ficha no debe caer por esto), pero con rastro en docker logs:
+            # antes un fallo aqui dejaba series sin reparto sin ninguna pista del motivo.
+            logging.exception("personajes: fallo al cargar el reparto de %s", title_row["title"])
         characters = repo.list_characters(conn, title_row["id"], entry["id"] if entry else None)
 
         sessions, plays, rating_history = [], 0, []
@@ -309,18 +296,17 @@ def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0,
             "season_ratings": season_ratings,
             "outcome_label": outcome_label,
             "weekday_override": weekday_override,
+            "today": date.today().isoformat(),
+            "transparent_nav": True,
+            "title": title_row["title"],
         },
     )
-
-
 
 
 MAX_POSTER_BYTES = config.MAX_POSTER_BYTES
 
 
 POSTER_CONTENT_TYPES = config.POSTER_CONTENT_TYPES
-
-
 
 
 @router.post("/titulo/{tmdb_id}/{type}/portada", response_class=HTMLResponse)
@@ -383,8 +369,6 @@ def corregir_desfase_emision(request: Request, tmdb_id: int, type: str, dias: st
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
 
 
-
-
 def _owned_entry_or_404(conn, entry_id: int, user_id: int):
     entry = repo.get_owned_entry_with_title(conn, entry_id, user_id)
     if not entry:
@@ -402,8 +386,6 @@ def volver_a_ver(request: Request, entry_id: int):
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
 
 
-
-
 @router.post("/entrada/{entry_id}/deshacer-vista", response_class=HTMLResponse)
 def deshacer_vista(request: Request, entry_id: int):
     """Deshace un "Marcar vista" por error, antes de puntuar: vuelve a pending y
@@ -412,8 +394,6 @@ def deshacer_vista(request: Request, entry_id: int):
         entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.undo_mark_watched(conn, entry_id)
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
-
-
 
 
 @router.post("/entrada/{entry_id}/quitar-nota", response_class=HTMLResponse)
@@ -426,8 +406,6 @@ def quitar_nota(request: Request, entry_id: int):
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
 
 
-
-
 @router.post("/entrada/{entry_id}/fecha-visionado", response_class=HTMLResponse)
 def corregir_fecha_visionado(request: Request, entry_id: int, fecha: str = Form(...)):
     """Corrige la fecha de visionado de algo ya visto, sin tocar nota ni comentario."""
@@ -435,8 +413,6 @@ def corregir_fecha_visionado(request: Request, entry_id: int, fecha: str = Form(
         entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         repo.set_watched_at(conn, entry_id, fecha)
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
-
-
 
 
 @router.post("/entrada/{entry_id}/habito", response_class=HTMLResponse)
@@ -450,8 +426,6 @@ def entrada_habito_toggle(request: Request, entry_id: int):
     )
 
 
-
-
 @router.post("/entrada/{entry_id}/autover", response_class=HTMLResponse)
 def entrada_autover_toggle(request: Request, entry_id: int):
     """Toggle de autover en la ficha - series como One Piece, que se autoveen solas
@@ -462,8 +436,6 @@ def entrada_autover_toggle(request: Request, entry_id: int):
     return templates.TemplateResponse(
         request, "partials/autowatch_button.html", {"entry_id": entry_id, "auto_watch": auto_watch}
     )
-
-
 
 
 @router.post("/personaje/{character_id}/favorito/{entry_id}", response_class=HTMLResponse)
@@ -479,8 +451,6 @@ def personaje_favorito_toggle(request: Request, character_id: int, entry_id: int
     )
 
 
-
-
 @router.post("/entrada/{entry_id}/favorito", response_class=HTMLResponse)
 def favorito_toggle(request: Request, entry_id: int):
     with get_connection() as conn:
@@ -492,14 +462,10 @@ def favorito_toggle(request: Request, entry_id: int):
     )
 
 
-
-
 def _episode_watched_now(watched_at, rewatch_started_at) -> bool:
     """"Visto ahora": un visionado anterior al rewatch en curso cuenta como pendiente.
     Mismo criterio que repo._pending_clause, en Python sobre filas ya cargadas."""
     return bool(watched_at) and (not rewatch_started_at or watched_at >= rewatch_started_at)
-
-
 
 
 def _episode_row_response(request: Request, conn, episode_id: int, oob: str = "", open_debate: bool = False):
@@ -533,8 +499,6 @@ def _episode_row_response(request: Request, conn, episode_id: int, oob: str = ""
     return HTMLResponse(html + oob)
 
 
-
-
 @router.post("/episodio/{episode_id}/toggle", response_class=HTMLResponse)
 def episodio_toggle(request: Request, episode_id: int):
     with get_connection() as conn:
@@ -542,8 +506,6 @@ def episodio_toggle(request: Request, episode_id: int):
         just_watched = repo.toggle_episode(conn, episode_id, request.state.user_id)
         oob = web.render_nav_cola_oob(conn, request.state.user_id)
         return _episode_row_response(request, conn, episode_id, oob=oob, open_debate=just_watched)
-
-
 
 
 @router.post("/episodio/{episode_id}/volver-a-ver", response_class=HTMLResponse)
@@ -567,8 +529,6 @@ def episodio_favorito(request: Request, episode_id: int):
     with get_connection() as conn:
         repo.toggle_episode_favorite(conn, episode_id, request.state.user_id)
         return _episode_row_response(request, conn, episode_id)
-
-
 
 
 @router.post("/episodio/{episode_id}/comentario", response_class=HTMLResponse)
@@ -611,8 +571,6 @@ def episodio_debate_borrar(request: Request, episode_id: int, comment_id: int):
         return _episode_row_response(request, conn, episode_id, open_debate=True)
 
 
-
-
 @router.get("/titulo/{tmdb_id}/{type}/similares", response_class=HTMLResponse)
 def titulo_similares(request: Request, tmdb_id: int, type: str):
     """Se carga lazy via htmx para no frenar el render del detalle."""
@@ -625,6 +583,45 @@ def titulo_similares(request: Request, tmdb_id: int, type: str):
     return templates.TemplateResponse(request, "partials/similar_titles.html", {"similares": similares})
 
 
+@router.get("/titulo/{tmdb_id}/{type}/fondos")
+def titulo_fondos(request: Request, tmdb_id: int, type: str):
+    with get_connection() as conn:
+        row = conn.execute("SELECT id, backdrop_path, backdrops, hidden_backdrops FROM titles WHERE tmdb_id = ?", (tmdb_id,)).fetchone()
+    if not row or tmdb_id <= 0:
+        return JSONResponse([])
+    if row["backdrops"] is not None:
+        paths = json.loads(row["backdrops"])
+    else:
+        try:
+            paths = tmdb.get_backdrops(tmdb_id, type)
+        except Exception:
+            logging.warning("fondos de %s: TMDB no responde", tmdb_id, exc_info=True)
+            return JSONResponse([row["backdrop_path"]] if row["backdrop_path"] else [])
+        with get_connection() as conn:
+            conn.execute("UPDATE titles SET backdrops = ? WHERE id = ?", (json.dumps(paths), row["id"]))
+    # El fondo actual primero, para que la rotacion empiece por el que ya se ve; nunca
+    # los quitados a mano.
+    hidden = set(json.loads(row["hidden_backdrops"] or "[]"))
+    if row["backdrop_path"]:
+        paths = [row["backdrop_path"]] + [p for p in paths if p != row["backdrop_path"]]
+    return JSONResponse([{"path": p, "url": thumbs.backdrop_url(p, tmdb_id)} for p in paths if p not in hidden])
+
+
+@router.post("/titulo/{tmdb_id}/{type}/fondos/quitar")
+def titulo_fondos_quitar(request: Request, tmdb_id: int, type: str, path: str = Form(...)):
+    if not request.state.is_admin:
+        return JSONResponse({"ok": False}, status_code=403)
+    with get_connection() as conn:
+        row = conn.execute("SELECT id FROM titles WHERE tmdb_id = ?", (tmdb_id,)).fetchone()
+        if not row or not path.startswith("/"):
+            return JSONResponse({"ok": False}, status_code=404)
+        repo.hide_backdrop(conn, row["id"], path)
+    # Si ese fondo estaba guardado en el servidor, fuera también del disco.
+    try:
+        thumbs.delete_backdrop(path.lstrip("/"))
+    except OSError:
+        logging.warning("no se pudo borrar el fondo %s del disco", path, exc_info=True)
+    return JSONResponse({"ok": True})
 
 
 @router.get("/titulo/{tmdb_id}/{type}/trailer", response_class=HTMLResponse)
@@ -638,8 +635,6 @@ def titulo_trailer(request: Request, tmdb_id: int, type: str):
     return templates.TemplateResponse(request, "partials/trailer.html", {"trailer_url": trailer_url})
 
 
-
-
 @router.post("/titulo/{tmdb_id}/{type}/temporada/{season_number}/marcar", response_class=HTMLResponse)
 def marcar_temporada(request: Request, tmdb_id: int, type: str, season_number: int):
     """Marca vista una temporada entera de golpe (los episodios ya emitidos) - para
@@ -650,8 +645,6 @@ def marcar_temporada(request: Request, tmdb_id: int, type: str, season_number: i
         entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         repo.mark_season_watched(conn, entry["id"], season_number)
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
-
-
 
 
 @router.get("/titulo/{tmdb_id}/{type}/temporada/{season_number}/puntuar", response_class=HTMLResponse)
@@ -684,8 +677,6 @@ def puntuar_temporada_form(request: Request, tmdb_id: int, type: str, season_num
             "weights": repo.CATEGORY_WEIGHTS,
         },
     )
-
-
 
 
 @router.post("/titulo/{tmdb_id}/{type}/temporada/{season_number}/puntuar", response_class=HTMLResponse)
@@ -729,8 +720,6 @@ def puntuar_temporada_submit(
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
 
 
-
-
 @router.post("/titulo/{tmdb_id}/{type}/personajes", response_class=HTMLResponse)
 def titulo_recargar_personajes(request: Request, tmdb_id: int, type: str):
     with get_connection() as conn:
@@ -738,8 +727,6 @@ def titulo_recargar_personajes(request: Request, tmdb_id: int, type: str):
         if title_row:
             repo.resync_characters(conn, title_row)
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
-
-
 
 
 @router.get("/titulo/{tmdb_id}/{type}/personajes/buscar", response_class=HTMLResponse)
@@ -757,8 +744,6 @@ def titulo_buscar_personaje(request: Request, tmdb_id: int, type: str, q: str = 
         "partials/character_search_results.html",
         {"results": results, "query": q, "tmdb_id": tmdb_id, "type": type, "api_down": api_down},
     )
-
-
 
 
 @router.post("/titulo/{tmdb_id}/{type}/personajes/anadir", response_class=HTMLResponse)

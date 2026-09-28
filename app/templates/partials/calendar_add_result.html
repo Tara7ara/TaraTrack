@@ -1,5 +1,6 @@
-{% if ok %}
-<a class="btn secondary char-add" href="/titulo/{{ tmdb_id }}/{{ type }}">✓ Añadido</a>
-{% else %}
-<a class="btn secondary char-add" href="/buscar?q={{ title|urlencode }}">No encontrado, buscar</a>
-{% endif %}
+{% from "partials/ui.html" import ic %}
+{% if compact %}
+{% if ok %}<a class="wck on" href="/titulo/{{ tmdb_id }}/{{ type }}" title="Añadido a pendientes">{{ ic('check', 'sm') }}</a>
+{% else %}<button class="wck" type="button" title="No encontrado, buscar" onclick="ttSearch(); document.getElementById('gsearch').value = '{{ title|replace("'", "") }}'; htmx.trigger('#gsearch', 'search')">{{ ic('search', 'sm') }}</button>{% endif %}
+{% elif ok %}<a class="btn sm on" style="justify-self:start" href="/titulo/{{ tmdb_id }}/{{ type }}">{{ ic('check', 'sm') }} Añadido</a>
+{% else %}<button class="btn sm quiet" style="justify-self:start" type="button" onclick="ttSearch(); document.getElementById('gsearch').value = '{{ title|replace("'", "") }}'; htmx.trigger('#gsearch', 'search')">No encontrado, buscar</button>{% endif %}

@@ -19,18 +19,40 @@ def _owned_or_404(conn, list_id: int, user_id: int):
     return list_row
 
 
-
-
 @router.get("/listas", response_class=HTMLResponse)
 def listas(request: Request):
     with get_connection() as conn:
         lists = repo.list_lists(conn, request.state.user_id)
-        waifus_preview = [w["profile_path"] for w in repo.list_waifus(conn, request.state.user_id)[:10]]
+        waifus = repo.list_waifus(conn, request.state.user_id)
+        fav_eps = repo.list_favorite_episodes(conn, request.state.user_id)
+        comentarios = repo.list_my_comments(conn, request.state.user_id)
+    posters = {}
+    with get_connection() as conn:
+        for lst in lists:
+            posters[lst["id"]] = [i["poster_path"] for i in repo.list_items_in_list(conn, lst["id"])[:5]]
+    cita = next((c for c in comentarios["titles"] if 40 < len(c["comment"]) < 140), None)
     return templates.TemplateResponse(
-        request, "lists.html", {"lists": lists, "waifus_preview": waifus_preview}
+        request, "lists.html",
+        {"lists": lists, "posters": posters, "waifus": waifus, "fav_eps": fav_eps,
+         "n_comentarios": sum(len(comentarios[k]) for k in ("titles", "seasons", "episodes")),
+         "n_debate": len(comentarios["debate"]), "comentario_posters": list(dict.fromkeys(c["poster_path"] for c in comentarios["titles"]))[:5],
+         "cita": cita, "title": "Listas"},
     )
 
 
+@router.get("/comentarios", response_class=HTMLResponse)
+def comentarios(request: Request, pestana: str = "titles", q: str = ""):
+    with get_connection() as conn:
+        data = repo.list_my_comments(conn, request.state.user_id)
+    pestana = pestana if pestana in data else "titles"
+    filas = [
+        r for r in data[pestana]
+        if not q or q.lower() in (r["title"] + " " + (r["comment"] or "")).lower()
+    ]
+    return templates.TemplateResponse(
+        request, "comments.html",
+        {"counts": {k: len(v) for k, v in data.items()}, "filas": filas, "pestana": pestana, "q": q, "title": "Tus comentarios"},
+    )
 
 
 @router.post("/listas", response_class=HTMLResponse)
@@ -42,16 +64,12 @@ def crear_lista(request: Request, name: str = Form(...)):
     return RedirectResponse("/listas", status_code=303)
 
 
-
-
 @router.post("/lista/{list_id}/renombrar", response_class=HTMLResponse)
 def lista_renombrar(request: Request, list_id: int, name: str = Form(...)):
     with get_connection() as conn:
         _owned_or_404(conn, list_id, request.state.user_id)
         repo.rename_list(conn, list_id, request.state.user_id, name)
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
-
-
 
 
 @router.post("/lista/{list_id}/borrar", response_class=HTMLResponse)
@@ -62,16 +80,12 @@ def lista_borrar(request: Request, list_id: int):
     return RedirectResponse("/listas", status_code=303)
 
 
-
-
 @router.post("/lista/{list_id}/mover/{item_id}/{direction}", response_class=HTMLResponse)
 def lista_mover(request: Request, list_id: int, item_id: int, direction: str):
     with get_connection() as conn:
         _owned_or_404(conn, list_id, request.state.user_id)
         repo.move_list_item(conn, list_id, item_id, direction)
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
-
-
 
 
 @router.post("/lista/{list_id}/orden", response_class=HTMLResponse)
@@ -82,8 +96,6 @@ def lista_orden(request: Request, list_id: int, modo: str = Form(...)):
         _owned_or_404(conn, list_id, request.state.user_id)
         repo.set_list_order_mode(conn, list_id, modo)
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
-
-
 
 
 @router.post("/lista/{list_id}/elo/reiniciar", response_class=HTMLResponse)
@@ -97,8 +109,6 @@ def lista_elo_reiniciar(request: Request, list_id: int):
     return RedirectResponse(f"/lista/{list_id}?elo_reset=1", status_code=303)
 
 
-
-
 @router.get("/lista/{list_id}/duelo", response_class=HTMLResponse)
 def lista_duelo(request: Request, list_id: int):
     """Ranking por duelos para una lista concreta - mismo mecanismo que /waifus/duelo."""
@@ -108,17 +118,20 @@ def lista_duelo(request: Request, list_id: int):
         pair_ids = repo.random_duel_pair(conn, "list_items", ids)
         pair = repo.get_list_items_by_ids(conn, list_id, pair_ids) if pair_ids else []
         coverage = repo.duel_coverage(conn, "list_items", ids)
+        ranking = [
+            {"title": i["title"], "image": i["poster_path"], "elo": i["elo"], "href": f"/titulo/{i['tmdb_id']}/{i['type']}"}
+            for i in sorted(repo.list_items_in_list(conn, list_id), key=lambda i: i["elo"], reverse=True)[:8]
+        ]
     return templates.TemplateResponse(
         request,
         "duel.html",
         {
             "pair": pair, "coverage": coverage, "duelo_titulo": f"Duelo: {list_row['name']}",
             "duelo_url": f"/lista/{list_id}/duelo", "duelo_volver": f"/lista/{list_id}",
-            "duelo_ambito": "esta lista",
+            "duelo_ambito": "esta lista", "duelo_scope": list_row["name"], "volver_txt": "Ver la lista",
+            "ranking": ranking,
         },
     )
-
-
 
 
 @router.post("/lista/{list_id}/duelo", response_class=HTMLResponse)
@@ -129,8 +142,6 @@ def lista_duelo_votar(
         _owned_or_404(conn, list_id, request.state.user_id)
         repo.record_duel(conn, "list_items", a_id, b_id, request.state.user_id, resultado)
     return RedirectResponse(f"/lista/{list_id}/duelo", status_code=303)
-
-
 
 
 @router.get("/lista/{list_id}/buscar", response_class=HTMLResponse)
@@ -161,8 +172,6 @@ def lista_buscar(request: Request, list_id: int, q: str = ""):
     )
 
 
-
-
 @router.post("/lista/{list_id}/anadir/{tmdb_id}/{type}", response_class=HTMLResponse)
 def lista_anadir(request: Request, list_id: int, tmdb_id: int, type: str):
     with get_connection() as conn:
@@ -170,8 +179,6 @@ def lista_anadir(request: Request, list_id: int, tmdb_id: int, type: str):
         entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         repo.add_entry_to_list(conn, list_id, entry["id"])
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
-
-
 
 
 @router.get("/lista/{list_id}", response_class=HTMLResponse)

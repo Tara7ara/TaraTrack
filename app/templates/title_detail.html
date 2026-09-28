@@ -1,328 +1,265 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, poster, hero_img %}
 {% block content %}
-<div class="list-row title-header">
-    <div class="nsfw-frame">
-        {% if title_row.poster_path %}
-        <img class="{{ 'nsfw-img' if title_row.is_adult }}" src="{{ title_row.poster_path|poster_size('w185') }}" srcset="{{ title_row.poster_path|poster_size('w185') }} 1x, {{ title_row.poster_path|poster_size('w342') }} 2x" alt="{{ title_row.title }}">
+{% set t = title_row %}
+{% set st = entry.status if entry else 'new' %}
+{% set rb = t|show_status_ribbon %}
+{% set alts = [t.anilist_title_romaji, t.anilist_title_english] | select | reject("equalto", t.title) | unique | list %}
+<input type="checkbox" id="manage-toggle" class="manage-check" hidden>
+<section class="detail-hero">
+  {% if t.backdrop_path %}<div class="hero-bg" id="detail-bg"{% if t.tmdb_id > 0 %} data-fondos="/titulo/{{ t.tmdb_id }}/{{ t.type }}/fondos"{% if request.state.is_admin %} data-admin="1"{% endif %}{% endif %}>{{ hero_img(t.backdrop_path, true, t.backdrop_path|backdrop_local(t.tmdb_id)) }}</div>{% endif %}
+  <div class="detail-top">
+    {{ poster(t.poster_path, t.title, rb=rb, adult=t.is_adult, uid='ficha', size='w500') }}
+    <div class="detail-main">
+      <div class="ask">{{ 'Serie' if t.type == 'show' else 'Película' }}{% if t.original_language == 'ja' %} · Anime{% endif %}{% if t.anilist_studio %} · {{ t.anilist_studio }}{% endif %}</div>
+      {% if t.logo_path %}<img class="hero-logo" style="max-height:130px" src="{{ t.logo_path|tmdb_img('w500') }}" alt="{{ t.title }}"><h1 class="sr-only">{{ t.title }}</h1>
+      {% else %}<h1>{{ t.title }}</h1>{% endif %}
+      {% if alts or t.logo_path %}<div class="alt-title">{% if t.logo_path %}{{ t.title }}{% if alts %} · {% endif %}{% endif %}{{ alts|join(" // ") }}</div>{% endif %}
+      <div class="meta-row">
+        <span class="mchip">{{ t.year or "—" }} · {{ 'Serie' if t.type == 'show' else 'Película' }}</span>
+        {% if t.vote_average %}<span class="mchip">Internet <b>{{ t.vote_average|fmt_rating(1) }}</b></span>{% endif %}
+        {% if st != 'watched' and entry and entry.predicted_score is not none %}<span class="mchip"><span class="pct">{{ entry.predicted_score }}%</span> te gustará</span>{% endif %}
+        {% if t.runtime_minutes %}<span class="mchip">{% if t.type == "show" and t.episode_count %}{{ t.episode_count }} ep × {{ t.runtime_minutes }} min{% else %}{{ t.runtime_minutes|fmt_duration }}{% endif %}</span>{% endif %}
+        {% if t.next_episode_label %}<span class="mchip next">Próximo {{ t.next_episode_label }} · {{ t.next_episode_air_date|fmt_day }}</span>{% endif %}
+      </div>
+      <div class="action-bar">
+        {% if entry and st == 'watched' and entry.rating is not none %}
+          <span class="big-rating">{{ entry.rating|fmt_rating }}<small>/10</small></span>
+          <a class="btn ghost" href="/marcar-vista/{{ t.tmdb_id }}/{{ t.type }}?volver=ficha">{{ ic('edit', 'sm') }} Reevaluar nota</a>
         {% else %}
-        <img src="/static/img/sin-portada.svg" alt="Sin portada">
-        {% endif %}
-        {% set ribbon = title_row|show_status_ribbon %}
-        {% if ribbon %}
-        <div class="status-ribbon-clip"><span class="status-ribbon {{ ribbon[1] }}">{{ ribbon[0] }}</span></div>
-        {% endif %}
-        {% if title_row.is_adult %}
-        <input type="checkbox" id="nsfw-title" class="nsfw-check">
-        <label for="nsfw-title" class="nsfw-label">+18 · Toca para ver</label>
-        {% endif %}
-    </div>
-    <div class="info">
-        <h1 style="margin:0">{{ title_row.title }}</h1>
-        {# Se descartan los títulos alternativos iguales al h1 y los duplicados entre sí. #}
-        {% set alt_candidates = [title_row.anilist_title_romaji, title_row.anilist_title_english]
-            | select | reject("equalto", title_row.title) | unique | list %}
-        {% if alt_candidates %}
-        <div class="alt-title">{{ alt_candidates|join(" // ") }}</div>
-        {% endif %}
-        <div class="meta-row">
-            <span class="meta-chip">{{ title_row.year or "—" }}</span>
-            {% if entry and entry.rating is not none %}
-            {# Tu nota junto a la de internet, para compararlas de un vistazo. #}
-            <span class="meta-chip rating">Tú: {{ entry.rating|fmt_rating(1) }}</span>
-            {% endif %}
-            {% if title_row.vote_average %}
-            <span class="meta-chip rating">Internet: {{ title_row.vote_average|fmt_rating(1) }}</span>
-            {% endif %}
-            {% if title_row.runtime_minutes %}
-            <span class="meta-chip">
-                {% if title_row.type == "show" and title_row.episode_count %}
-                {{ title_row.episode_count }} ep × {{ title_row.runtime_minutes }} min
-                {% else %}
-                {{ title_row.runtime_minutes|fmt_duration }}
-                {% endif %}
-            </span>
-            {% endif %}
-            {% if title_row.next_episode_label %}
-            <span class="meta-chip next-ep">Próximo: {{ title_row.next_episode_label }} ({{ title_row.next_episode_air_date }})</span>
-            {% endif %}
-        </div>
-    </div>
-    {# Hábito y autover son configuración de seguimiento: "Seguimiento" los despliega
-       en la misma fila (el botón se sustituye por los extras y una X para cerrar). #}
-    <div class="entry-actions-row">
-        {% if entry and entry.status == 'watched' and entry.rating is not none %}
-        <div class="rating">{{ entry.rating|fmt_rating }}/10</div>
-        {% else %}
-        {% set tmdb_id = title_row.tmdb_id %}{% set type = title_row.type %}
-        {% set state = "watched" if (entry and entry.status == "watched") else ("pending" if entry else "new") %}
-        {% set volver = "ficha" %}
-        {% include "partials/entry_actions.html" %}
+          {% set tmdb_id = t.tmdb_id %}{% set type = t.type %}{% set state = "watched" if st == "watched" else ("pending" if entry else "new") %}{% set volver = "ficha" %}
+          {% include "partials/entry_actions.html" %}
+          {% if st == 'pending' %}<a class="btn ghost" href="/marcar-vista/{{ t.tmdb_id }}/{{ t.type }}">Vista con examen</a>{% endif %}
         {% endif %}
         {% if entry %}
-        {% set entry_id = entry.id %}
-        {% include "partials/favorite_button.html" %}
-        <input type="checkbox" id="tracking-toggle" class="tracking-toggle-check">
-        <label for="tracking-toggle" class="tracking-summary">Seguimiento</label>
-        <div class="tracking-extras">
-            {% set is_habit = entry.is_habit %}
-            {% include "partials/habit_button.html" %}
-            {% if title_row.type == "show" %}
-            {% set auto_watch = entry.auto_watch %}
-            {% include "partials/autowatch_button.html" %}
-            {% endif %}
-            <label for="tracking-toggle" class="tracking-close" title="Cerrar seguimiento">&times;</label>
-        </div>
+          {% set entry_id = entry.id %}{% include "partials/favorite_button.html" %}
+          <input type="checkbox" id="tracking-toggle" class="tracking-toggle-check" hidden>
+          <label for="tracking-toggle" class="btn quiet tracking-summary">{{ ic('sync', 'sm') }} Seguimiento{% if entry.is_habit or entry.auto_watch %} · {{ ['hábito' if entry.is_habit, 'autover' if entry.auto_watch]|select|join(', ') }}{% endif %}</label>
+          <span class="tracking-extras btn-row">
+            {% set is_habit = entry.is_habit %}{% include "partials/habit_button.html" %}
+            {% if t.type == "show" %}{% set auto_watch = entry.auto_watch %}{% include "partials/autowatch_button.html" %}{% endif %}
+            <label for="tracking-toggle" class="btn sm quiet icon" title="Cerrar seguimiento">{{ ic('x', 'sm') }}</label>
+          </span>
         {% endif %}
+        {% if t.tmdb_id > 0 %}<span hx-get="/titulo/{{ t.tmdb_id }}/{{ t.type }}/trailer" hx-trigger="load" hx-swap="outerHTML"></span>{% endif %}
+        <label for="manage-toggle" class="btn quiet manage-btn" title="Editar y más opciones">{{ ic('more', 'sm') }} Editar</label>
+      </div>
+      {% if outcome_label %}<div class="outcome-wrap"><span class="outcome">{{ outcome_label }} · predicción {{ entry.predicted_score }}% · tu nota {{ entry.rating|fmt_rating }}</span></div>{% endif %}
     </div>
-    {% if outcome_label %}
-    <div class="outcome-label">{{ outcome_label }} (predicción: {{ entry.predicted_score }}% · tu nota: {{ entry.rating|fmt_rating }})</div>
-    {% endif %}
-</div>
+  </div>
+</section>
 
-{% if entry and entry.status == 'watched' %}
-<a class="exam-q rated reevaluar" href="/marcar-vista/{{ title_row.tmdb_id }}/{{ title_row.type }}?volver=ficha">
-    <div class="exam-q-head">
-        <label>Reevaluar esta nota</label>
-        <span class="exam-q-value">{{ entry.rating|fmt_rating if entry.rating is not none else "—" }}</span>
-    </div>
-</a>
-{% endif %}
-
-{# Acciones secundarias agrupadas por intención: información, edición y zona
-   destructiva. Cada una comprueba su propia condición (Cambiar portada vale también
-   para pendientes). #}
-<div class="action-groups">
-    {% if entry and entry.status == 'watched' and rating_history %}
-    <div class="group-card">
-        <div class="group-head">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
-            <span>Información</span>
-        </div>
-        <div class="group-items">
-            <details class="group-accordion">
-                <summary>Histórico de notas ({{ rating_history|length }})</summary>
-                <div class="ep-list" style="margin-top:0.4rem">
-                    {% for h in rating_history %}
-                    <div class="ep-row">
-                        <span class="ep-num">{{ h.rating|fmt_rating }}</span>
-                        <span class="ep-name">hasta el {{ h.replaced_at[:10] }}{% if h.comment %} · {{ h.comment }}{% endif %}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </details>
-        </div>
-    </div>
-    {% endif %}
-
-    <div class="group-card">
-        <div class="group-head">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path></svg>
-            <span>Editar</span>
-        </div>
-        <div class="group-items">
-            {% if entry and entry.status == 'watched' %}
-            {# La fecha ya se ve en el input al abrir; no se repite en el botón. #}
-            <details class="group-accordion">
-                <summary>Corregir fecha</summary>
-                <form method="post" action="/entrada/{{ entry.id }}/fecha-visionado" style="display:flex; gap:0.5rem; align-items:center">
-                    <input type="date" name="fecha" value="{{ entry.watched_at[:10] if entry.watched_at else '' }}" required>
-                    {% if title_row.release_date %}
-                    <button type="button" class="secondary" onclick="this.previousElementSibling.value='{{ title_row.release_date }}'">Usar estreno</button>
-                    {% endif %}
-                    <button type="submit">Guardar</button>
-                </form>
-            </details>
-            {% endif %}
-            <details class="group-accordion">
-                <summary>Cambiar portada</summary>
-                <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/portada"
-                      enctype="multipart/form-data" style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
-                    <label class="btn secondary">
-                        Elegir imagen
-                        <input type="file" name="imagen" accept="image/*" class="file-input-hidden" onchange="this.form.submit()">
-                    </label>
-                </form>
-            </details>
-            {% if title_row.anilist_id %}
-            {# Día que enseña el calendario de temporada: el cálculo automático va en UTC
-               y puede desplazarse un día en animes de madrugada. "Sin corregir" vuelve al
-               cálculo automático. #}
-            <details class="group-accordion">
-                <summary>Corregir día de emisión{% if weekday_override is not none %} (corregido){% endif %}</summary>
-                <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/dia-emision" style="display:flex; gap:0.5rem; align-items:center">
-                    <select name="weekday">
-                        <option value=""{% if weekday_override is none %} selected{% endif %}>Sin corregir (automático)</option>
-                        {% for nombre in ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] %}
-                        <option value="{{ loop.index0 }}"{% if weekday_override == loop.index0 %} selected{% endif %}>{{ nombre }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit">Guardar</button>
-                </form>
-            </details>
-            {% endif %}
-            {% if title_row.type == 'show' %}
-            {# A diferencia del de arriba (solo el calendario de temporada), esto corrige
-               la fecha que usa toda la app para decidir si algo ya ha emitido. #}
-            <details class="group-accordion">
-                <summary>Corregir fecha de emisión de episodios{% if title_row.air_date_offset_days %} ({{ title_row.air_date_offset_days|abs }} día{{ "s" if title_row.air_date_offset_days|abs > 1 }} {{ "antes" if title_row.air_date_offset_days < 0 else "después" }}){% endif %}</summary>
-                <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/desfase-emision" style="display:flex; gap:0.5rem; align-items:center">
-                    <select name="dias">
-                        {% for d in [0, -2, -1, 1, 2] %}
-                        <option value="{{ d }}"{% if title_row.air_date_offset_days == d %} selected{% endif %}>
-                            {{ "Sin corregir (automático)" if d == 0 else (d|abs|string + " día" + ("s" if d|abs > 1 else "") + (" antes" if d < 0 else " después")) }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit">Guardar</button>
-                </form>
-            </details>
-            {% endif %}
-        </div>
-    </div>
-
-    {% if entry and entry.status == 'watched' %}
-    <div class="group-card danger-card">
-        <div class="group-head">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>
-            <span>Zona destructiva</span>
-        </div>
-        <div class="group-items">
-            {% if entry.rating is not none %}
-            {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
-            <details class="group-accordion">
-                <summary>Quitar nota</summary>
-                <form method="post" action="/entrada/{{ entry.id }}/quitar-nota">
-                    <button class="danger-solid">Confirmar</button>
-                </form>
-            </details>
-            {% else %}
-            <details class="group-accordion">
-                <summary>Deshacer "Marcar vista" (no lo he visto)</summary>
-                <form method="post" action="/entrada/{{ entry.id }}/deshacer-vista">
-                    <button class="danger-solid">Confirmar, volver a pendiente</button>
-                </form>
-            </details>
-            {% endif %}
-        </div>
+<div class="detail-body one">
+    <section class="manage">
+    <div class="panel"><h3>{{ ic('edit', 'sm') }} Editar</h3><div class="manage-grid">
+      {% if entry and st == 'watched' %}
+      <details class="acc-item"><summary>Corregir fecha de visionado</summary>
+        <form class="acc-body" method="post" action="/entrada/{{ entry.id }}/fecha-visionado"><div class="btn-row">
+          <input class="input" type="date" name="fecha" value="{{ entry.watched_at[:10] if entry.watched_at else '' }}" required>
+          {% if t.release_date %}<button type="button" class="btn sm quiet" onclick="this.form.fecha.value='{{ t.release_date }}'">Usar estreno</button>{% endif %}
+          <button class="btn sm">Guardar</button></div></form></details>
+      {% endif %}
+      <details class="acc-item"><summary>Cambiar portada</summary>
+        <form class="acc-body" method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/portada" enctype="multipart/form-data">
+          <label class="btn sm ghost" style="width:max-content">Elegir imagen<input type="file" name="imagen" accept="image/*" class="file-input-hidden" onchange="this.form.submit()"></label></form></details>
+      {% if t.anilist_id %}
+      <details class="acc-item"><summary>Corregir día de emisión{% if weekday_override is not none %} <span class="sub">corregido</span>{% endif %}</summary>
+        <form class="acc-body" method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/dia-emision"><div class="btn-row">
+          <select class="input" name="weekday"><option value=""{% if weekday_override is none %} selected{% endif %}>Sin corregir (automático)</option>
+            {% for nombre in ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] %}<option value="{{ loop.index0 }}"{% if weekday_override == loop.index0 %} selected{% endif %}>{{ nombre }}</option>{% endfor %}</select>
+          <button class="btn sm">Guardar</button></div><p class="hint">Solo cambia el día en el calendario de temporada.</p></form></details>
+      {% endif %}
+      {% if t.type == 'show' %}
+      {% set off = t.air_date_offset_days or 0 %}
+      <details class="acc-item"><summary>Desfase de emisión{% if off %} <span class="sub">{{ off|abs }} día{{ 's' if off|abs > 1 }} {{ 'antes' if off < 0 else 'después' }}</span>{% endif %}</summary>
+        <form class="acc-body" method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/desfase-emision"><div class="btn-row">
+          <select class="input" name="dias">{% for d in [0, -2, -1, 1, 2] %}<option value="{{ d }}"{% if off == d %} selected{% endif %}>{{ "Sin corregir (automático)" if d == 0 else (d|abs|string + " día" + ("s" if d|abs > 1 else "") + (" antes" if d < 0 else " después")) }}</option>{% endfor %}</select>
+          <button class="btn sm">Guardar</button></div><p class="hint">Mueve la fecha de todos los episodios: cuándo salen en Continuar viendo y en el calendario.</p></form></details>
+      {% endif %}
+    </div></div>
+    {% if entry and st == 'watched' %}
+    <div class="panel danger"><h3>{{ ic('warn', 'sm') }} Zona destructiva</h3>
+      {% if entry.rating is not none %}
+      <details class="del-confirm"><summary class="btn danger">Quitar nota</summary>
+        <form method="post" action="/entrada/{{ entry.id }}/quitar-nota" class="btn-row" style="margin-top:8px"><span class="hint">¿Seguro?</span><button class="btn sm danger-solid">Sí, quitar</button></form></details>
+      {% else %}
+      <details class="del-confirm"><summary class="btn danger">Deshacer «Marcar vista»</summary>
+        <form method="post" action="/entrada/{{ entry.id }}/deshacer-vista" class="btn-row" style="margin-top:8px"><span class="hint">¿No la has visto?</span><button class="btn sm danger-solid">Sí, volver a pendiente</button></form></details>
+      {% endif %}
     </div>
     {% endif %}
-</div>
+  </section>
 
-{% if title_row.overview %}
-{# En la ficha la sinopsis se enseña entera. #}
-<div class="synopsis-block">
-    <p class="overview">{{ title_row.overview }}</p>
-</div>
-{% endif %}
-
-{% if title_row.tmdb_id > 0 %}
-<div hx-get="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/trailer" hx-trigger="load" hx-swap="outerHTML">
-    <p class="empty">Buscando tráiler...</p>
-</div>
-{% endif %}
-
-{% if entry and entry.comment %}
-<p class="comment">{{ entry.comment }}</p>
-{% endif %}
-
-{% if entry and entry.status == 'watched' %}
-<h2>Visionados</h2>
-<p class="empty">{{ plays }} visionado{{ "s" if plays != 1 else "" }} en total.</p>
-{% for s in sessions %}
-<div class="list-row">
-    <div class="info">
-        <div>Volver a ver · empezado el {{ s.watched_at[:10] }}</div>
-        {% if s.notes %}<div class="year">{{ s.notes }}</div>{% endif %}
-    </div>
-</div>
-{% endfor %}
-{% if title_row.type == "show" %}
-{# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
-<details class="manual-add" style="margin-top:0.6rem">
-    <summary>Volver a ver</summary>
-    <p class="empty" style="margin:0.2rem 0 0.5rem">La serie vuelve a "Continuar viendo" desde el primer episodio. Nada de lo que ya viste se borra — sigue marcado con su fecha real, solo empieza a contar de nuevo a partir de ahora. Tu nota se queda.</p>
-    <form method="post" action="/entrada/{{ entry.id }}/volver-a-ver">
-        <button type="submit">Confirmar</button>
-    </form>
-</details>
-{% else %}
-<form method="post" action="/entrada/{{ entry.id }}/volver-a-ver" style="margin-top:0.6rem">
-    <button type="submit">Volver a ver</button>
-</form>
-{% endif %}
-{% endif %}
-
-{% if ep_comments %}
-<h2>Comentarios de episodios</h2>
-<div class="ep-list">
-    {% for ep in ep_comments %}
-    <div class="ep-row">
-        <span class="ep-num">T{{ ep.season_number }}E{{ ep.episode_number }}</span>
-        <span class="ep-name">{{ ep.comment }}</span>
-    </div>
+    <section class="about">
+    <div class="about-main">
+      {% if t.overview %}<p class="overview">{{ t.overview }}</p>{% endif %}
+      {% if entry and entry.comment and entry.comment != '-' %}<blockquote class="my-comment"><small>Tu comentario</small>{{ entry.comment }}</blockquote>{% endif %}
+              {% if seasons %}
+    {% set keys = seasons.keys()|list %}
+    {% set ns = namespace(open=none, seen=0, total=0) %}
+    {% for k in keys %}
+      {% set eps = seasons[k] %}
+      {% set ns.total = ns.total + eps|length %}
+      {% set ns.seen = ns.seen + (eps|selectattr("watched_now")|list|length) %}
+      {% if ns.open is none and k != 0 %}{% for ep in eps %}{% if ns.open is none and not ep.watched_now and ep.air_date and ep.air_date <= today %}{% set ns.open = k %}{% endif %}{% endfor %}{% endif %}
     {% endfor %}
-</div>
-{% endif %}
-
-{% if characters or entry %}
-<div class="section-head">
-    <h2>Personajes</h2>
-    <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/personajes">
-        <button class="secondary">Recargar</button>
-    </form>
-</div>
-<div class="char-grid">
-    {% for c in characters %}
-    {% set entry_id = entry.id if entry else none %}
-    {% set is_favorite = c.is_favorite %}
-    {% include "partials/character_card.html" %}
-    {% endfor %}
-</div>
-<details class="manual-add" style="margin-top:1rem">
-    <summary>Buscar personaje</summary>
-    <input type="text" name="q" placeholder="Nombre..."
-           hx-get="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/personajes/buscar"
-           hx-trigger="input changed delay:400ms, search"
-           hx-target="#char-search-results"
-           hx-indicator="#char-buscando">
-    <span id="char-buscando" class="htmx-indicator empty"><span class="spinner"></span>Buscando en AniList...</span>
-    <div id="char-search-results" class="char-grid"></div>
-</details>
-{% endif %}
-
-{% if seasons %}
-<h2>Episodios</h2>
-{% for season_number, episodes in seasons.items() %}
-{% set vistos = episodes|selectattr("watched_now")|list|length %}
-{% set season_rating = season_ratings.get(season_number) if season_ratings else none %}
-<div class="season-progress">
-    <h3 style="margin:0">Temporada {{ season_number }}</h3>
-    <div class="stat-bar-track"><div class="stat-bar-fill" style="width: {{ (vistos / episodes|length * 100)|round }}%"></div></div>
-    <span class="season-progress-count">{{ vistos }}/{{ episodes|length }}</span>
-    {% if vistos < episodes|length %}
-    <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/temporada/{{ season_number }}/marcar">
-        <button class="secondary">✓ Temp. completa</button>
-    </form>
+    {% if open_season is defined and open_season is not none %}{% set ns.open = open_season %}{% endif %}
+    {% if ns.open is none %}{% set ns.open = (keys|reject("equalto", 0)|list or keys)|last %}{% endif %}
+    <section class="section" id="episodios">
+      <div class="section-head"><h2>Episodios</h2><span class="meta">{{ ns.seen }} de {{ ns.total }} vistos{% if keys|length > 1 %} · {{ keys|reject("equalto", 0)|list|length }} temporadas{% endif %}</span></div>
+      {% if keys|length > 1 %}
+      <div class="stabs" role="tablist">
+        {% for k in keys %}{% set eps = seasons[k] %}{% set v = eps|selectattr("watched_now")|list|length %}
+        <button type="button" class="stab{{ ' active' if k == ns.open }}{{ ' full' if v == eps|length }}{{ ' rated' if season_ratings and season_ratings.get(k) }}" data-season-tab="{{ k }}"><b>{{ 'Especiales' if k == 0 else 'T' ~ k }}</b><span class="progress"><i style="width:{{ (v / eps|length * 100)|round if eps else 0 }}%"></i></span><span>{{ v }}/{{ eps|length }}</span></button>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% for k in keys %}
+      {% set episodes = seasons[k] %}{% set vistos = episodes|selectattr("watched_now")|list|length %}{% set sr = season_ratings.get(k) if season_ratings else none %}
+      <div class="season-panel" data-season="{{ k }}"{% if k != ns.open %} hidden{% endif %}>
+        <div class="season-panel-h"><span class="season-name">{{ 'Especiales' if k == 0 else 'Temporada ' ~ k }}</span>
+          <span class="season-prog{{ ' full' if vistos == episodes|length }}"><span class="progress"><i style="width:{{ (vistos / episodes|length * 100)|round }}%"></i></span>{{ vistos }}/{{ episodes|length }}</span>
+          <span class="season-acts">
+            {% if vistos < episodes|length %}<form method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/temporada/{{ k }}/marcar"><button class="btn sm quiet">{{ ic('checks', 'sm') }} Temp. completa</button></form>{% endif %}
+            {% if vistos > 0 and k != 0 %}<a class="btn sm {{ 'on' if sr else 'ghost' }}" href="/titulo/{{ t.tmdb_id }}/{{ t.type }}/temporada/{{ k }}/puntuar">{{ "Nota " ~ (sr.rating|fmt_rating) if sr else "Puntuar temp." }}</a>{% endif %}
+          </span></div>
+        <div class="eps">{% for ep in episodes %}{% include "partials/episode_row.html" %}{% endfor %}</div>
+      </div>
+      {% endfor %}
+    </section>
     {% endif %}
-    {% if vistos > 0 %}
-    <a class="btn secondary" href="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/temporada/{{ season_number }}/puntuar">
-        {{ "Nota: " + (season_rating.rating|fmt_rating) if season_rating else "Puntuar temp." }}
-    </a>
+
+    {% if ep_comments %}
+    <section class="section"><div class="section-head"><h2>Tus notas de episodios</h2><span class="meta">{{ ep_comments|length }} comentario{{ 's' if ep_comments|length != 1 }}</span></div>
+      <div class="panel diary">{% for ep in ep_comments %}<div class="diary-row"><b>T{{ ep.season_number }}E{{ ep.episode_number }}</b><span>{{ ep.comment }}</span></div>{% endfor %}</div></section>
     {% endif %}
-</div>
-<div class="ep-list">
-    {% for ep in episodes %}
-    {% include "partials/episode_row.html" %}
-    {% endfor %}
-</div>
-{% endfor %}
-{% endif %}
+    </div>
+    <aside class="about-side">
+      <dl class="kv big">
+        {% if entry and st == 'watched' %}<dt>Visionados</dt><dd>{{ plays }}{% if sessions %} · última vuelta {{ sessions[-1].watched_at[:10] }}{% endif %}</dd>
+        {% if entry.watched_at %}<dt>Vista el</dt><dd>{{ entry.watched_at[:10] }}</dd>{% endif %}{% endif %}
+        {% if t.release_date %}<dt>Estreno</dt><dd>{{ t.release_date }}</dd>{% endif %}
+        {% if t.anilist_studio %}<dt>Estudio</dt><dd>{{ t.anilist_studio }}</dd>{% endif %}
+        {% if t.genres %}<dt>Géneros</dt><dd>{{ t.genres|genres_es }}</dd>{% endif %}
+        {% if entry %}<dt>Añadido</dt><dd>{{ entry.added_at[:10] }}</dd>{% endif %}
+      </dl>
+      {% if entry and st == 'watched' %}
+      <details class="del-confirm"><summary class="btn ghost sm">{{ ic('rewatch', 'sm') }} Volver a ver</summary>
+        <form method="post" action="/entrada/{{ entry.id }}/volver-a-ver" style="display:grid;gap:8px;margin-top:8px">
+          {% if t.type == "show" %}<p class="hint">Vuelve a Continuar viendo desde el primer episodio. Lo que ya viste sigue marcado con su fecha y tu nota se queda.</p>{% endif %}
+          <div><button class="btn sm">Sí, empezar otra vez</button></div></form></details>
+      {% endif %}
+      {% if season_ratings %}
+      <details class="acc-item" open><summary>Notas por temporada <span class="sub">{{ season_ratings|length }}</span></summary><div class="acc-body">
+        {% for n, r in season_ratings|dictsort %}<div class="kv"><dt>Temporada {{ n }}</dt><dd><span class="score">{{ r.rating|fmt_rating }}</span>{% if r.comment and r.comment != '-' %} · {{ r.comment }}{% endif %}</dd></div>{% endfor %}</div></details>
+      {% endif %}
+      {% if rating_history %}
+      <details class="acc-item"><summary>Histórico de notas <span class="sub">{{ rating_history|length }}</span></summary><div class="acc-body">
+        {% for h in rating_history %}<div class="kv"><dt><span class="score">{{ h.rating|fmt_rating }}</span></dt><dd>hasta el {{ h.replaced_at[:10] }}{% if h.comment %} · {{ h.comment }}{% endif %}</dd></div>{% endfor %}</div></details>
+      {% endif %}
+    </aside>
+  </section>
 
-{% if title_row.tmdb_id > 0 %}
-<h2>Similares</h2>
-<div hx-get="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/similares" hx-trigger="load" hx-swap="outerHTML">
-    <p class="empty">Buscando similares...</p>
-</div>
-{% endif %}
+  {% if characters or entry %}
+  <section class="section">
+    <div class="section-head"><h2>Personajes</h2><span class="meta">{{ characters|length }}</span>
+      <span style="margin-left:auto" class="btn-row">
+        <details class="char-search"><summary class="btn sm quiet">{{ ic('search', 'sm') }} Buscar personaje</summary>
+          <div class="panel" style="margin-top:8px">
+            <input class="input" type="text" name="q" placeholder="Nombre…" hx-get="/titulo/{{ t.tmdb_id }}/{{ t.type }}/personajes/buscar" hx-trigger="input changed delay:400ms, search" hx-target="#char-search-results" hx-indicator="#char-buscando">
+            <span id="char-buscando" class="htmx-indicator hint"><span class="spinner"></span>Buscando en AniList…</span>
+            <div id="char-search-results" class="chars"></div></div></details>
+        <form method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/personajes"><button class="btn sm quiet">{{ ic('sync', 'sm') }} Recargar</button></form>
+      </span></div>
+    {% if characters %}<div class="chars">{% for c in characters %}{% set entry_id = entry.id if entry else none %}{% set is_favorite = c.is_favorite %}{% include "partials/character_card.html" %}{% endfor %}</div>{% endif %}
+  </section>
+  {% endif %}
 
+  {% if t.tmdb_id > 0 %}
+  <section class="section"><div class="section-head"><h2>Similares</h2></div>
+    <div hx-get="/titulo/{{ t.tmdb_id }}/{{ t.type }}/similares" hx-trigger="load" hx-swap="outerHTML"><p class="hint"><span class="spinner"></span>Buscando similares…</p></div></section>
+  {% endif %}
+</div>
+<script>
+(() => {
+    const bg = document.getElementById("detail-bg");
+    if (!bg || !bg.dataset.fondos || matchMedia("(prefers-reduced-motion: reduce), (max-width: 760px)").matches) return;
+    fetch(bg.dataset.fondos).then((r) => r.ok ? r.json() : []).then((items) => {
+        if (items.length < 2) return;
+        const hero = bg.parentElement;
+        let i = 0, busy = false;
+        const cache = new Map();
+        const load = (it) => cache.get(it.url) || (cache.set(it.url, new Promise((ok, ko) => {
+            const img = new Image(); img.alt = ""; img.decoding = "async"; img.src = it.url;
+            img.decode().then(() => ok(img), ko);
+        })), cache.get(it.url));
+        const ui = document.createElement("div");
+        ui.className = "detail-bg-ui";
+        ui.innerHTML = `${bg.dataset.admin ? `<button type="button" class="bg-del" title="Quitar este fondo (para todos)" aria-label="Quitar este fondo">{{ ic('x', 'sm') }}</button>` : ""}<span class="bg-nav"><div class="hero-dots detail-dots"></div></span>`;
+        const dots = ui.querySelector(".detail-dots"), del = ui.querySelector(".bg-del") || document.createElement("button");
+        const arrows = ["prev", "next"].map((d) => {
+            const b = document.createElement("button");
+            b.type = "button"; b.className = "bg-arrow"; b.setAttribute("aria-label", d === "prev" ? "Fondo anterior" : "Fondo siguiente");
+            b.innerHTML = d === "prev" ? `{{ ic('chevl', 'sm') }}` : `{{ ic('chevr', 'sm') }}`;
+            b.addEventListener("click", () => go(d === "prev" ? -1 : 1));
+            return b;
+        });
+        const nav = ui.querySelector(".bg-nav");
+        nav.prepend(arrows[0]); nav.append(arrows[1]);
+        hero.append(ui);
+        const drawDots = () => {
+            dots.innerHTML = items.map((_, k) => `<button type="button" aria-label="Fondo ${k + 1}"${k === i ? ' class="on"' : ""}><i></i></button>`).join("");
+            const many = items.length > 1;
+            arrows.forEach((a) => { a.hidden = !many; }); dots.hidden = !many; del.hidden = !many;
+        };
+        const show = async (k, force) => {
+            k = (k + items.length) % items.length;
+            if (busy || (k === i && !force)) return;
+            busy = true;
+            let img;
+            try { img = (await load(items[k])).cloneNode(); }
+            catch (e) { items.splice(k, 1); if (i > k) i--; drawDots(); busy = false; return; }
+            i = k; drawDots(); resetDel();
+            const old = bg.querySelector("img.on");
+            bg.append(img);
+            requestAnimationFrame(() => { img.classList.add("on"); if (old) old.classList.replace("on", "off"); });
+            setTimeout(() => { if (old) old.remove(); busy = false; }, 1300);
+            if (items.length > 1) load(items[(k + 1) % items.length]).catch(() => {});
+        };
+        const go = (d) => show(i + d);
+        const resetDel = () => { del.classList.remove("armed"); del.title = "Quitar este fondo (para todos)"; };
+        del.addEventListener("click", async () => {
+            if (!del.classList.contains("armed")) { del.classList.add("armed"); del.title = "Toca otra vez para quitarlo"; setTimeout(resetDel, 4000); return; }
+            const body = new URLSearchParams({ path: items[i].path });
+            const r = await fetch(bg.dataset.fondos + "/quitar", { method: "POST", body });
+            if (!r.ok) return;
+            items.splice(i, 1);
+            if (i >= items.length) i = 0;
+            resetDel();
+            if (!items.length) { drawDots(); return; }
+            const k = i; i = -1; busy = false; show(k, true);
+        });
+        drawDots();
+        load(items[1]).catch(() => {});
+        dots.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) show([...dots.children].indexOf(b)); });
+        dots.addEventListener("animationend", (e) => { if (e.animationName === "dot") go(1); });
+        document.addEventListener("keydown", (e) => {
+            if (e.target.closest("input, textarea, select, [contenteditable]")) return;
+            if (e.key === "ArrowLeft") go(-1); else if (e.key === "ArrowRight") go(1);
+        });
+    }).catch(() => {});
+})();
+document.querySelectorAll("[data-season-tab]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-season-tab]").forEach((x) => x.classList.toggle("active", x === b));
+    document.querySelectorAll(".season-panel").forEach((p) => { p.hidden = p.dataset.season !== b.dataset.seasonTab; });
+}));
+(() => { const a = document.querySelector(".stab.active"); if (a) a.scrollIntoView({ inline: "center", block: "nearest" }); })();
+(() => {
+    const target = location.hash && document.querySelector(location.hash);
+    if (!target) return;
+    const panel = target.closest(".season-panel");
+    if (panel && panel.hidden) document.querySelector('[data-season-tab="' + panel.dataset.season + '"]').click();
+    setTimeout(() => target.scrollIntoView({ block: "center" }), 50);
+})();
+</script>
 {% endblock %}

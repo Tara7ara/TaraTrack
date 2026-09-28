@@ -2,16 +2,11 @@
 `from app import repo; repo.funcion(...)`."""
 
 
-
-
-
 def get_default_list(conn, user_id: int):
     """La lista "Favoritos" de este usuario (cada cuenta tiene la suya)."""
     return conn.execute(
         "SELECT * FROM lists WHERE user_id = ? AND is_default = 1", (user_id,)
     ).fetchone()
-
-
 
 
 def get_or_create_default_list(conn, user_id: int):
@@ -24,8 +19,6 @@ def get_or_create_default_list(conn, user_id: int):
     return get_default_list(conn, user_id)
 
 
-
-
 def is_entry_favorite(conn, entry_id: int, user_id: int) -> bool:
     default_list = get_default_list(conn, user_id)
     if not default_list:
@@ -33,8 +26,6 @@ def is_entry_favorite(conn, entry_id: int, user_id: int) -> bool:
     return bool(conn.execute(
         "SELECT 1 FROM list_items WHERE list_id = ? AND entry_id = ?", (default_list["id"], entry_id)
     ).fetchone())
-
-
 
 
 def get_owned_list(conn, list_id: int, user_id: int):
@@ -61,8 +52,6 @@ def list_lists(conn, user_id, preview_count=10):
     ]
 
 
-
-
 def create_list(conn, name: str, user_id: int):
     """Crea una lista de este usuario; el nombre es único por usuario."""
     name = name.strip()
@@ -77,16 +66,12 @@ def create_list(conn, name: str, user_id: int):
     ).fetchone()
 
 
-
-
 def add_entry_to_list(conn, list_id: int, entry_id: int):
     """Añade sin quitar (a diferencia del toggle): para el buscador de la propia lista,
     donde darle dos veces a 'Añadir' no debe sacar el titulo de la lista."""
     conn.execute(
         "INSERT OR IGNORE INTO list_items (list_id, entry_id) VALUES (?, ?)", (list_id, entry_id)
     )
-
-
 
 
 def toggle_list_item(conn, list_id: int, entry_id: int) -> bool:
@@ -101,8 +86,6 @@ def toggle_list_item(conn, list_id: int, entry_id: int) -> bool:
     return True
 
 
-
-
 def _list_items_by_position(conn, list_id: int):
     """El orden MANUAL puro (position), sin importar que se este enseñando el de
     duelos - lo usan las flechas para no corromper el orden manual mientras se ve
@@ -111,8 +94,6 @@ def _list_items_by_position(conn, list_id: int):
         "SELECT id AS item_id FROM list_items WHERE list_id = ? ORDER BY position NULLS LAST, added_at DESC",
         (list_id,),
     ).fetchall()
-
-
 
 
 def list_items_in_list(conn, list_id: int):
@@ -135,8 +116,6 @@ def list_items_in_list(conn, list_id: int):
     ).fetchall()
 
 
-
-
 def _move_in_ranking(conn, table: str, ordered_ids: list[int], target_id: int, direction: str):
     """Sube o baja una fila intercambiandola con su vecina, en cualquier tabla con columna
     position (list_items, favorite_characters). Normaliza primero position a 0..n-1 para
@@ -153,15 +132,11 @@ def _move_in_ranking(conn, table: str, ordered_ids: list[int], target_id: int, d
     conn.execute(f"UPDATE {table} SET position = ? WHERE id = ?", (index, ordered_ids[other]))
 
 
-
-
 def move_list_item(conn, list_id: int, item_id: int, direction: str):
     """Las flechas reordenan siempre el orden manual (position), aunque se esté
     enseñando el orden por duelos."""
     ids = [item["item_id"] for item in _list_items_by_position(conn, list_id)]
     _move_in_ranking(conn, "list_items", ids, item_id, direction)
-
-
 
 
 def get_list_items_by_ids(conn, list_id: int, ids: list[int]):
@@ -170,14 +145,13 @@ def get_list_items_by_ids(conn, list_id: int, ids: list[int]):
     placeholders = ",".join("?" * len(ids))
     return conn.execute(
         f"""SELECT list_items.id AS id, titles.title AS title, titles.poster_path AS image,
-                   titles.year AS subtitle, titles.tmdb_id, titles.type
+                   titles.year AS subtitle, titles.tmdb_id, titles.type, titles.backdrop_path,
+                   titles.logo_path, entries.rating, list_items.elo
            FROM list_items JOIN entries ON entries.id = list_items.entry_id
            JOIN titles ON titles.id = entries.title_id
            WHERE list_items.list_id = ? AND list_items.id IN ({placeholders})""",
         [list_id, *ids],
     ).fetchall()
-
-
 
 
 def rename_list(conn, list_id: int, user_id: int, name: str):
@@ -194,8 +168,6 @@ def rename_list(conn, list_id: int, user_id: int, name: str):
     conn.execute("UPDATE lists SET name = ? WHERE id = ? AND user_id = ? AND is_default = 0", (name, list_id, user_id))
 
 
-
-
 def delete_list(conn, list_id: int) -> bool:
     """Borra una lista y sus items. Favoritos (is_default) no se puede borrar."""
     row = conn.execute("SELECT is_default FROM lists WHERE id = ?", (list_id,)).fetchone()
@@ -204,8 +176,6 @@ def delete_list(conn, list_id: int) -> bool:
     conn.execute("DELETE FROM list_items WHERE list_id = ?", (list_id,))
     conn.execute("DELETE FROM lists WHERE id = ?", (list_id,))
     return True
-
-
 
 
 def set_list_order_mode(conn, list_id: int, mode: str):

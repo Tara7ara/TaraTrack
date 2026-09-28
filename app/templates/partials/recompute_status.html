@@ -1,7 +1,2 @@
-{% if status.running %}
-<p class="recompute-status" hx-get="/afinidad/estado" hx-trigger="load delay:3s" hx-swap="outerHTML">
-    <span class="spinner"></span>Recalculando el índice de afinidad...
-</p>
-{% else %}
-<p class="recompute-status" style="display:none"></p>
-{% endif %}
+{% if status.running %}<p class="hint" hx-get="/afinidad/estado" hx-trigger="load delay:3s" hx-swap="outerHTML"><span class="spinner"></span>Recalculando el índice de afinidad…</p>
+{% else %}<span hidden></span>{% endif %}

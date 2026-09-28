@@ -34,6 +34,9 @@ from app.routers.calendario import _SEASON_ORDER
 from app.web import templates
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# httpx registra cada peticion en INFO y las URLs de TMDB llevan la api_key: sin esto la
+# clave acababa en `docker logs`.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Raíz de composición: crea la app, monta estáticos y middleware, incluye los routers
 # de app/routers/ y se queda con lo transversal (auth, arranque, tareas de fondo,
@@ -69,12 +72,15 @@ async def unhandled_error(request: Request, exc: Exception):
 
 @app.middleware("http")
 async def static_cache_headers(request: Request, call_next):
-    """Caché larga para estáticos. El resto (páginas y partials de htmx) va sin caché:
-    Safari/iOS puede enseñar una versión vieja al volver atrás tras una acción."""
     response = await call_next(request)
     # /thumbs/ lleva ?v= con la fecha de la portada original, así que también se puede
     # cachear a largo plazo.
-    if request.url.path.startswith(("/static/", "/thumbs/")):
+    if request.url.path.startswith("/fondo/") and response.status_code == 200:
+        # Los nombres de TMDB son únicos por imagen: nunca cambian, se pueden cachear un año.
+        # La redirección a TMDB (fondo aún no guardado) no se cachea: cuando se guarde, que
+        # el navegador lo pida al servidor.
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif request.url.path.startswith(("/static/", "/thumbs/")):
         response.headers["Cache-Control"] = "public, max-age=604800"
     else:
         response.headers["Cache-Control"] = "no-store"
@@ -114,19 +120,20 @@ def _clear_login_failures(username: str) -> None:
     _login_failures_by_user.pop(username, None)
 
 
-# Freno a /registro: limita el ritmo global de altas nuevas para parar un bucle
-# automatizado.
-REGISTRO_MAX_ATTEMPTS = 20
-REGISTRO_WINDOW_SECONDS = 3600
-_registro_attempts: list[float] = []
+IP_MAX_FAILURES = 20
+_failures_by_ip: dict[str, list[float]] = {}
 
 
-def _registro_locked_out() -> bool:
-    return len(_prune(_registro_attempts, REGISTRO_WINDOW_SECONDS)) >= REGISTRO_MAX_ATTEMPTS
+def _client_ip(request: Request) -> str:
+    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
 
 
-def _record_registro_attempt() -> None:
-    _registro_attempts.append(time.time())
+def _ip_locked_out(ip: str) -> bool:
+    return len(_prune(_failures_by_ip.get(ip, []), LOGIN_WINDOW_SECONDS)) >= IP_MAX_FAILURES
+
+
+def _record_ip_failure(ip: str) -> None:
+    _failures_by_ip.setdefault(ip, []).append(time.time())
 
 
 def _auth_serializer() -> URLSafeTimedSerializer:
@@ -171,7 +178,7 @@ def apple_touch_icon():
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    if path in ("/login", "/registro", *_TOUCH_ICON_PATHS) or path.startswith("/static/"):
+    if path in ("/login", "/registro", "/activar", *_TOUCH_ICON_PATHS) or path.startswith("/static/"):
         return await call_next(request)
     user_id = _current_user_id(request)
     if user_id is None:
@@ -180,8 +187,7 @@ async def require_login(request: Request, call_next):
         return RedirectResponse("/login", status_code=303)
     with get_connection() as conn:
         user = repo.get_user(conn, user_id)
-    if not user:
-        # Firma válida pero el usuario ya no existe: se trata como no autenticado.
+    if not user or user["is_blocked"]:
         resp = RedirectResponse("/login", status_code=303)
         resp.delete_cookie(AUTH_COOKIE)
         return resp
@@ -200,7 +206,8 @@ def login_form(request: Request, next: str = "/"):
 @app.post("/login", response_class=HTMLResponse)
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/")):
     username_norm = username.strip().lower()
-    if _login_locked_out(username_norm):
+    ip = _client_ip(request)
+    if _login_locked_out(username_norm) or _ip_locked_out(ip):
         return templates.TemplateResponse(
             request, "login.html",
             {"next": _safe_next(next), "error": "Demasiados intentos. Espera unos minutos e inténtalo de nuevo."},
@@ -209,6 +216,12 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     with get_connection() as conn:
         user = repo.get_user_by_username(conn, username_norm)
     if user and repo.verify_password(password, user["password_hash"], user["password_salt"]):
+        if user["is_blocked"]:
+            return templates.TemplateResponse(
+                request, "login.html",
+                {"next": _safe_next(next), "error": "Esta cuenta está bloqueada. Habla con quien te invitó."},
+                status_code=403,
+            )
         _clear_login_failures(username_norm)
         resp = RedirectResponse(_safe_next(next), status_code=303)
         resp.set_cookie(
@@ -217,6 +230,7 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
         )
         return resp
     _record_login_failure(username_norm)
+    _record_ip_failure(ip)
     return templates.TemplateResponse(
         request, "login.html", {"next": _safe_next(next), "error": "Usuario o contraseña incorrectos"}, status_code=401
     )
@@ -229,50 +243,41 @@ def logout():
     return resp
 
 
-# ---------- Registro público desde /login ----------
-# Las cuentas creadas así nunca son admin. El acceso a la app ya está acotado por red.
-@app.get("/registro", response_class=HTMLResponse)
-def registro_form(request: Request, next: str = "/"):
-    return templates.TemplateResponse(request, "registro.html", {"next": _safe_next(next), "error": None})
+@app.get("/registro")
+def registro_redirect():
+    return RedirectResponse("/activar", status_code=303)
 
 
-@app.post("/registro", response_class=HTMLResponse)
-def registro_submit(
-    request: Request, username: str = Form(...), password: str = Form(...),
-    password2: str = Form(""), next: str = Form("/"),
+@app.get("/activar", response_class=HTMLResponse)
+def activar_form(request: Request, usuario: str = ""):
+    return templates.TemplateResponse(request, "activar.html", {"usuario": usuario, "error": None})
+
+
+@app.post("/activar", response_class=HTMLResponse)
+def activar_submit(
+    request: Request, username: str = Form(...), code: str = Form(...),
+    password: str = Form(...), password2: str = Form(""),
 ):
-    if _registro_locked_out():
+    username_norm = username.strip().lower()
+    key, ip = f"activar:{username_norm}", _client_ip(request)
+
+    def fail(error: str, status: int):
         return templates.TemplateResponse(
-            request, "registro.html",
-            {"next": _safe_next(next), "error": "Demasiadas cuentas creadas seguidas. Espera unos minutos e inténtalo de nuevo."},
-            status_code=429,
+            request, "activar.html", {"usuario": username_norm, "error": error}, status_code=status
         )
-    _record_registro_attempt()
-    # Contraseña de al menos 8 caracteres con confirmación; el nombre se valida con
-    # repo.validate_username, la misma regla que create_user/set_username.
-    error = None
-    try:
-        username_norm = repo.validate_username(username)
-    except ValueError as e:
-        error = str(e)
-        username_norm = None
-    if not error and len(password) < 8:
-        error = "La contraseña debe tener al menos 8 caracteres"
-    elif not error and password != password2:
-        error = "Las contraseñas no coinciden"
-    if error:
-        return templates.TemplateResponse(
-            request, "registro.html", {"next": _safe_next(next), "error": error}, status_code=400,
-        )
+
+    if _login_locked_out(key) or _ip_locked_out(ip):
+        return fail("Demasiados intentos. Espera unos minutos e inténtalo de nuevo.", 429)
     with get_connection() as conn:
-        if repo.get_user_by_username(conn, username_norm):
-            return templates.TemplateResponse(
-                request, "registro.html",
-                {"next": _safe_next(next), "error": "Ese usuario ya existe"},
-                status_code=409,
-            )
-        user = repo.create_user(conn, username_norm, password)
-    resp = RedirectResponse(_safe_next(next), status_code=303)
+        try:
+            user = repo.activate_invite(conn, username_norm, code, password, password2)
+        except ValueError as e:
+            if str(e) == "Usuario o código no válidos":
+                _record_login_failure(key)
+                _record_ip_failure(ip)
+            return fail(str(e), 400)
+    _clear_login_failures(key)
+    resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(
         AUTH_COOKIE, _auth_serializer().dumps(str(user["id"])),
         max_age=AUTH_MAX_AGE, httponly=True, secure=True, samesite="lax",

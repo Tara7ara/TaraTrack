@@ -1,30 +1,51 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, poster, pct, empty, hero_img %}
 {% block content %}
-<h1>Sorpréndeme</h1>
+{% set tabs %}<div class="seg">{% for v, l in tipo_tabs(request.state.user_id) %}<a class="{{ 'active' if tipo == v }}" href="/sorprendeme?tipo={{ v }}">{{ l }}</a>{% endfor %}</div>{% endset %}
 {% if not entry %}
-<div class="empty-state">
-    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg></span>
-    <h3>No tienes pendientes con este filtro</h3>
-    <p>Prueba con otro tipo o añade algo nuevo a pendientes.</p>
+<div class="page">
+  <header class="page-head"><div class="ask">¿Qué veo ahora?</div><h1>Sorpréndeme</h1></header>
+  {{ tabs }}
+  {% call empty('compass', 'No tienes pendientes con este filtro', 'Prueba con otro tipo o añade algo nuevo a pendientes.') %}<a class="btn ghost" href="/pendientes">Volver a Pendientes</a>{% endcall %}
 </div>
 {% else %}
-<div class="review-card">
-    <div class="nsfw-frame">
-        <img class="review-poster {{ 'nsfw-img' if entry.is_adult }}" src="{{ entry.poster_path|poster_size('w342') if entry.poster_path else '/static/img/sin-portada.svg' }}"{% if entry.poster_path %} srcset="{{ entry.poster_path|poster_size('w342') }} 1x, {{ entry.poster_path|poster_size('w500') }} 2x"{% endif %} alt="{{ entry.title }}">
-        {% if entry.is_adult %}
-        <input type="checkbox" id="nsfw-surprise" class="nsfw-check">
-        <label for="nsfw-surprise" class="nsfw-label">+18 · Toca para ver</label>
-        {% endif %}
+{% set dur = ((entry.episode_count ~ ' episodios') if entry.type == 'show' and entry.episode_count else (entry.runtime_minutes|fmt_duration if entry.runtime_minutes else '')) %}
+<section class="hero surprise-hero{{ ' no-bg' if not entry.backdrop_path }}">
+  {% if entry.backdrop_path %}<div class="hero-bg">{{ hero_img(entry.backdrop_path) }}</div>{% endif %}
+  <div class="surprise-top">{{ tabs }}<span class="hint">Entre {{ n_pendientes }} pendiente{{ 's' if n_pendientes != 1 }}</span></div>
+  <div class="surprise-body">
+    {% if not entry.backdrop_path %}<div class="surprise-poster">{{ poster(entry.poster_path, entry.title, rb=entry|show_status_ribbon, adult=entry.is_adult, uid='surprise', size='w500') }}</div>{% endif %}
+    <div class="hero-body">
+      <div class="ask">¿Qué veo ahora? · Sorpréndeme</div>
+      {% if entry.logo_path %}<img class="hero-logo" src="{{ entry.logo_path|tmdb_img('w500') }}" alt="{{ entry.title }}">{% else %}<h1 class="hero-title">{{ entry.title }}</h1>{% endif %}
+      <div class="meta-row">
+        {% if entry.predict is not none %}<span class="mchip you"><b>{{ entry.predict }}%</b> te gustará</span>{% endif %}
+        <span class="mchip">{{ entry.year or '—' }} · {{ 'Serie' if entry.type == 'show' else 'Película' }}</span>
+        {% if entry.vote_average %}<span class="mchip">Internet <b>{{ entry.vote_average|fmt_rating(1) }}</b></span>{% endif %}
+        {% if dur %}<span class="mchip">{{ dur }}</span>{% endif %}
+        {% for g in (entry.genres or '').split(',')[:3] if g %}<span class="mchip">{{ g }}</span>{% endfor %}
+      </div>
+      {% if entry.overview %}<p class="overview-short">{{ entry.overview }}</p>{% endif %}
+      <p class="hint">En pendientes desde {{ entry.added_at[:10]|fmt_day }}</p>
+      <div class="hero-actions">
+        <a class="btn lg" href="/titulo/{{ entry.tmdb_id }}/{{ entry.type }}">{{ ic('info', 'sm') }} Ver ficha</a>
+        <a class="btn lg ghost" href="/sorprendeme?tipo={{ tipo }}&excluir={{ entry.tmdb_id }}">{{ ic('shuffle', 'sm') }} Otro</a>
+        <span class="surprise-acts">{% set tmdb_id = entry.tmdb_id %}{% set type = entry.type %}{% set state = "pending" %}{% include "partials/entry_actions.html" %}</span>
+      </div>
     </div>
-    <div class="review-info">
-        <h2>{{ entry.title }}</h2>
-        <div class="year">{{ entry.year or "—" }} · {{ "Serie" if entry.type == "show" else "Película" }}{% if entry.vote_average %} · Internet: {{ entry.vote_average|fmt_rating(1) }}{% endif %}</div>
-        {% if entry.overview %}<p class="overview">{{ entry.overview }}</p>{% endif %}
-    </div>
-    <div class="review-actions">
-        <a class="btn" href="/titulo/{{ entry.tmdb_id }}/{{ entry.type }}">Ver ficha</a>
-        <a class="btn secondary" href="/sorprendeme?tipo={{ tipo }}&excluir={{ entry.tmdb_id }}">Otro</a>
-    </div>
+  </div>
+</section>
+{% if otros %}
+<div class="page surprise-more">
+  <h2 class="tile-h">O quizá… <small>otros {{ otros|length }} al azar</small></h2>
+  <div class="surprise-strip">
+    {% for o in otros %}
+    <a class="surprise-alt" href="/sorprendeme?tipo={{ tipo }}&ver={{ o.tmdb_id }}" title="{{ o.title }}">
+      {% if o.poster_path %}<img src="{{ o.poster_path|poster_size('w342') }}" alt="" loading="lazy">{% endif %}
+      <span>{{ o.title }}</span></a>
+    {% endfor %}
+  </div>
 </div>
+{% endif %}
 {% endif %}
 {% endblock %}

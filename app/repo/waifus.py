@@ -20,8 +20,6 @@ def _waifus_by_position(conn, user_id):
     ).fetchall()
 
 
-
-
 def list_waifus(conn, user_id):
     """Personajes con estrella de este usuario, en orden manual o por duelos según
     'waifus_order_mode:<user_id>'."""
@@ -44,14 +42,10 @@ def list_waifus(conn, user_id):
     ).fetchall()
 
 
-
-
 def move_waifu(conn, fav_id: int, direction: str, user_id: int):
     """Las flechas siempre mueven el orden manual, igual que en las listas (ver move_list_item)."""
     ids = [w["fav_id"] for w in _waifus_by_position(conn, user_id)]
     _move_in_ranking(conn, "favorite_characters", ids, fav_id, direction)
-
-
 
 
 def get_waifus_by_ids(conn, ids: list[int]):
@@ -62,7 +56,7 @@ def get_waifus_by_ids(conn, ids: list[int]):
         f"""SELECT favorite_characters.id AS id,
                    COALESCE(characters.character_name, characters.name) AS title,
                    characters.profile_path AS image, titles.title AS subtitle,
-                   titles.tmdb_id, titles.type
+                   titles.tmdb_id, titles.type, favorite_characters.elo
            FROM favorite_characters
            JOIN characters ON characters.id = favorite_characters.character_id
            JOIN entries ON entries.id = favorite_characters.entry_id
@@ -70,8 +64,6 @@ def get_waifus_by_ids(conn, ids: list[int]):
            WHERE favorite_characters.id IN ({placeholders})""",
         ids,
     ).fetchall()
-
-
 
 
 def set_waifus_order_mode(conn, user_id, mode: str):

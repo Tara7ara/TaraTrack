@@ -22,9 +22,6 @@ def _entry(conn, title_row, user_id, status="pending"):
     )
     return cur.lastrowid
 
-
-# --- calendario de temporada -------------------------------------------------
-
 def test_calendar_cards_know_what_is_already_in_library(conn, user_id):
     frieren = _title(conn, 1, "Frieren", anilist_id=154587)
     grand_blue = _title(conn, 2, "Grand Blue", original_title="ぐらんぶる")
@@ -53,9 +50,6 @@ def test_calendar_cards_ignore_other_users_library(conn, user_id):
 
     assert status == {}
 
-
-# --- tira de estado ------------------------------------------------------------
-
 def test_status_ribbon_uses_next_episode_for_airing():
     base = {"type": "show", "next_episode_air_date": None}
     assert show_status_ribbon({**base, "show_status": "Ended"}) == ("Acabada", "ribbon-ended")
@@ -63,10 +57,7 @@ def test_status_ribbon_uses_next_episode_for_airing():
     assert show_status_ribbon({**base, "show_status": "Returning Series"})[1] == "ribbon-returning"
     airing = {**base, "show_status": "Returning Series", "next_episode_air_date": "2026-09-29"}
     assert show_status_ribbon(airing) == ("Emisión", "ribbon-airing")
-    assert show_status_ribbon({**base, "type": "movie", "show_status": "Released"}) is None
-
-
-# --- personajes ----------------------------------------------------------------
+    assert show_status_ribbon({**base, "type": "movie", "show_status": "Released"}) == ("Película", "ribbon-movie")
 
 def test_anime_never_falls_back_to_voice_actors(conn, monkeypatch):
     title = _title(conn, 10, "Wistoria: varita y espada")
@@ -149,9 +140,6 @@ def test_reload_characters_keeps_favorites(conn, user_id, monkeypatch):
     assert conn.execute("SELECT count(*) FROM favorite_characters").fetchone()[0] == 1
     assert conn.execute("SELECT count(*) FROM characters WHERE title_id = ?", (title["id"],)).fetchone()[0] == 2
 
-
-# --- filtro por tags -------------------------------------------------------------
-
 def test_tag_filter_include_and_exclude():
     romance = {"anilist_genres": "Romance,Fantasy", "anilist_tags": "Female Protagonist"}
     harem = {"anilist_genres": "Romance,Fantasy", "anilist_tags": "Harem,Isekai"}
@@ -163,9 +151,6 @@ def test_tag_filter_include_and_exclude():
     assert not _matches_tags(harem, tokens)
     assert not _matches_tags(sin_tags, tokens)
     assert _matches_tags(sin_tags, [])
-
-
-# --- estados de temporada, tira de estado en listados e icono de la PWA --------------
 
 def test_calendar_matches_next_season_by_anilist_names(conn, user_id):
     blue_box = _title(conn, 20, "La caja azul", original_title="アオのハコ",
@@ -183,7 +168,7 @@ def test_status_ribbon_premiere_and_pause():
     base = {"type": "show", "show_status": "Returning Series"}
     premiere = {**base, "next_episode_air_date": "2026-10-04", "next_episode_label": "T2E1 — Episodio 1"}
     weekly = {**base, "next_episode_air_date": "2026-10-04", "next_episode_label": "T2E11 — Episodio 11"}
-    assert show_status_ribbon(premiere)[0] == "Prox."
+    assert show_status_ribbon(premiere)[0] == "Próx."
     assert show_status_ribbon(weekly)[0] == "Emisión"
     assert show_status_ribbon({**base, "next_episode_air_date": None, "next_episode_label": None})[0] == "Pausa"
 

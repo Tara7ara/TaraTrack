@@ -1,134 +1,49 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, card, head, empty %}
 {% block content %}
-<h1>Vistas</h1>
-{% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todo.</p>{% endif %}
-
-{# En móvil, buscador, pestañas y "Filtros" a la vista; orden, género y duelos se
-   despliegan (ver .mobile-filters en app.css). #}
-<div class="mobile-filters">
-<input type="checkbox" id="filters-toggle" class="filters-toggle" hidden>
-<form class="filter-bar" action="/vistas" method="get">
-    <input type="hidden" name="tipo" value="{{ tipo }}">
-    <input type="hidden" name="direccion" value="{{ direccion }}">
-    <input type="text" name="q" value="{{ q }}" placeholder="Buscar en vistas..." autocomplete="off"
-           hx-get="/vistas" hx-include="closest form"
-           hx-trigger="input changed delay:400ms, search"
-           hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
-    <label for="filters-toggle" class="btn secondary filters-toggle-label">Filtros{% if genero %} (1){% endif %}</label>
-    <span class="sort-control filter-extra">
-    <select name="orden" hx-get="/vistas" hx-include="closest form"
-            hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
-        <option value="recientes" {{ "selected" if orden == "recientes" }}>Recientes</option>
-        <option value="mi_nota" {{ "selected" if orden == "mi_nota" }}>Mi nota</option>
-        <option value="nota_internet" {{ "selected" if orden == "nota_internet" }}>Nota internet</option>
-        <option value="duracion" {{ "selected" if orden == "duracion" }}>Duración</option>
-        <option value="anadido" {{ "selected" if orden == "anadido" }}>Añadido</option>
-        <option value="lanzamiento" {{ "selected" if orden == "lanzamiento" }}>Estreno</option>
-        <option value="titulo" {{ "selected" if orden == "titulo" }}>Título</option>
-        <option value="elo" {{ "selected" if orden == "elo" }}>Elo</option>
-    </select>
-    <a class="btn secondary sort-dir" title="Cambiar a {{ 'ascendente' if direccion == 'desc' else 'descendente' }}"
-       href="/vistas?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
-       hx-get="/vistas?tipo={{ tipo }}&orden={{ orden }}&q={{ q }}&genero={{ genero }}&direccion={{ 'asc' if direccion == 'desc' else 'desc' }}"
-       hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
-        {{ "↓" if direccion == "desc" else "↑" }}
-    </a>
-    </span>
-    {% if generos %}
-    <select name="genero" class="filter-extra" hx-get="/vistas" hx-include="closest form"
-            hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">
-        <option value="">Todos los géneros</option>
-        {% for g in generos %}
-        <option value="{{ g }}" {{ "selected" if g == genero }}>{{ g }}</option>
-        {% endfor %}
-    </select>
-    {% endif %}
-</form>
-
-<div id="vistas-section">
-<div class="sort-bar">
-    <a href="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}" class="{{ 'active' if not tipo }}"
-       hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Todo</a>
-    <a href="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=series" class="{{ 'active' if tipo == 'series' }}"
-       hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=series" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Series</a>
-    <a href="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=pelis" class="{{ 'active' if tipo == 'pelis' }}"
-       hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=pelis" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Pelis</a>
-    <a href="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=anime" class="{{ 'active' if tipo == 'anime' }}"
-       hx-get="/vistas?orden={{ orden }}&direccion={{ direccion }}&q={{ q }}&genero={{ genero }}&tipo=anime" hx-target="#vistas-section" hx-select="#vistas-section" hx-swap="outerHTML">Anime</a>
-</div>
-{% if entries|length > 2 %}
-<div class="page-actions tight filter-extra">
-    <a class="btn secondary" href="/duelo">Jugar duelos (anime)</a>
-    {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
-    <details class="del-confirm">
-        <summary class="btn secondary danger">Reiniciar Elo</summary>
-        <form method="post" action="/duelo/elo/reiniciar">
-            <button class="danger-solid">Confirmar, todo a 1500 otra vez</button>
-        </form>
-    </details>
-</div>
-{% if coverage and not coverage.done %}
-<p class="page-hint filter-extra">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>
-{% endif %}
-{% endif %}
-
-<div class="grid" id="vistas-grid">
-{% if not entries and q %}
-<div class="empty-state">
-    <span class="empty-icon">
-        <svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8.3" y1="8.3" x2="13.7" y2="13.7" stroke-width="1.3"></line><line x1="13.7" y1="8.3" x2="8.3" y2="13.7" stroke-width="1.3"></line></svg>
-    </span>
-    <h3>Nada con «{{ q }}»</h3>
-    <p>Prueba a cambiar el filtro o busca otro título.</p>
-</div>
-{% elif not entries %}
-<div class="empty-state">
-    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></span>
-    <h3>Todavía no has marcado nada como visto</h3>
-    <p>Cuando marques algo como visto, aparecerá aquí.</p>
-</div>
-{% endif %}
-{% for e in entries %}
-<div class="card">
-    {# El póster también enlaza a la ficha. #}
-    <a class="poster-ribbon-host" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
-        {% if e.poster_path %}
-        <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
-        {% else %}
-        <img src="/static/img/sin-portada.svg" alt="Sin portada">
-        {% endif %}
-        {% with row = e %}{% include "partials/status_ribbon.html" %}{% endwith %}
-    </a>
-    <div class="card-body">
-        <div style="display:flex; justify-content:space-between; align-items:start; gap:0.4rem;">
-            <a class="card-title" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">{{ e.title }}</a>
-            {% set entry_id = e.id %}{% set is_favorite = e.is_favorite %}
-            {% include "partials/favorite_button.html" %}
-        </div>
-        <div class="card-year">{{ e.year or "—" }} · {{ "Serie" if e.type == "show" else "Peli" }}</div>
-        {% if e.rating is not none %}
-        <div class="rating">{{ e.rating|fmt_rating }}/10</div>
-        {% else %}
-        <a class="btn" href="/marcar-vista/{{ e.tmdb_id }}/{{ e.type }}">Puntuar</a>
-        {% endif %}
-        {% if e.is_anime %}<div class="elo-badge">Elo {{ e.elo|round|int }} · {{ e.rd|elo_confidence }}</div>{% endif %}
-        {# Comentario recortado en la lista; entero en la ficha. #}
-        {% if e.comment %}<div class="comment">{{ e.comment|truncate(90) }}</div>{% endif %}
-        <div class="card-year">
-            {% if e.vote_average %}Internet: {{ e.vote_average|fmt_rating(1) }}{% endif %}
-            {% if e.runtime_minutes %}
-                {% if e.type == "show" and e.episode_count %}
-                 · {{ e.episode_count }} ep · {{ (e.episode_count * e.runtime_minutes)|fmt_duration }}
-                {% else %}
-                 · {{ e.runtime_minutes|fmt_duration }}
-                {% endif %}
-            {% endif %}
-        </div>
-        {% if e.watched_at %}<div class="card-year">Vista el {{ e.watched_at[:10] }}</div>{% endif %}
+{% set qs = "tipo=" ~ tipo ~ "&orden=" ~ orden ~ "&direccion=" ~ direccion ~ "&q=" ~ (q|urlencode) ~ "&genero=" ~ (genero|urlencode) %}
+<div id="vistas-page">
+<div class="page">
+    <div id="vis-head" class="lib-head">
+    {{ head('¿Qué he visto?', 'Vistas') }}
+    <div class="lib-stats">
+      <span><b>{{ entries|length }}</b> título{{ 's' if entries|length != 1 }}</span>
+      {% if resumen.media is not none %}<span class="gold"><b>{{ resumen.media|fmt_rating(2) }}</b> de nota media</span>{% endif %}
+      {% if resumen.top %}<span><b>{{ resumen.top }}</b> con 9 o más</span>{% endif %}
+      <span><b>{{ '{:,}'.format(resumen.episodios).replace(',', '.') }}</b> episodios vistos</span>
     </div>
-</div>
-{% endfor %}
-</div>
+  </div>
+  {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para todo.</p>{% endif %}
+  <form class="toolbar" id="vis-form" action="/vistas" method="get"
+        hx-get="/vistas" hx-target="#vistas-section" hx-select="#vistas-section" hx-select-oob="#vis-head, #vis-tabs, #vis-dir" hx-swap="outerHTML" hx-push-url="true"
+        hx-trigger="submit, change from:#vis-orden, change from:#vis-genero" hx-boost="true">
+    <input type="hidden" name="tipo" value="{{ tipo }}"><input type="hidden" name="direccion" value="{{ direccion }}">
+    <div class="seg" id="vis-tabs" hx-target="#vistas-page" hx-select="#vistas-page" hx-select-oob="unset">{% for v, l in tipo_tabs(request.state.user_id) %}<a href="/vistas?{{ qs|replace('tipo=' ~ tipo ~ '&', 'tipo=' ~ v ~ '&') }}" class="{{ 'active' if tipo == v }}">{{ l }}</a>{% endfor %}</div>
+    <label class="search-field grow">{{ ic('search', 'sm') }}<input class="input" type="search" name="q" id="vis-q" value="{{ q }}" placeholder="Buscar en vistas…" autocomplete="off"
+           hx-get="/vistas" hx-include="#vis-form" hx-trigger="input changed delay:400ms, search" hx-push-url="unset" hx-replace-url="true" hx-target="#vistas-section" hx-select="#vistas-section" hx-select-oob="#vis-head, #vis-tabs, #vis-dir" hx-swap="outerHTML"></label>
+    <span class="sort-group">
+    <select class="input" name="orden" id="vis-orden" aria-label="Ordenar">
+      {% for v, l in [('recientes', 'Recientes'), ('mi_nota', 'Mi nota'), ('nota_internet', 'Nota internet'), ('duracion', 'Duración'), ('anadido', 'Añadido'), ('lanzamiento', 'Estreno'), ('titulo', 'Título'), ('elo', 'Elo')] %}<option value="{{ v }}"{{ ' selected' if orden == v }}>{{ l }}</option>{% endfor %}
+    </select>
+    <a class="btn quiet icon" id="vis-dir" hx-target="#vistas-page" hx-select="#vistas-page" hx-select-oob="unset" title="{{ 'Descendente' if direccion == 'desc' else 'Ascendente' }}" href="/vistas?{{ qs|replace('direccion=' ~ direccion, 'direccion=' ~ ('asc' if direccion == 'desc' else 'desc')) }}">{{ ic('down' if direccion == 'desc' else 'up', 'sm') }}</a>
+    </span>
+    {% if generos %}<select class="input" name="genero" id="vis-genero" aria-label="Género"><option value="">Todos los géneros</option>{% for g in generos %}<option value="{{ g }}"{{ ' selected' if g == genero }}>{{ g }}</option>{% endfor %}</select>{% endif %}
+  </form>
+  <div id="vistas-section" style="display:grid;gap:22px">
+    {% if entries|length > 2 %}
+    <div class="toolbar" style="justify-content:space-between">
+      <p class="hint">{% if coverage and not coverage.done %}Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).{% endif %}</p>
+      <div class="btn-row"><a class="btn ghost" href="/duelo">{{ ic('swords', 'sm') }} Jugar duelos</a>
+        <details class="del-confirm"><summary class="btn danger">Reiniciar Elo</summary>
+          <form method="post" action="/duelo/elo/reiniciar" class="btn-row" style="margin-top:8px"><span class="hint">¿Todo a 1500 otra vez?</span><button class="btn sm danger-solid">Sí, reiniciar</button></form></details></div>
+    </div>
+    {% endif %}
+    {% if not entries and q %}{{ empty('search', 'Nada con «' ~ q ~ '»', 'Prueba a cambiar el filtro o busca otro título.') }}
+    {% elif not entries %}{{ empty('done', 'Todavía no has marcado nada como visto', 'Cuando marques algo como visto, aparecerá aquí.') }}{% endif %}
+    <div class="pgrid vis-grid">
+      {% include "partials/vis_cards.html" %}
+    </div>
+  </div>
 </div>
 </div>
 {% endblock %}

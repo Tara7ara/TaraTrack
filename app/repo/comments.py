@@ -76,3 +76,34 @@ def get_oldest_unseen_comment(conn, user_id: int):
 
 def mark_comments_seen(conn, user_id: int):
     conn.execute("UPDATE users SET comments_seen_at = datetime('now') WHERE id = ?", (user_id,))
+
+
+def list_my_comments(conn, user_id: int) -> dict:
+    tq = "titles.title, titles.tmdb_id, titles.type, titles.poster_path"
+    return {
+        "titles": conn.execute(
+            f"""SELECT {tq}, entries.comment, entries.rating, entries.watched_at AS at
+                FROM entries JOIN titles ON titles.id = entries.title_id
+                WHERE entries.user_id = ? AND entries.comment IS NOT NULL AND trim(entries.comment) NOT IN ('', '-')
+                ORDER BY entries.watched_at DESC""", (user_id,)).fetchall(),
+        "seasons": conn.execute(
+            f"""SELECT {tq}, season_ratings.season_number, season_ratings.comment, season_ratings.rating, season_ratings.rated_at AS at
+                FROM season_ratings JOIN entries ON entries.id = season_ratings.entry_id
+                JOIN titles ON titles.id = entries.title_id
+                WHERE entries.user_id = ? AND season_ratings.comment IS NOT NULL AND trim(season_ratings.comment) NOT IN ('', '-')
+                ORDER BY season_ratings.rated_at DESC""", (user_id,)).fetchall(),
+        "episodes": conn.execute(
+            f"""SELECT {tq}, episodes.id AS episode_id, episodes.season_number, episodes.episode_number,
+                       episodes.name, s.comment,
+                       (SELECT max(watched_at) FROM episode_watches w WHERE w.episode_id = episodes.id AND w.user_id = s.user_id) AS at
+                FROM episode_user_state s JOIN episodes ON episodes.id = s.episode_id
+                JOIN titles ON titles.id = episodes.title_id
+                WHERE s.user_id = ? AND s.comment IS NOT NULL AND trim(s.comment) != ''
+                ORDER BY at DESC""", (user_id,)).fetchall(),
+        "debate": conn.execute(
+            f"""SELECT {tq}, episodes.id AS episode_id, episodes.season_number, episodes.episode_number,
+                       c.body AS comment, c.created_at AS at, users.username, c.user_id
+                FROM episode_comments c JOIN episodes ON episodes.id = c.episode_id
+                JOIN titles ON titles.id = episodes.title_id JOIN users ON users.id = c.user_id
+                ORDER BY c.created_at DESC""").fetchall(),
+    }

@@ -2,7 +2,7 @@
   "name": "TaraTrack",
   "short_name": "TaraTrack",
   "lang": "es",
-  "start_url": "/pendientes",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0f0f0f",

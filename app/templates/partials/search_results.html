@@ -1,43 +1,26 @@
-{% if not results %}
-    {% if query %}
-    {# Estado vacío: el enlace abre el <details id="alta-manual"> de search.html y hace
-       scroll hasta él. #}
-    <div class="empty-state">
-        <span class="empty-icon">
-            <svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8.3" y1="8.3" x2="13.7" y2="13.7" stroke-width="1.3"></line><line x1="13.7" y1="8.3" x2="8.3" y2="13.7" stroke-width="1.3"></line></svg>
-        </span>
-        <h3>Sin resultados para "{{ query }}"</h3>
-        <p>Prueba con otro título, o si estás seguro de que existe:</p>
-        {# El término va en data-* (escapado HTML normal) y no con tojson dentro del
-           onclick, que rompía el atributo por las comillas. #}
-        <a href="#alta-manual" class="manual-link-inline" data-manual-title="{{ query }}"
-           onclick="document.getElementById('alta-manual').open = true; document.getElementById('manual-title').value = this.dataset.manualTitle;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            Añádelo a mano
-        </a>
-    </div>
-    {% endif %}
+{% from "partials/ui.html" import ic, card %}
+{% if not results and query %}
+<div class="empty" style="border:0">{{ ic('search') }}<h3>Sin resultados para «{{ query }}»</h3><p>Prueba con otro título o, si estás segura de que existe, añádelo a mano.</p></div>
 {% endif %}
-{% for r in results %}
-<div class="card">
-    <div class="nsfw-frame">
-        <a href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">
-            {% if r.poster_url %}
-            <img class="{{ 'nsfw-img' if r.adult }}" src="{{ r.poster_url }}" alt="{{ r.title }}" loading="lazy">
-            {% else %}
-            <img src="/static/img/sin-portada.svg" alt="Sin portada">
-            {% endif %}
-        </a>
-        {% if r.adult %}
-        <input type="checkbox" id="nsfw-s-{{ r.tmdb_id }}" class="nsfw-check">
-        <label for="nsfw-s-{{ r.tmdb_id }}" class="nsfw-label">+18 · Toca para ver</label>
-        {% endif %}
-    </div>
-    <div class="card-body">
-        <a class="card-title" href="/titulo/{{ r.tmdb_id }}/{{ r.type }}">{{ r.title }}</a>
-        <div class="card-year">{{ r.year or "—" }} · {{ "Serie" if r.type == "show" else "Película" }}{% if r.vote_average %} · Internet: {{ r.vote_average|fmt_rating(1) }}{% endif %}</div>
-        {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = r.state %}
-        {% include "partials/entry_actions.html" %}
-    </div>
+{% if results %}
+<h4>{{ 'Resultados' if query else 'Para empezar, de tus recomendados' }}</h4>
+<div class="pgrid">
+  {% for r in results %}
+  {% set st = r.state or 'new' %}
+  {% call card(r.poster_url, r.title, href='/titulo/' ~ r.tmdb_id ~ '/' ~ r.type, rb=r|show_status_ribbon, adult=r.adult and st == 'new', uid='s-' ~ r.tmdb_id,
+               l1=(r.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if r.type == 'show' else 'Película'),
+               l2=('Ya vista' if st == 'watched' else ('En pendientes' if st == 'pending' else (('Internet <b>' ~ (r.vote_average|fmt_rating(1)) ~ '</b>') if r.vote_average else '')))) %}
+    {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = st %}{% include "partials/entry_actions.html" %}
+  {% endcall %}
+  {% endfor %}
 </div>
-{% endfor %}
+{% endif %}
+<details class="gfoot manual"{% if not results and query %} open{% endif %}>
+  <summary class="btn sm quiet">{{ ic('plus', 'sm') }} Añadir a mano</summary>
+  <form method="post" action="/alta-manual" class="panel" style="margin-top:10px;max-width:560px">
+    <div class="field"><label for="manual-title">Título</label><input class="input" id="manual-title" name="title" required value="{{ query or '' }}"></div>
+    <div class="btn-row"><div class="field"><label for="manual-type">Tipo</label><select class="input" id="manual-type" name="type"><option value="show">Serie</option><option value="movie">Película</option></select></div>
+      <div class="field"><label for="manual-year">Año (opcional)</label><input class="input" id="manual-year" name="year" type="number" min="1900" max="2100" style="width:120px"></div></div>
+    <div class="field"><label for="manual-poster">URL de portada (opcional)</label><input class="input" id="manual-poster" name="poster_url"></div>
+    <div><button class="btn">Añadir a pendientes</button></div></form>
+</details>

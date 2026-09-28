@@ -1,118 +1,45 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import ic, card, head, empty %}
 {% block content %}
-<div class="section-head">
-    <h1 style="margin:0">{{ list_row.name }}</h1>
-    {% if not list_row.is_default %}
-    <div class="list-admin">
-        <form method="post" action="/lista/{{ list_row.id }}/renombrar" class="inline-form" style="margin:0">
-            <input type="text" name="name" value="{{ list_row.name }}" required>
-            <button class="secondary">Renombrar</button>
-        </form>
-        {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
-        <details class="del-confirm">
-            <summary class="btn secondary danger">Borrar lista</summary>
-            <form method="post" action="/lista/{{ list_row.id }}/borrar">
-                <button class="danger-solid">Confirmar</button>
-            </form>
-        </details>
+{% set l = list_row %}
+<div class="page">
+  <a class="link" href="/listas" style="font-size:0.88rem;display:inline-flex;gap:4px;align-items:center">{{ ic('chevl', 'sm') }} Listas</a>
+  {{ head('¿Qué guardo aparte?', l.name, entries|length ~ ' título' ~ ('s' if entries|length != 1 else '')) }}
+  {% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para toda la lista.</p>{% endif %}
+    <div class="toolbar waifu-bar">
+    <details class="del-confirm" id="list-buscador" ontoggle="if (this.open) this.querySelector('input').focus()"><summary class="btn ghost">{{ ic('plus', 'sm') }} Añadir títulos</summary>
+      <div class="panel waifu-search-panel"><input class="input" type="text" name="q" placeholder="Buscar…" autocomplete="off" hx-get="/lista/{{ l.id }}/buscar" hx-trigger="input changed delay:400ms, search" hx-target="#list-add-results" hx-indicator="#list-buscando">
+        <span id="list-buscando" class="htmx-indicator hint"><span class="spinner"></span>Buscando…</span><div id="list-add-results" class="lrows"></div></div></details>
+    {% if entries|length > 2 %}<a class="btn ghost" href="/lista/{{ l.id }}/duelo">{{ ic('swords', 'sm') }} Jugar duelos</a>{% endif %}
+    <div class="btn-row waifu-right">
+      {% if entries|length > 2 %}
+      <div class="seg"><form method="post" action="/lista/{{ l.id }}/orden"><input type="hidden" name="modo" value="manual"><button class="{{ 'active' if l.order_mode == 'manual' }}">Manual</button></form>
+        <form method="post" action="/lista/{{ l.id }}/orden"><input type="hidden" name="modo" value="duelo"><button class="{{ 'active' if l.order_mode == 'duelo' }}">Por duelos</button></form></div>
+      <details class="del-confirm"><summary class="btn danger">Reiniciar Elo</summary><form method="post" action="/lista/{{ l.id }}/elo/reiniciar" class="btn-row" style="margin-top:8px"><span class="hint">¿Todo a 1500?</span><button class="btn sm danger-solid">Sí</button></form></details>
+      {% endif %}
+      {% if not l.is_default %}
+      <details class="del-confirm"><summary class="btn ghost">Renombrar</summary><form method="post" action="/lista/{{ l.id }}/renombrar" class="btn-row" style="margin-top:8px"><input class="input" type="text" name="name" value="{{ l.name }}" required><button class="btn sm">Guardar</button></form></details>
+      <details class="del-confirm"><summary class="btn danger">Borrar lista</summary><form method="post" action="/lista/{{ l.id }}/borrar" class="btn-row" style="margin-top:8px"><span class="hint">¿Seguro?</span><button class="btn sm danger-solid">Sí, borrar</button></form></details>
+      {% endif %}
     </div>
-    {% endif %}
-</div>
-{% if elo_reset %}<p class="confirm-banner">Elo reiniciado a 1500 para toda la lista.</p>{% endif %}
-{# Añadir títulos y Jugar duelos en una fila a partes iguales (.search-actions-row). #}
-<div class="search-actions-row">
-    <details class="manual-add">
-        <summary>Añadir títulos</summary>
-        <input type="text" name="q" placeholder="Buscar..." autocomplete="off"
-               hx-get="/lista/{{ list_row.id }}/buscar"
-               hx-trigger="input changed delay:400ms, search"
-               hx-target="#list-add-results"
-               hx-indicator="#list-buscando">
-        <span id="list-buscando" class="htmx-indicator empty"><span class="spinner"></span>Buscando...</span>
-        <div id="list-add-results"></div>
-    </details>
-    {% if entries|length > 2 %}
-    <a class="btn secondary" href="/lista/{{ list_row.id }}/duelo">Jugar duelos</a>
-    {% endif %}
-</div>
-{% if entries|length > 2 %}
-{% if coverage and not coverage.done %}
-<p class="page-hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>
-{% endif %}
-<div class="sort-bar">
-    <form method="post" action="/lista/{{ list_row.id }}/orden">
-        <input type="hidden" name="modo" value="manual">
-        <button class="{{ 'active' if list_row.order_mode == 'manual' }}">Manual</button>
-    </form>
-    <form method="post" action="/lista/{{ list_row.id }}/orden">
-        <input type="hidden" name="modo" value="duelo">
-        <button class="{{ 'active' if list_row.order_mode == 'duelo' }}">Duelos</button>
-    </form>
-    {# Dos pasos en vez de confirm(): los diálogos del navegador no saltan en algunos móviles. #}
-    <details class="del-confirm">
-        <summary class="btn secondary danger">Reiniciar Elo</summary>
-        <form method="post" action="/lista/{{ list_row.id }}/elo/reiniciar">
-            <button class="danger-solid">Confirmar, todo a 1500 otra vez</button>
-        </form>
-    </details>
-</div>
-{% endif %}
-{% if not entries %}
-<div class="empty-state">
-    <span class="empty-icon"><svg class="main" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
-    <h3>Vacía todavía</h3>
-    <p>Añade títulos con la estrella desde la ficha o desde Vistas.</p>
-    <a href="/vistas" class="manual-link-inline">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-        Ir a Vistas
-    </a>
-</div>
-{% endif %}
-<div class="grid">
-{% for e in entries %}
-<div class="card">
-    <div class="card-poster">
-        {# El póster también enlaza a la ficha, no solo el título. #}
-        <a class="poster-ribbon-host" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">
-        {% if e.poster_path %}
-        <img src="{{ e.poster_path|poster_size('w185') }}" srcset="{{ e.poster_path|poster_size('w185') }} 1x, {{ e.poster_path|poster_size('w342') }} 2x" alt="{{ e.title }}" loading="lazy">
-        {% else %}
-        <img src="/static/img/sin-portada.svg" alt="Sin portada">
-        {% endif %}
-        {% with row = e, right = true %}{% include "partials/status_ribbon.html" %}{% endwith %}
-        </a>
-        <span class="rank-badge">#{{ loop.index }}</span>
-    </div>
-    <div class="card-body">
-        <a class="card-title" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}">{{ e.title }}</a>
-        <div class="card-year">{{ e.year or "—" }}</div>
-        {% if e.rating is not none %}<div class="rating">{{ e.rating|fmt_rating }}/10</div>{% endif %}
-        <div class="elo-badge">
-            Elo {{ e.elo|round|int }} · {{ e.rd|elo_confidence }}
-            {% set d = elo_deltas.get(e.item_id) %}
-            {% if d and (d[0] != 0 or d[1] != 0) %}
-            <span class="elo-delta {{ 'up' if d[0] > 0 else 'down' if d[0] < 0 else '' }}">
-                {{ "+" if d[0] > 0 }}{{ d[0] }}{% if d[1] != 0 %} ({{ "↑" if d[1] > 0 else "↓" }}{{ d[1]|abs }}){% endif %}
-            </span>
-            {% endif %}
-        </div>
-        {% if e.comment %}<div class="comment">{{ e.comment }}</div>{% endif %}
-        {% if list_row.order_mode == 'manual' %}
-        <div class="actions reorder">
-            {% if not loop.first %}
-            <form method="post" action="/lista/{{ list_row.id }}/mover/{{ e.item_id }}/subir">
-                <button title="Subir">&uarr;</button>
-            </form>
-            {% endif %}
-            {% if not loop.last %}
-            <form method="post" action="/lista/{{ list_row.id }}/mover/{{ e.item_id }}/bajar">
-                <button title="Bajar">&darr;</button>
-            </form>
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
-</div>
-{% endfor %}
+  </div>
+  {% if entries|length > 2 and coverage and not coverage.done %}<p class="hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>{% endif %}
+  {% if not entries %}{% call empty('star', 'Vacía todavía', 'Añade títulos con la estrella desde la ficha o desde Vistas.') %}<a class="btn ghost" href="/vistas">Ir a Vistas</a>{% endcall %}{% endif %}
+  <div class="pgrid">
+    {% for e in entries %}
+    {% set d = elo_deltas.get(e.item_id) %}
+    {% set dl = ((' <span class="delta ' ~ ('up' if d[0] > 0 else 'down' if d[0] < 0 else '') ~ '">' ~ ('+' if d[0] > 0 else '') ~ d[0] ~ ((' ' ~ ('↑' if d[1] > 0 else '↓') ~ (d[1]|abs)) if d[1] else '') ~ '</span>') if d and (d[0] or d[1]) else '') %}
+    {% call card(e.poster_path, e.title, href='/titulo/' ~ e.tmdb_id ~ '/' ~ e.type, rb=e|show_status_ribbon, right=true,
+                 corner='<span class="rank-tag' ~ (' top' if loop.index <= 3 else '') ~ '">#' ~ loop.index ~ '</span>',
+                 l1=(e.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if e.type == 'show' else 'Película'),
+                 l2='Elo <b>' ~ (e.elo|round|int) ~ '</b> · ' ~ (e.rd|elo_confidence) ~ dl,
+                 x=(e.comment if e.comment and e.comment != '-' else '')) %}
+      {% if e.rating is not none %}<span class="score">{{ e.rating|fmt_rating }}<small>/10</small></span>{% endif %}
+      {% if l.order_mode == 'manual' %}<span style="margin-left:auto" class="btn-row">
+        <form method="post" action="/lista/{{ l.id }}/mover/{{ e.item_id }}/subir"><button class="btn sm quiet icon" title="Subir"{{ ' disabled' if loop.first }}>{{ ic('up', 'sm') }}</button></form>
+        <form method="post" action="/lista/{{ l.id }}/mover/{{ e.item_id }}/bajar"><button class="btn sm quiet icon" title="Bajar"{{ ' disabled' if loop.last }}>{{ ic('down', 'sm') }}</button></form></span>{% endif %}
+    {% endcall %}
+    {% endfor %}
+  </div>
 </div>
 {% endblock %}

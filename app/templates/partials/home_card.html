@@ -1,62 +1,39 @@
+{% from "partials/ui.html" import ic %}
 {% if c %}
-{# id fijo: más robusto que "closest .home-card" ante varios swaps outerHTML seguidos. #}
-<div class="home-card" id="home-card-{{ c.id }}">
-    <a class="home-card-poster" href="/titulo/{{ c.tmdb_id }}/show">
-        <img src="{{ c.poster_path|poster_size('w185') if c.poster_path else '/static/img/sin-portada.svg' }}"{% if c.poster_path %} srcset="{{ c.poster_path|poster_size('w185') }} 1x, {{ c.poster_path|poster_size('w342') }} 2x"{% endif %} alt="{{ c.title }}" loading="lazy">
-        {% if c.runtime_minutes %}<span class="home-card-runtime">{{ c.runtime_minutes }} min</span>{% endif %}
-        {% if c.missing_eps > 1 and not confirm_all %}<span class="home-card-left">+{{ c.missing_eps - 1 }}</span>{% endif %}
-    </a>
-    <div class="home-card-info">
-        <a class="home-card-title" href="/titulo/{{ c.tmdb_id }}/show" title="{{ c.title }}">{{ c.title }}</a>
-        {% if c.next_ep %}
-        {# Progreso sobre los episodios emitidos, no sobre el total: si no, la barra
-           nunca llegaría al 100% estando al día. #}
-        {% set total_visible = (c.watched_eps or 0) + (c.missing_eps or 0) %}
-        {% if total_visible %}
-        <div class="home-card-progress"><div class="home-card-progress-fill" style="width: {{ ((c.watched_eps or 0) / total_visible * 100)|round }}%"></div></div>
-        {% endif %}
-        <div class="home-card-ep">
-            {% if confirm_all %}
-            {# Confirmación del doble tick renderizada por el servidor (window.confirm
-               no salta en algunos móviles). El tick simple va a la izquierda y el doble a
-               la derecha: un segundo toque reflejo cae en "Cancelar", no en "Sí". #}
-            <span>¿Los {{ c.missing_eps }}?</span>
-            <span class="home-card-checks">
-                <button class="home-card-check" title="Sí, marcar los {{ c.missing_eps }} vistos"
-                        hx-post="/entrada/{{ c.id }}/todos" hx-target="#home-card-{{ c.id }}" hx-swap="delete">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </button>
-                <button class="home-card-check no" title="Cancelar"
-                        hx-get="/entrada/{{ c.id }}/tarjeta" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </span>
-            {% else %}
-            <span>T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }}</span>
-            <span class="home-card-checks">
-                {# throttle: un doble clic accidental no marca dos episodios. #}
-                <button class="home-card-check" title="Marcar T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }} visto"
-                        hx-post="/entrada/{{ c.id }}/siguiente" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML"
-                        hx-trigger="click throttle:800ms">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </button>
-                {% if c.missing_eps > 1 %}
-                {# Doble clic con ratón va directo al POST. El onclick retrasa 400 ms la
-                   confirmación: si llega un segundo clic en ese tiempo, cancela el timer
-                   y marca todo; si no, enseña la confirmación de siempre (toque único en
-                   móvil). ondblclick no sirve porque el swap sustituye el botón antes
-                   del segundo clic. #}
-                <button class="home-card-check" title="Marcar TODOS los emitidos ({{ c.missing_eps }}) vistos (doble clic para marcar directo)"
-                        onclick="if (this._dt) { clearTimeout(this._dt); this._dt = null; htmx.ajax('POST', '/entrada/{{ c.id }}/todos', {target: '#home-card-{{ c.id }}', swap: 'delete'}); } else { const el = this; el._dt = setTimeout(function () { el._dt = null; htmx.ajax('GET', '/entrada/{{ c.id }}/todos/confirmar', {target: '#home-card-{{ c.id }}', swap: 'outerHTML'}); }, 400); }">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 7 7 17 3 13"></polyline><polyline points="21 9 13 18"></polyline></svg>
-                </button>
-                {% endif %}
-            </span>
-            {% endif %}
-        </div>
-        {% else %}
-        <div class="home-card-ep"><span class="badge badge-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>Al día</span></div>
-        {% endif %}
+{% set total_visible = (c.watched_eps or 0) + (c.missing_eps or 0) %}
+<article class="ccard" id="home-card-{{ c.id }}"{% if hero_index is defined and hero_index is not none %} data-hero-card="{{ hero_index }}"{% endif %}>
+  {% if hero_index is defined and hero_index is not none %}<button type="button" class="ccard-pick" data-hero-pick="{{ hero_index }}" title="Poner en portada">{{ ic('play', 'sm') }}</button>{% endif %}
+  <a class="ccard-img" href="/titulo/{{ c.tmdb_id }}/show">
+    <img class="b" src="{{ c.backdrop_path|tmdb_img('w780') if c.backdrop_path else (c.poster_path|poster_size('w342') if c.poster_path else '') }}" alt="" loading="lazy" onerror="this.remove()">
+    {% if c.logo_path %}<img class="l" src="{{ c.logo_path|tmdb_img('w300') }}" alt="{{ c.title }}">{% else %}<span class="tt">{{ c.title }}</span>{% endif %}
+    {% if c.runtime_minutes %}<span class="rt tag">{{ c.runtime_minutes }} min</span>{% endif %}
+    {% if c.missing_eps > 1 and not confirm_all %}<span class="left tag acc">+{{ c.missing_eps - 1 }}</span>{% endif %}
+  </a>
+  <div class="progress"><i style="width:{{ ((c.watched_eps or 0) / total_visible * 100)|round if total_visible else 0 }}%"></i></div>
+  <div class="ccard-foot">
+    {% if c.next_ep %}
+    {% set nm = c.next_ep.name if c.next_ep.name and not (c.next_ep.name.startswith('Episodio ') or c.next_ep.name.startswith('Episode ')) else c.title %}
+    <div class="cep"><span><b>T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }}</b>{{ nm }}</span><small>{{ c.title if nm != c.title else '' }}</small></div>
+    <div class="btn-row">
+      {% if confirm_all %}
+      <span class="ask-all">¿Los {{ c.missing_eps }}?</span>
+      <div class="ticks">
+        <button class="tick" title="Sí, marcar los {{ c.missing_eps }}" hx-post="/entrada/{{ c.id }}/todos" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML">{{ ic('check') }}</button>
+        <button class="tick no home-card-check" title="Cancelar" hx-get="/entrada/{{ c.id }}/tarjeta" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML">{{ ic('x') }}</button>
+      </div>
+      {% else %}
+      <div class="ticks">
+        <button class="tick" data-next title="Marcar T{{ c.next_ep.season_number }}E{{ c.next_ep.episode_number }} visto"
+                hx-post="/entrada/{{ c.id }}/siguiente" hx-target="#home-card-{{ c.id }}" hx-swap="outerHTML" hx-trigger="click throttle:800ms">{{ ic('check') }}</button>
+        <button class="tick" data-all title="{{ 'Marcar todos los emitidos (' ~ c.missing_eps ~ ') · doble clic para marcar directo' if c.missing_eps > 1 else 'Solo queda uno emitido' }}"{% if c.missing_eps <= 1 %} disabled{% endif %}
+                onclick="if (this._dt) { clearTimeout(this._dt); this._dt = null; htmx.ajax('POST', '/entrada/{{ c.id }}/todos', {target: '#home-card-{{ c.id }}', swap: 'outerHTML'}); } else { const el = this; el._dt = setTimeout(function () { el._dt = null; htmx.ajax('GET', '/entrada/{{ c.id }}/todos/confirmar', {target: '#home-card-{{ c.id }}', swap: 'outerHTML'}); }, 400); }">{{ ic('checks') }}</button>
+      </div>
+      {% endif %}
     </div>
-</div>
+    {% else %}
+    <div class="cep"><span>{{ c.title }}</span></div>
+    <span class="tag ok">{{ ic('check', 'sm') }} Al día</span>
+    {% endif %}
+  </div>
+</article>
 {% endif %}

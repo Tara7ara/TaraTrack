@@ -265,6 +265,20 @@ CREATE TABLE IF NOT EXISTS episode_comments (
     body TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Fondo, logo y estado de emisión de títulos que no están en la biblioteca
+-- (recomendados), para pintar sus portadas sin llamar a TMDB al abrir la página.
+CREATE TABLE IF NOT EXISTS tmdb_extra (
+    tmdb_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    backdrop_path TEXT,
+    logo_path TEXT,
+    show_status TEXT,
+    next_episode_air_date TEXT,
+    next_episode_label TEXT,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (tmdb_id, type)
+);
 """
 
 # Columnas anadidas sobre esquemas ya desplegados - CREATE TABLE IF NOT EXISTS no altera
@@ -350,6 +364,20 @@ MIGRATIONS = [
     # anilist_cross_rec_ids ("12,3,40") - para no pesar igual una recomendacion votada
     # por cientos de personas que una con 1 voto (repo.recommendations).
     "ALTER TABLE titles ADD COLUMN anilist_cross_rec_votes TEXT",
+    # Imágenes de TMDB para las portadas: fondo y logo del título, fondos extra para la
+    # ficha (y los quitados a mano, que no vuelven al sincronizar) e imagen de episodio.
+    "ALTER TABLE titles ADD COLUMN backdrop_path TEXT",
+    "ALTER TABLE titles ADD COLUMN logo_path TEXT",
+    "ALTER TABLE titles ADD COLUMN backdrops TEXT",
+    "ALTER TABLE titles ADD COLUMN hidden_backdrops TEXT",
+    "ALTER TABLE episodes ADD COLUMN still_path TEXT",
+    # Géneros de cada recomendación, para agruparlas por género.
+    "ALTER TABLE recommendations_cache ADD COLUMN genres TEXT",
+    # Cuentas por invitación: hash del código de un solo uso y su caducidad; y cuentas
+    # bloqueadas (conservan los datos pero no pueden entrar).
+    "ALTER TABLE users ADD COLUMN invite_code_hash TEXT",
+    "ALTER TABLE users ADD COLUMN invite_expires_at TEXT",
+    "ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0",
 ]
 
 # Indices para que las subqueries de inicio/calendario no barran tablas enteras.
