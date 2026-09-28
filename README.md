@@ -25,9 +25,9 @@ _(biblioteca de ejemplo)_
 |---|---|
 | ![Pendientes](screenshots/pendientes.webp) | ![Vistas](screenshots/vistas.webp) |
 
-| Calendario de temporada | Estadísticas |
+| Calendario | Estadísticas |
 |---|---|
-| ![Calendario de temporada](screenshots/calendario.webp) | ![Estadísticas](screenshots/estadisticas.webp) |
+| ![Calendario](screenshots/calendario.webp) | ![Estadísticas](screenshots/estadisticas.webp) |
 
 ![Duelo](screenshots/duelo.webp)
 
