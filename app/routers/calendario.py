@@ -228,8 +228,14 @@ async def calendario_anual_perfil(request: Request, year: int = 0, season: str =
 
 
 @router.post("/calendario/sincronizar")
-def calendario_sincronizar(request: Request):
+async def calendario_sincronizar(request: Request):
     """POST normal + redirect, como crear_lista: sustituir el <body> entero con htmx
-    daba pantalla en negro en móvil."""
-    repo.sync_library()
+    daba pantalla en negro en móvil. La sync tarda minutos, así que va en segundo
+    plano y no se espera. Si ya hay una en marcha, sync_library no lanza otra."""
+    def _sync():
+        try:
+            repo.sync_library()
+        except Exception:
+            logging.exception("calendario_sincronizar: fallo en la sync")
+    asyncio.create_task(asyncio.to_thread(_sync))
     return RedirectResponse("/calendario", status_code=303)

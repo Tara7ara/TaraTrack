@@ -16,7 +16,8 @@
     </span>
     <div class="seg"><a class="{{ '' if solo else 'active' }}" href="/calendario?semana={{ semana }}">Todo</a><a class="{{ 'active' if solo }}" href="/calendario?semana={{ semana }}&solo=1">Sin ver</a></div>
     <span style="margin-left:auto" class="btn-row">
-      {% if sync_status.finished_at %}<span class="sync-line">{% if sync_status.ok %}<span class="ok">●</span> Sincronizado {{ sync_status.finished_at|fmt_ago }}{% else %}El último sync falló: {{ sync_status.error_message }}{% endif %}</span>{% endif %}
+      {% if sync_status.running %}<span class="sync-line">Sincronizando…</span>
+      {% elif sync_status.finished_at %}<span class="sync-line">{% if sync_status.ok %}<span class="ok">●</span> Sincronizado {{ sync_status.finished_at|fmt_ago }}{% else %}El último sync falló: {{ sync_status.error_message }}{% endif %}</span>{% endif %}
       <form method="post" action="/calendario/sincronizar"><button class="btn ghost">{{ ic('sync', 'sm') }} Sincronizar ahora</button></form>
     </span>
   </div>

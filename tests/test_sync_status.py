@@ -18,6 +18,20 @@ def test_sync_library_records_status_on_success(conn):
     assert status["error_message"] == ""
 
 
+def test_sync_library_skips_when_another_sync_is_running(conn):
+    """Con el candado cogido, una segunda sync no hace nada."""
+    from app.repo import sync as sync_mod
+
+    assert sync_mod._sync_lock.acquire(blocking=False)
+    try:
+        assert repo.get_sync_status(conn)["running"] is True
+        assert repo.sync_library() is None
+        assert repo.get_sync_status(conn)["started_at"] is None
+    finally:
+        sync_mod._sync_lock.release()
+    assert repo.get_sync_status(conn)["running"] is False
+
+
 def test_get_sync_status_before_any_sync_is_empty(conn):
     """Antes del primer sync (instalacion nueva) no debe petar - todo en blanco/False."""
     status = repo.get_sync_status(conn)

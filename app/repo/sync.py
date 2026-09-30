@@ -1,6 +1,7 @@
 """app.repo.sync - sincronización de la biblioteca con TMDB y estado del último sync.
 El resto del proyecto usa `from app import repo; repo.funcion(...)`."""
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -13,13 +14,22 @@ from app.repo.affinity import recompute_taste_profile
 from app.repo.titles import get_title, list_trackable_titles, mark_all_aired_watched, refresh_metadata, sync_episodes
 from app.repo.users import list_users
 
+# Una sola sync a la vez (uvicorn corre en un único proceso). Dos en paralelo se
+# bloquean la BBDD entre ellas. Candado en memoria: una marca en la BBDD se quedaría
+# puesta si el contenedor se reinicia a mitad de una sync.
+_sync_lock = threading.Lock()
+
+
+def is_sync_running():
+    return _sync_lock.locked()
+
 
 def get_sync_status(conn):
     """Estado del último sync (botón "Sincronizar" o tarea de fondo): cuándo, cuánto
     tardó y si falló. En app_settings, como get_recompute_status."""
     raw_duration = get_setting(conn, "sync_last_duration_seconds")
     return {
-        "running": get_setting(conn, "sync_running") == "1",
+        "running": is_sync_running(),
         "started_at": get_setting(conn, "sync_last_started_at"),
         "finished_at": get_setting(conn, "sync_last_finished_at"),
         "duration_seconds": float(raw_duration) if raw_duration is not None else None,
@@ -36,7 +46,18 @@ def sync_library():
     """Refresca metadatos de todo lo seguido y los episodios de las series en emision.
     La usan el boton "Sincronizar" del calendario y la tarea automatica de fondo.
     Una conexion (= una transaccion) POR TITULO: la sync tarda minutos y con una sola
-    transaccion larga dejaria la BBDD bloqueada para la app mientras tanto."""
+    transaccion larga dejaria la BBDD bloqueada para la app mientras tanto.
+    Si ya hay una sync en marcha no lanza otra: devuelve None sin hacer nada."""
+    if not _sync_lock.acquire(blocking=False):
+        logging.info("sync_library: ya hay una sync en marcha, se ignora esta")
+        return None
+    try:
+        return _sync_library_locked()
+    finally:
+        _sync_lock.release()
+
+
+def _sync_library_locked():
     start = time.monotonic()
     with get_connection() as conn:
         set_setting(conn, "sync_running", "1")
