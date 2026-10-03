@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.svg" width="140" alt="Logo de TaraTrack"></p>
+
 # TaraTrack
 
 > Tu historial de series, películas y anime; tus notas, tus gustos y tus recomendaciones, en tu propio servidor.
