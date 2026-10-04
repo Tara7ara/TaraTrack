@@ -418,7 +418,7 @@ def list_history(conn, user_id, limit=300):
                FROM watch_sessions
                JOIN entries ON entries.id = watch_sessions.entry_id
                JOIN titles ON titles.id = entries.title_id
-               WHERE entries.user_id = ?
+               WHERE entries.user_id = ? AND watch_sessions.watched_at IS NOT NULL
                ORDER BY watch_sessions.watched_at DESC LIMIT ?
              )
            )
@@ -944,7 +944,7 @@ def list_pending(conn, user_id, tipo="", orden="anadido", q="", genero="", direc
     filtro_genero, genero_params = _genero_sql(genero)
     params.extend(genero_params)
     return conn.execute(
-        f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.type,
+        f"""SELECT entries.*, titles.title, titles.year, titles.poster_path, titles.backdrop_path, titles.logo_path, titles.type,
                    titles.tmdb_id, titles.vote_average, titles.anilist_id, titles.anilist_genres,
                    titles.anilist_studio, titles.anilist_tags, titles.anilist_prequel_ids,
                    titles.anilist_cross_rec_ids, titles.show_status, titles.next_episode_air_date, titles.next_episode_label, titles.in_production
@@ -1063,6 +1063,23 @@ def set_predicted_score(conn, entry_id: int, predicted: int):
         "UPDATE entries SET predicted_score = ? WHERE id = ? AND predicted_score IS NULL",
         (predicted, entry_id),
     )
+
+
+def add_past_watch(conn, entry_id: int):
+    """Suma un visionado anterior sin fecha. No abre vuelta nueva (no toca rewatch_started_at),
+    así que no vuelve a Continuar viendo; cuenta en count_plays pero no en el historial."""
+    conn.execute("INSERT INTO watch_sessions (entry_id, watched_at) VALUES (?, NULL)", (entry_id,))
+
+
+def remove_past_watch(conn, entry_id: int) -> bool:
+    """Quita el último visionado sin fecha; las vueltas de «Volver a ver» no se tocan."""
+    row = conn.execute(
+        "SELECT max(id) AS id FROM watch_sessions WHERE entry_id = ? AND watched_at IS NULL", (entry_id,)
+    ).fetchone()
+    if row["id"] is None:
+        return False
+    conn.execute("DELETE FROM watch_sessions WHERE id = ?", (row["id"],))
+    return True
 
 
 def predicted_outcome_label(predicted: int, rating: float) -> str | None:

@@ -1252,7 +1252,13 @@ body.auth { min-height: 100vh; min-height: 100dvh; display: grid; place-items: c
 @media (min-width: 1101px) {
   .hero.carousel.home-hero { grid-template-columns: minmax(0, 1fr) var(--qw); }
   .hero.carousel.home-hero .slide { padding-right: calc(var(--qw) + 48px); }
-  .home-hero .hero-arrow { display: none; }  .home-hero .hero-dots { right: calc(var(--qw) + 40px); }
+  /* Flechas como en el resto de portadas: la derecha en el borde, tras la cola; los
+     puntos debajo de la cola, alineados a su borde derecho. */
+  .home-hero { --qr: max(var(--pad), 76px); }
+  .home-hero .hero-arrow.next { right: 14px; }
+  .hero-queue { padding-right: var(--qr); padding-bottom: 64px; }
+  .home-hero .hero-dots { right: var(--qr); bottom: 28px; width: calc(var(--qw) - var(--qr)); justify-content: flex-end; }
+  .home-hero .hero-dots button { flex: 0 1 36px; min-width: 12px; }
 }
 @media (max-width: 1100px) {
   .hero.carousel.home-hero { grid-template-columns: minmax(0, 1fr); }
@@ -1348,3 +1354,32 @@ html.loading-slow .brand svg { animation: pumpum 1.4s cubic-bezier(0.2, 0.8, 0.2
 .bottomnav a:active, .bottomnav button:active { transform: scale(0.94); }
 @media (max-width: 760px) { .hero.carousel .hero-dots { display: none; } }
 .vis-more { grid-column: 1 / -1; display: grid; place-items: center; padding: 24px 0; }
+
+/* Contador de visionados de la ficha: − número + en una sola pieza. */
+.plays { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stepper { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.stepper .step { width: 30px; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--text); transition: color .2s, background .2s; }
+.stepper .step:hover:not(:disabled) { color: var(--accent); background: var(--accent-soft); }
+.stepper .step:disabled { opacity: 0.3; cursor: default; }
+.stepper b { min-width: 34px; padding: 0 6px; display: grid; place-items: center; border-inline: 1px solid var(--border); color: var(--text-bright); font-variant-numeric: tabular-nums; }
+.plays-sub { color: var(--text-dim); font-size: 0.82rem; }
+.plays:has(.htmx-request) .stepper { opacity: 0.6; }
+@media (pointer: coarse) { .stepper { height: 36px; } .stepper .step { width: 36px; } }
+
+/* Fila «Pendientes» de Inicio en PC: apaisadas como la cola, 4 por página (5 en pantallas anchas). */
+.hp-wide { display: none; }
+@media (min-width: 1101px) {
+  #home-pendientes .hp-posters { display: none; }
+  #home-pendientes .hp-wide { display: grid; grid-auto-columns: calc((100% - 3 * 16px) / 4); gap: 16px; scroll-snap-type: x mandatory; }
+  .hp-card { grid-template-rows: auto auto; }
+  .hp-card.gold { box-shadow: 0 0 0 2px var(--star), var(--shadow); }
+  .hp-foot { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-width: 0; }
+  .hp-meta { flex: 1; min-width: 0; font-size: 0.8rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .hp-meta b { color: var(--text-bright); font-weight: 700; }
+  .hp-foot .actions { display: flex; gap: 6px; flex: none; }
+  .hp-foot .actions .btn { min-height: 32px; padding: 0 10px; font-size: 0.8rem; border-radius: 8px; }
+  .hp-foot .actions .lbl, .hp-foot .actions .lbl-long { display: none; }
+  .hp-foot .actions .lbl-short { display: inline; }
+  .hp-foot .actions .confirm-inline { font-size: 0.78rem; }
+}
+@media (min-width: 1600px) { #home-pendientes .hp-wide { grid-auto-columns: calc((100% - 4 * 16px) / 5); } }

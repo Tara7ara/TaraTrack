@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -261,10 +262,10 @@ def titulo_detalle(request: Request, tmdb_id: int, type: MediaType, comentar: in
             logging.exception("personajes: fallo al cargar el reparto de %s", title_row["title"])
         characters = repo.list_characters(conn, title_row["id"], entry["id"] if entry else None)
 
-        sessions, plays, rating_history = [], 0, []
+        sessions, plays_ctx, rating_history = [], {}, []
         if entry and entry["status"] == "watched":
             sessions = repo.list_watch_sessions(conn, entry["id"])
-            plays = repo.count_plays(conn, entry["id"])
+            plays_ctx = _plays_ctx(conn, entry["id"])
             rating_history = repo.list_rating_history(conn, entry["id"])
         season_ratings = repo.list_season_ratings(conn, entry["id"]) if entry else {}
         weekday_override = (
@@ -292,7 +293,7 @@ def titulo_detalle(request: Request, tmdb_id: int, type: MediaType, comentar: in
             "seasons": seasons,
             "characters": characters,
             "sessions": sessions,
-            "plays": plays,
+            **plays_ctx,
             "ep_comments": ep_comments,
             "rating_history": rating_history,
             "season_ratings": season_ratings,
@@ -416,6 +417,35 @@ def quitar_nota(request: Request, entry_id: int):
         entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
         if not repo.list_season_ratings(conn, entry_id):
             repo.clear_rating(conn, entry_id)
+    return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
+
+
+def _plays_ctx(conn, entry_id: int) -> dict:
+    """Datos de plays_counter.html: total, cuántos sin fecha (los que el «−» puede quitar)
+    y la última vuelta con fecha."""
+    sessions = repo.list_watch_sessions(conn, entry_id)
+    dated = [s["watched_at"] for s in sessions if s["watched_at"]]
+    return {
+        "plays": repo.count_plays(conn, entry_id),
+        "past_watches": len(sessions) - len(dated),
+        "last_session": max(dated) if dated else None,
+    }
+
+
+@router.post("/entrada/{entry_id}/visionados/{accion}", response_class=HTMLResponse)
+def visionados_anteriores(request: Request, entry_id: int, accion: Literal["sumar", "restar"]):
+    """Contador de visionados de la ficha: suma o quita un visionado anterior sin fecha,
+    sin pasar por «Volver a ver» ni re-marcar episodios."""
+    with get_connection() as conn:
+        entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
+        if entry["status"] == "watched":
+            if accion == "sumar":
+                repo.add_past_watch(conn, entry_id)
+            else:
+                repo.remove_past_watch(conn, entry_id)
+        ctx = _plays_ctx(conn, entry_id)
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "partials/plays_counter.html", {"entry": entry, **ctx})
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
 
 

@@ -45,6 +45,15 @@ def inicio(request: Request):
                 return RedirectResponse("/recomendados?vacio=1", status_code=303)
         today = date.today().isoformat()
         cal = [i for i in repo.list_calendar(conn, uid) if not i["auto_watch"] and i["tmdb_id"] not in habit_ids]
+        # Fila «Pendientes»: sin repetir lo que ya sale arriba en la portada.
+        shown = {c["id"] for c in continuar} | {n["id"] for n in nuevas}
+        pendientes = repo.pick_pending_for_today(
+            repo.add_predictions(conn, uid, [e for e in repo.list_pending(conn, uid) if e["id"] not in shown]),
+            uid,
+        )
+        n_pendientes = conn.execute(
+            "SELECT count(*) FROM entries WHERE user_id = ? AND status = 'pending'", (uid,)
+        ).fetchone()[0]
     hoy = [i for i in cal if i["air_date"] == today]
     dias = [date.today() + timedelta(days=k) for k in range(7)]
     semana = [
@@ -60,6 +69,7 @@ def inicio(request: Request):
     return templates.TemplateResponse(
         request, "inicio.html",
         {"continuar": continuar, "nuevas": nuevas, "hoy": hoy, "semana": semana, "ahora": ahora,
+         "pendientes": pendientes, "n_pendientes": n_pendientes,
          "library_version": version, "today": today, "transparent_nav": bool(continuar or nuevas), "title": "Inicio"},
     )
 

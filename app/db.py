@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS list_items (
 CREATE TABLE IF NOT EXISTS watch_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_id INTEGER NOT NULL REFERENCES entries(id),
-    watched_at TEXT NOT NULL,
+    watched_at TEXT,  -- NULL = visionado anterior apuntado sin fecha
     speed TEXT NOT NULL DEFAULT '1x',
     notes TEXT
 );
@@ -734,6 +734,29 @@ def _migrate_calendar_links(conn):
     conn.execute("INSERT INTO app_settings (key, value) VALUES ('calendar_links_per_user', '1')")
 
 
+def _migrate_watch_sessions_undated(conn):
+    """Permite watched_at NULL (visionados anteriores sin fecha). SQLite no deja quitar
+    un NOT NULL, así que se rehace la tabla copiando las filas; solo una vez."""
+    cols = {c["name"]: c for c in conn.execute("PRAGMA table_info(watch_sessions)")}
+    if not cols["watched_at"]["notnull"]:
+        return
+    conn.executescript(
+        """BEGIN;
+           CREATE TABLE watch_sessions_new (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               entry_id INTEGER NOT NULL REFERENCES entries(id),
+               watched_at TEXT,
+               speed TEXT NOT NULL DEFAULT '1x',
+               notes TEXT
+           );
+           INSERT INTO watch_sessions_new (id, entry_id, watched_at, speed, notes)
+               SELECT id, entry_id, watched_at, speed, notes FROM watch_sessions;
+           DROP TABLE watch_sessions;
+           ALTER TABLE watch_sessions_new RENAME TO watch_sessions;
+           COMMIT;"""
+    )
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_connection() as conn:
@@ -748,6 +771,7 @@ def init_db():
         _migrate_multiuser(conn)
         _migrate_affinity_multiuser(conn)
         _migrate_calendar_links(conn)
+        _migrate_watch_sessions_undated(conn)
         conn.executescript(INDEXES)
 
 

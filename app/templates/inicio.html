@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/ui.html" import ic, head, empty, hero_img %}
+{% from "partials/ui.html" import ic, head, empty, hero_img, card %}
 {% block content %}
 {% set todos = continuar + nuevas %}
 <div id="inicio-page" hx-get="/" hx-select="#inicio-page" hx-target="this" hx-swap="outerHTML" hx-disinherit="hx-select"
@@ -65,6 +65,42 @@
   </nav>
   {% endif %}
 
+  {# Pendientes: una tanda del día con las tarjetas de la pestaña; con menos de 3 no sale. #}
+  {% if pendientes|length >= 3 %}
+  <section class="section netflix-row" id="home-pendientes">
+    <div class="section-head"><h2>Pendientes</h2><span class="meta">elegidos para hoy de {{ n_pendientes }}</span>
+      <span class="row-nav"><a class="more" href="/pendientes">Ver todos {{ ic('chevr', 'sm') }}</a><button type="button" class="row-btn" data-row="-1" aria-label="Anterior">{{ ic('chevl', 'sm') }}</button><button type="button" class="row-btn" data-row="1" aria-label="Siguiente">{{ ic('chevr', 'sm') }}</button></span></div>
+    {# PC: tarjetas apaisadas como las de la cola. Móvil y tablet: pósters. #}
+    <div class="row-scroll hp-wide">
+      {% for e in pendientes %}
+      {% set gold = e.predict is not none and e.predict >= 95 and e.predict_confidence is not none and e.predict_confidence > 10 %}
+      <article class="ccard hp-card{{ ' gold' if gold }}">
+        <a class="ccard-img" href="/titulo/{{ e.tmdb_id }}/{{ e.type }}" title="{{ e.title }}">
+          <img class="b" src="{{ e.backdrop_path|tmdb_img('w780') if e.backdrop_path else (e.poster_path|poster_size('w342') if e.poster_path else '') }}" alt="" loading="lazy" onerror="this.remove()">
+          {% if e.logo_path %}<img class="l" src="{{ e.logo_path|tmdb_img('w300') }}" alt="{{ e.title }}" loading="lazy">{% else %}<span class="tt">{{ e.title }}</span>{% endif %}
+          {% if e.type == 'movie' %}<span class="rt tag">Película</span>{% endif %}
+        </a>
+        <div class="hp-foot">
+          <span class="hp-meta">{{ e.year or '—' }}<span class="sep">·</span>{{ 'Serie' if e.type == 'show' else 'Película' }}{% if e.predict is not none %}<span class="sep">·</span><span class="pct{{ ' gold' if gold }}">{{ e.predict }}%</span> te gustará{% elif e.vote_average %}<span class="sep">·</span>Internet <b>{{ e.vote_average|fmt_rating(1) }}</b>{% endif %}</span>
+          {% set tmdb_id = e.tmdb_id %}{% set type = e.type %}{% set state = "pending" %}{% include "partials/entry_actions.html" %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    <div class="row-scroll cards hp-posters">
+      {% for e in pendientes %}
+      {% set gold = e.predict is not none and e.predict >= 95 and e.predict_confidence is not none and e.predict_confidence > 10 %}
+      {% set l2 = ('Internet <b>'|safe ~ (e.vote_average|fmt_rating(1)) ~ '</b>'|safe if e.vote_average else '') ~ ('<span class="sep">·</span>'|safe if e.vote_average and e.predict is not none else '') ~ ('<span class="pct'|safe ~ (' gold' if gold else '') ~ '">'|safe ~ e.predict ~ '%</span> te gustará'|safe if e.predict is not none else '') %}
+      {% call card(e.poster_path, e.title, href='/titulo/' ~ e.tmdb_id ~ '/' ~ e.type, rb=e|show_status_ribbon,
+                   l1=(e.year or '—')|string ~ '<span class="sep">·</span>'|safe ~ ('Serie' if e.type == 'show' else 'Película'), l2=l2,
+                   gold=gold, uid='hp-' ~ e.tmdb_id) %}
+        {% set tmdb_id = e.tmdb_id %}{% set type = e.type %}{% set state = "pending" %}{% include "partials/entry_actions.html" %}
+      {% endcall %}
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
     {% set dias_con = semana|selectattr('items')|list %}
   {% if dias_con %}
   <section class="section">
@@ -99,6 +135,29 @@ document.body.addEventListener('htmx:afterSwap', (e) => {
     if (document.querySelector('.home-card-check.no, .hero-confirm')) return;
     clearTimeout(window.__ttRef); window.__ttRef = setTimeout(() => htmx.trigger('#inicio-page', 'tt-refresh'), 700);
 });
+// Flechas de la fila Pendientes. Delegado en document porque Inicio se refresca por htmx.
+if (!window.__ttHomeRow) {
+    window.__ttHomeRow = true;
+    // Hay dos filas (apaisada en PC, pósters en móvil): manda la que se ve.
+    const row = (sec) => [...sec.querySelectorAll('.row-scroll')].find((r) => r.offsetParent);
+    const upd = (sec) => {
+        const r = sec && row(sec); if (!r) return;
+        const [prev, next] = sec.querySelectorAll('.row-btn');
+        prev.disabled = r.scrollLeft <= 4; next.disabled = r.scrollLeft + r.clientWidth >= r.scrollWidth - 4;
+    };
+    document.addEventListener('click', (e) => {
+        const b = e.target.closest('#home-pendientes .row-btn'); if (!b) return;
+        const r = row(b.closest('.netflix-row'));
+        // Página exacta (ancho + hueco) para que la fila quede alineada a los bordes.
+        const gap = parseFloat(getComputedStyle(r).columnGap) || 0;
+        r.scrollBy({ left: +b.dataset.row * (r.clientWidth + gap), behavior: 'smooth' });
+    });
+    document.addEventListener('scroll', (e) => { if (e.target.closest && e.target.closest('#home-pendientes')) upd(e.target.closest('#home-pendientes')); }, { capture: true, passive: true });
+    const all = () => upd(document.getElementById('home-pendientes'));
+    document.body.addEventListener('htmx:afterSettle', all);
+    addEventListener('resize', all);
+    all();
+}
 if (!window.__ttVersionPoll) {
     window.__ttVersionPoll = true;
     const busy = () => document.querySelector('.home-card-check.no, .hero-confirm, details[open]') || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement && document.activeElement.tagName);

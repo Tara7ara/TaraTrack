@@ -1136,6 +1136,27 @@ def add_predictions(conn, user_id, entries, profile=None):
 
 
 
+HOME_PENDING_PICKS = 10
+HOME_PENDING_POOL = 30
+
+
+def pick_pending_for_today(entries, user_id, today=None, n=HOME_PENDING_PICKS, pool=HOME_PENDING_POOL):
+    """Fila «Pendientes» de Inicio: `n` títulos al azar entre los `pool` con más
+    predicción, fijos durante el día (semilla usuario + fecha). Si no hay bastantes
+    con predicción, se completa al azar con el resto."""
+    rng = random.Random(f"{user_id}-{(today or date.today()).isoformat()}")
+    with_pred = sorted((e for e in entries if e["predict"] is not None), key=lambda e: -e["predict"])
+    picks = rng.sample(with_pred[:pool], min(n, len(with_pred[:pool])))
+    picks.sort(key=lambda e: -e["predict"])
+    if len(picks) < n:
+        chosen = {e["id"] for e in picks}
+        rest = [e for e in entries if e["id"] not in chosen]
+        picks += rng.sample(rest, min(n - len(picks), len(rest)))
+    return picks
+
+
+
+
 def get_affinity_display(conn, user_id, min_titles: int = 3, limit: int = 15):
     """Desglose del índice de afinidad de este usuario para /estadisticas. Solo lee
     taste_profile. min_titles descarta atributos con muy pocos títulos."""

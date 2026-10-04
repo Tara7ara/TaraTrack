@@ -1,0 +1,12 @@
+{% from "partials/ui.html" import ic %}
+{# Visionados con contador: «+» suma uno anterior sin fecha; «−» solo quita esos. #}
+<dd class="plays" id="plays">
+  <span class="stepper" role="group" aria-label="Visionados">
+    <button type="button" class="step" hx-post="/entrada/{{ entry.id }}/visionados/restar" hx-target="#plays" hx-swap="outerHTML"
+            {% if past_watches %}title="Quitar una vez" aria-label="Quitar una vez"{% else %}disabled title="Solo se quitan las veces sumadas aquí" aria-label="Quitar una vez"{% endif %}>{{ ic('minus', 'sm') }}</button>
+    <b>{{ plays }}</b>
+    <button type="button" class="step" hx-post="/entrada/{{ entry.id }}/visionados/sumar" hx-target="#plays" hx-swap="outerHTML"
+            title="Ya la había visto otra vez entera" aria-label="Sumar una vez">{{ ic('plus', 'sm') }}</button>
+  </span>
+  <span class="plays-sub">{{ 'vez' if plays == 1 else 'veces' }}{% if last_session %} · última vuelta {{ last_session[:10] }}{% endif %}</span>
+</dd>

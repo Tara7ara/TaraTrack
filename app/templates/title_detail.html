@@ -119,7 +119,7 @@
     </div>
     <aside class="about-side">
       <dl class="kv big">
-        {% if entry and st == 'watched' %}<dt>Visionados</dt><dd>{{ plays }}{% if sessions %} · última vuelta {{ sessions[-1].watched_at[:10] }}{% endif %}</dd>
+        {% if entry and st == 'watched' %}<dt>Visionados</dt>{% include "partials/plays_counter.html" %}
         {% if entry.watched_at %}<dt>Vista el</dt><dd>{{ entry.watched_at[:10] }}</dd>{% endif %}{% endif %}
         {% if t.release_date %}<dt>Estreno</dt><dd>{{ t.release_date }}</dd>{% endif %}
         {% if t.anilist_studio %}<dt>Estudio</dt><dd>{{ t.anilist_studio }}</dd>{% endif %}
@@ -130,6 +130,7 @@
       <details class="del-confirm"><summary class="btn ghost sm">{{ ic('rewatch', 'sm') }} Volver a ver</summary>
         <form method="post" action="/entrada/{{ entry.id }}/volver-a-ver" style="display:grid;gap:8px;margin-top:8px">
           {% if t.type == "show" %}<p class="hint">Vuelve a Continuar viendo desde el primer episodio. Lo que ya viste sigue marcado con su fecha y tu nota se queda.</p>{% endif %}
+          <p class="hint">¿Solo quieres apuntar que ya la habías visto más veces? Usa el + de Visionados.</p>
           <div><button class="btn sm">Sí, empezar otra vez</button></div></form></details>
       {% endif %}
       {% if season_ratings %}
