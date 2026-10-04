@@ -8,8 +8,8 @@
   {% for r in results %}
   {% set st = r.state or 'new' %}
   {% call card(r.poster_url, r.title, href='/titulo/' ~ r.tmdb_id ~ '/' ~ r.type, rb=r|show_status_ribbon, adult=r.adult and st == 'new', uid='s-' ~ r.tmdb_id,
-               l1=(r.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if r.type == 'show' else 'Película'),
-               l2=('Ya vista' if st == 'watched' else ('En pendientes' if st == 'pending' else (('Internet <b>' ~ (r.vote_average|fmt_rating(1)) ~ '</b>') if r.vote_average else '')))) %}
+               l1=(r.year or '—')|string ~ '<span class="sep">·</span>'|safe ~ ('Serie' if r.type == 'show' else 'Película'),
+               l2=('Ya vista' if st == 'watched' else ('En pendientes' if st == 'pending' else (('Internet <b>'|safe ~ (r.vote_average|fmt_rating(1)) ~ '</b>'|safe) if r.vote_average else '')))) %}
     {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = st %}{% include "partials/entry_actions.html" %}
   {% endcall %}
   {% endfor %}

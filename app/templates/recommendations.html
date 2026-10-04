@@ -17,8 +17,8 @@
 {% macro rec_card(r, in_row=false) -%}
 {% set why = ('Porque te gustó ' ~ r.seeds[:3]|join(', ') ~ (' y ' ~ (r.seeds|length - 3) ~ ' más' if r.seeds|length > 3 else '')) if r.seeds else '' %}
 {% call card(r.poster_url, r.title, href='/titulo/' ~ r.tmdb_id ~ '/' ~ r.type, rb=r|show_status_ribbon, right=true, adult=r.adult, uid='rec-' ~ r.tmdb_id,
-             l1=(r.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if r.type == 'show' else 'Película'),
-             l2=('Internet <b>' ~ (r.vote_average|fmt_rating(1)) ~ '</b>') if r.vote_average else '', x=(none if in_row else why),
+             l1=(r.year or '—')|string ~ '<span class="sep">·</span>'|safe ~ ('Serie' if r.type == 'show' else 'Película'),
+             l2=('Internet <b>'|safe ~ (r.vote_average|fmt_rating(1)) ~ '</b>'|safe) if r.vote_average else '', x=(none if in_row else why),
              corner=ban_form(r)|string ~ (rec_hover(r, why)|string if in_row else '')) %}
   {% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = "new" %}{% include "partials/entry_actions.html" %}
 {% endcall %}
@@ -70,7 +70,7 @@
   <section class="section netflix-row">{{ rowhead('Anime de esta temporada para ti', 'lo que no tienes, de lo que más te gustará a lo que menos', '/calendario/anual?vista=porcentaje') }}
     <div class="row-scroll cards">{% for it in temporada %}
       {% set href = '/calendario/abrir?title=' ~ (it.title|urlencode) ~ '&romaji=' ~ ((it.title_romaji or '')|urlencode) ~ '&anilist_id=' ~ (it.anilist_id or 0) %}
-      {% call card(it.image, it.title, href=href, uid='temp-' ~ it.anilist_id, l1=(it.studio or 'Anime'), l2=(('Nota <b>' ~ (it.score|fmt_rating(1)) ~ '</b>') if it.score else '')) %}
+      {% call card(it.image, it.title, href=href, uid='temp-' ~ it.anilist_id, l1=(it.studio or 'Anime'), l2=(('Nota <b>'|safe ~ (it.score|fmt_rating(1)) ~ '</b>'|safe) if it.score else '')) %}
         <form hx-post="/calendario/anadir" hx-target="this" hx-swap="outerHTML">
           <input type="hidden" name="title" value="{{ it.title }}"><input type="hidden" name="romaji" value="{{ it.title_romaji or '' }}">
           <input type="hidden" name="anilist_id" value="{{ it.anilist_id or 0 }}"><input type="hidden" name="predict" value="{{ it.predict if it.predict is not none else '' }}">

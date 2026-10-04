@@ -175,3 +175,32 @@ def test_missing_secret_key_fails_fast(monkeypatch):
     monkeypatch.delenv("TARATRACK_SECRET_KEY", raising=False)
     with pytest.raises(RuntimeError):
         main._auth_serializer()
+
+
+def test_changing_password_closes_other_sessions(client, tmp_path):
+    """Otra sesión abierta con la contraseña vieja cae al cambiarla; la sesión desde
+    la que se cambia sigue dentro."""
+    code = _invite("amigo")
+    _activar(client, "amigo", code, password="clave-vieja-1")
+    otra = TestClient(main.app, base_url="https://testserver")
+    otra.post("/login", data={"username": "amigo", "password": "clave-vieja-1", "next": "/"})
+    assert otra.get("/ajustes", follow_redirects=False).status_code == 200
+
+    r = client.post(
+        "/ajustes/perfil/password",
+        data={"password_actual": "clave-vieja-1", "password_nueva": "clave-nueva-2", "password_nueva2": "clave-nueva-2"},
+        follow_redirects=False,
+    )
+    assert "perfil_ok" in r.headers["location"]
+
+    assert client.get("/ajustes", follow_redirects=False).status_code == 200
+    assert otra.get("/ajustes", follow_redirects=False).status_code == 303
+
+
+def test_expired_session_on_htmx_request_redirects_whole_page(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
+    with TestClient(main.app, base_url="https://testserver") as anon:
+        r = anon.post("/episodio/1/toggle", headers={"HX-Request": "true"}, follow_redirects=False)
+        assert r.status_code == 200 and r.headers["HX-Redirect"] == "/login"
+        r = anon.get("/vistas?orden=elo", follow_redirects=False)
+        assert r.headers["location"] == "/login?next=/vistas%3Forden%3Delo"

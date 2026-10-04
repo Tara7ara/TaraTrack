@@ -6,5 +6,10 @@
   {{ exam_side(title_row, 'Puntuar temporada ' ~ season_number, 'Temporada ' ~ season_number) }}
   {{ exam_form('/titulo/' ~ title_row.tmdb_id ~ '/' ~ title_row.type ~ '/temporada/' ~ season_number ~ '/puntuar', categories, weights,
                rating=rating, comment=comment, show_habit=false, comment_required=false) }}
-</div></div>
+</div>
+{% if rating is not none %}
+<details class="del-confirm" style="margin-top:16px"><summary class="btn danger">Quitar nota de la temporada {{ season_number }}</summary>
+  <form method="post" action="/titulo/{{ title_row.tmdb_id }}/{{ title_row.type }}/temporada/{{ season_number }}/quitar-nota" class="btn-row" style="margin-top:8px"><span class="hint">¿Seguro?</span><button class="btn sm danger-solid">Sí, quitar</button></form></details>
+{% endif %}
+</div>
 {% endblock %}

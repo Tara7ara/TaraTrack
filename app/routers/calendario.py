@@ -4,10 +4,11 @@ import logging
 from datetime import date, timedelta
 from urllib.parse import quote
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import anime, repo
+from app.config import MAX_TEXT_LEN
 from app.db import get_connection
 from app.matching import (
     _resolve_calendar_match,
@@ -18,22 +19,29 @@ router = APIRouter()
 
 
 @router.get("/calendario/abrir", response_class=HTMLResponse)
-def calendario_abrir(request: Request, title: str = "", romaji: str = "", anilist_id: int = 0):
+def calendario_abrir(
+    request: Request, title: str = Query("", max_length=MAX_TEXT_LEN),
+    romaji: str = Query("", max_length=MAX_TEXT_LEN), anilist_id: int = 0,
+):
     match = _resolve_calendar_match(title.strip(), romaji.strip()) if title.strip() else None
     if match:
         if anilist_id:
             with get_connection() as conn:
                 repo.ensure_title(conn, match["tmdb_id"], match["type"])
-                repo.link_calendar_card(conn, anilist_id, match["tmdb_id"], match["type"])
+                repo.link_calendar_card(conn, anilist_id, match["tmdb_id"], match["type"], request.state.user_id)
         return RedirectResponse(f"/titulo/{match['tmdb_id']}/{match['type']}", status_code=303)
     return RedirectResponse(f"/buscar?q={quote(title)}", status_code=303)
 
 
 @router.post("/calendario/anadir", response_class=HTMLResponse)
 def calendario_anadir(
-    request: Request, title: str = Form(...), romaji: str = Form(""), predict: str = Form(""),
+    request: Request, title: str = Form(..., max_length=MAX_TEXT_LEN),
+    romaji: str = Form("", max_length=MAX_TEXT_LEN), predict: str = Form(""),
     anilist_id: int = Form(0), compact: str = Form(""),
 ):
+    """+Pendientes desde la tarjeta del calendario de temporada, sin salir de la página.
+    Guarda también la predicción de la tarjeta (`predicted_score`, solo si la entry es
+    nueva) para comparar luego expectativa y nota."""
     r = _resolve_calendar_match(title.strip(), romaji.strip())
     if not r:
         return templates.TemplateResponse(
@@ -41,7 +49,7 @@ def calendario_anadir(
         )
     with get_connection() as conn:
         entry = repo.ensure_entry(conn, r["tmdb_id"], r["type"], request.state.user_id)
-        repo.link_calendar_card(conn, anilist_id, r["tmdb_id"], r["type"])
+        repo.link_calendar_card(conn, anilist_id, r["tmdb_id"], r["type"], request.state.user_id)
         if predict.strip().isdigit():
             repo.set_predicted_score(conn, entry["id"], int(predict))
     return templates.TemplateResponse(
@@ -107,15 +115,18 @@ _SEASON_ES = {"WINTER": "Invierno", "SPRING": "Primavera", "SUMMER": "Verano", "
 _WEEKDAY_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 
-def _current_season() -> str:
-    month = date.today().month
-    if month in (12, 1, 2):
-        return "WINTER"
-    if month in (3, 4, 5):
-        return "SPRING"
-    if month in (6, 7, 8):
-        return "SUMMER"
-    return "FALL"
+def _current_season() -> tuple[str, int]:
+    """(temporada, año) de AniList: diciembre ya es el invierno del año siguiente."""
+    today = date.today()
+    if today.month == 12:
+        return "WINTER", today.year + 1
+    if today.month in (1, 2):
+        return "WINTER", today.year
+    if today.month in (3, 4, 5):
+        return "SPRING", today.year
+    if today.month in (6, 7, 8):
+        return "SUMMER", today.year
+    return "FALL", today.year
 
 
 async def _refresh_season_cache_async(season: str, year: int):
@@ -137,9 +148,14 @@ async def _refresh_season_cache_async(season: str, year: int):
 async def calendario_anual(
     request: Request, year: int = 0, season: str = "", vista: str = "dia", afinidad_alta: str = ""
 ):
-    year = year or date.today().year
+    """Todo el anime TV/ONA de una temporada según AniList, por día de emisión, por %
+    de predicción o por nota. Sale de la caché de la BBDD: la primera vez se pide a
+    AniList; si está caducada (>24 h) se enseña igual y se refresca en segundo plano."""
+    current_season, current_year = _current_season()
     if season not in _SEASON_ORDER:
-        season = _current_season()
+        season = current_season
+    if not year:
+        year = current_year if season == current_season else date.today().year
 
     with get_connection() as conn:
         items, age_hours = repo.get_cached_season(conn, season, year)
@@ -195,7 +211,7 @@ async def calendario_anual(
     idx = _SEASON_ORDER.index(season)
     prev_s = (_SEASON_ORDER[idx - 1], year - 1 if idx == 0 else year)
     next_s = (_SEASON_ORDER[(idx + 1) % 4], year + 1 if idx == 3 else year)
-    is_current = season == _current_season() and year == date.today().year
+    is_current = (season, year) == _current_season()
 
     return templates.TemplateResponse(
         request,

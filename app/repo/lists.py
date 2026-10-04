@@ -2,6 +2,9 @@
 `from app import repo; repo.funcion(...)`."""
 
 
+from app.repo._shared import forget_duels
+
+
 def get_default_list(conn, user_id: int):
     """La lista "Favoritos" de este usuario (cada cuenta tiene la suya)."""
     return conn.execute(
@@ -74,12 +77,19 @@ def add_entry_to_list(conn, list_id: int, entry_id: int):
     )
 
 
+def remove_list_item(conn, list_id: int, item_id: int):
+    # Duelos y fotos de Elo solo si el item es de esta lista: item_id viene de la URL.
+    forget_duels(conn, "list_items", "SELECT id FROM list_items WHERE id = ? AND list_id = ?", (item_id, list_id))
+    conn.execute("DELETE FROM list_items WHERE id = ? AND list_id = ?", (item_id, list_id))
+
+
 def toggle_list_item(conn, list_id: int, entry_id: int) -> bool:
     """Anade/quita una entrada de una lista. Devuelve True si quedo anadida, False si se quito."""
     existing = conn.execute(
         "SELECT id FROM list_items WHERE list_id = ? AND entry_id = ?", (list_id, entry_id)
     ).fetchone()
     if existing:
+        forget_duels(conn, "list_items", "?", (existing["id"],))
         conn.execute("DELETE FROM list_items WHERE id = ?", (existing["id"],))
         return False
     conn.execute("INSERT INTO list_items (list_id, entry_id) VALUES (?, ?)", (list_id, entry_id))
@@ -173,6 +183,12 @@ def delete_list(conn, list_id: int) -> bool:
     row = conn.execute("SELECT is_default FROM lists WHERE id = ?", (list_id,)).fetchone()
     if not row or row["is_default"]:
         return False
+    item_ids = "SELECT id FROM list_items WHERE list_id = ?"
+    conn.execute(
+        f"DELETE FROM duels WHERE table_name = 'list_items' AND (winner_id IN ({item_ids}) OR loser_id IN ({item_ids}))",
+        (list_id, list_id),
+    )
+    conn.execute(f"DELETE FROM elo_snapshots WHERE table_name = 'list_items' AND item_id IN ({item_ids})", (list_id,))
     conn.execute("DELETE FROM list_items WHERE list_id = ?", (list_id,))
     conn.execute("DELETE FROM lists WHERE id = ?", (list_id,))
     return True

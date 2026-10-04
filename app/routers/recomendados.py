@@ -1,10 +1,9 @@
 """app.routers.recomendados - recomendados y BAN."""
-from datetime import date
-
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
 from app import repo
+from app.config import MediaType
 from app.db import get_connection
 from app.routers.calendario import _current_season
 from app.web import templates
@@ -35,7 +34,7 @@ def _anime_temporada(conn, user_id: int, limit: int = 20) -> list[dict]:
     """Anime de la temporada actual que no está en tu lista, del que más te gustará al que
     menos (misma predicción que el calendario de temporada). Sale de la caché del
     calendario: aquí no se llama a AniList."""
-    season, year = _current_season(), date.today().year
+    season, year = _current_season()
     items, _age = repo.get_cached_season(conn, season, year)
     if not items:
         return []
@@ -100,7 +99,7 @@ def recomendados(request: Request, tipo: str = "", todas: str = "", vacio: str =
 def recomendados_rechazar(
     request: Request,
     tmdb_id: int = Form(...),
-    type: str = Form(...),
+    type: MediaType = Form(...),
     title: str = Form(...),
     poster_path: str = Form(""),
     seed_title: str = Form(""),

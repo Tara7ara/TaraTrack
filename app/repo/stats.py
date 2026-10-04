@@ -31,8 +31,10 @@ def get_stats(conn, user_id):
                WHERE entries.status = 'watched' AND titles.type = 'movie' AND entries.user_id = ?) AS movies_watched,
              (SELECT count(*) FROM entries WHERE status = 'pending' AND user_id = ?) AS pending,
              (SELECT count(*) FROM episode_watches WHERE user_id = ?) AS episodes_watched,
-             (SELECT count(*) FROM entries WHERE rating IS NOT NULL AND user_id = ?) AS rated,
-             (SELECT round(avg(rating), 2) FROM entries WHERE rating IS NOT NULL AND user_id = ?) AS avg_rating,
+             (SELECT count(*) FROM entries WHERE rating IS NOT NULL AND user_id = ?
+                AND NOT (rating = 5.0 AND TRIM(COALESCE(comment, '')) = '-')) AS rated,
+             (SELECT round(avg(rating), 2) FROM entries WHERE rating IS NOT NULL AND user_id = ?
+                AND NOT (rating = 5.0 AND TRIM(COALESCE(comment, '')) = '-')) AS avg_rating,
              (SELECT count(*) FROM favorite_characters JOIN entries ON entries.id = favorite_characters.entry_id
                WHERE entries.user_id = ?) AS waifus,
              (SELECT count(*) FROM episode_user_state WHERE user_id = ? AND is_favorite = 1) AS fav_episodes""",

@@ -7,8 +7,8 @@
 {% set meses_largos = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"] %}
 {% macro dcards(rows, up) -%}
 <div class="row-scroll cards">{% for r in rows %}{{ card(r.poster_path, r.title, href='/titulo/' ~ r.tmdb_id ~ '/' ~ r.type, rb=('Película', 'ribbon-movie') if r.type == 'movie' else none,
-   l1='Tú <b>' ~ (r.rating|fmt_rating) ~ '</b> · Internet ' ~ (r.vote_average|fmt_rating(1)),
-   l2='<b style="color:' ~ ('var(--success)' if up else 'var(--danger)') ~ '">' ~ ('+' if up else '') ~ (r.diff|fmt_rating(1)) ~ '</b> de diferencia', has_acts=false) }}{% endfor %}</div>
+   l1='Tú <b>'|safe ~ (r.rating|fmt_rating) ~ '</b> · Internet '|safe ~ (r.vote_average|fmt_rating(1)),
+   l2='<b style="color:'|safe ~ ('var(--success)' if up else 'var(--danger)') ~ '">'|safe ~ ('+' if up else '') ~ (r.diff|fmt_rating(1)) ~ '</b> de diferencia'|safe, has_acts=false) }}{% endfor %}</div>
 {%- endmacro %}
 <div class="page">
   {{ head('¿Cuánto y qué veo?', 'Estadísticas') }}
@@ -59,7 +59,7 @@
     </div>
     {% if ystats.top_rated %}
     <h3 class="sub-h">Tus mejores notas del {{ year }}</h3>
-    <div class="row-scroll cards">{% for r in ystats.top_rated %}{{ card(r.poster_path, r.title, href=('/titulo/' ~ r.tmdb_id ~ '/' ~ r.type) if r.tmdb_id else none, l1='Tu nota <b>' ~ (r.rating|fmt_rating) ~ '</b>', has_acts=false) }}{% endfor %}</div>
+    <div class="row-scroll cards">{% for r in ystats.top_rated %}{{ card(r.poster_path, r.title, href=('/titulo/' ~ r.tmdb_id ~ '/' ~ r.type) if r.tmdb_id else none, l1='Tu nota <b>'|safe ~ (r.rating|fmt_rating) ~ '</b>'|safe, has_acts=false) }}{% endfor %}</div>
     {% endif %}
     {% endif %}
   </section>

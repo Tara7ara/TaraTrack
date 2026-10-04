@@ -37,6 +37,18 @@ def verify_password(password: str, password_hash: str, password_salt: str) -> bo
     return hmac.compare_digest(candidate, password_hash)
 
 
+_DUMMY_CREDENTIALS: tuple[str, str] | None = None
+
+
+def burn_password_check(password: str) -> None:
+    """PBKDF2 contra un hash de relleno cuando el usuario no existe o no tiene
+    invitación, para que el tiempo de respuesta no revele qué cuentas existen."""
+    global _DUMMY_CREDENTIALS
+    if _DUMMY_CREDENTIALS is None:
+        _DUMMY_CREDENTIALS = hash_password(os.urandom(16).hex())
+    verify_password(password, *_DUMMY_CREDENTIALS)
+
+
 def create_user(conn, username: str, password: str, is_admin: bool = False):
     """Crea la cuenta y su propia lista "Favoritos" (mismo default que ya tenia
     la app de siempre, ahora por-usuario en vez de una unica global) - para que
@@ -125,6 +137,8 @@ def activate_invite(conn, username: str, code: str, password: str, password2: st
     if stored and "$" in stored:
         salt, expected = stored.split("$", 1)
         ok = verify_password(_normalize_code(code), expected, salt)
+    else:
+        burn_password_check(_normalize_code(code))
     if not ok:
         raise ValueError("Usuario o código no válidos")
     if user["is_blocked"]:
@@ -220,6 +234,8 @@ _USER_SETTING_PREFIXES = (
 
 
 def delete_user(conn, user_id: int):
+    """Borra la cuenta y todo lo suyo. El catálogo compartido (titles, episodes,
+    characters) se queda: lo pueden estar usando otras cuentas."""
     user = get_user(conn, user_id)
     if not user:
         raise ValueError("Usuario no encontrado")
@@ -243,7 +259,7 @@ def delete_user(conn, user_id: int):
     conn.execute(f"DELETE FROM list_items WHERE list_id IN ({l_}) OR entry_id IN ({e})")
     conn.execute(f"DELETE FROM lists WHERE id IN ({l_})")
     conn.execute(f"DELETE FROM entries WHERE id IN ({e})")
-    for table in ("episode_comments", "episode_user_state", "episode_watches", "profile_history",
+    for table in ("episode_comments", "episode_user_state", "episode_watches", "profile_history", "user_calendar_links",
                   "recommendations_cache", "rejected_recommendations", "score_distribution", "taste_profile"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     for prefix in _USER_SETTING_PREFIXES:

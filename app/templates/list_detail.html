@@ -25,21 +25,26 @@
   </div>
   {% if entries|length > 2 and coverage and not coverage.done %}<p class="hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>{% endif %}
   {% if not entries %}{% call empty('star', 'Vacía todavía', 'Añade títulos con la estrella desde la ficha o desde Vistas.') %}<a class="btn ghost" href="/vistas">Ir a Vistas</a>{% endcall %}{% endif %}
+  {% if entries %}
   <div class="pgrid">
     {% for e in entries %}
     {% set d = elo_deltas.get(e.item_id) %}
-    {% set dl = ((' <span class="delta ' ~ ('up' if d[0] > 0 else 'down' if d[0] < 0 else '') ~ '">' ~ ('+' if d[0] > 0 else '') ~ d[0] ~ ((' ' ~ ('↑' if d[1] > 0 else '↓') ~ (d[1]|abs)) if d[1] else '') ~ '</span>') if d and (d[0] or d[1]) else '') %}
+    {% set dl = ((' <span class="delta '|safe ~ ('up' if d[0] > 0 else 'down' if d[0] < 0 else '') ~ '">'|safe ~ ('+' if d[0] > 0 else '') ~ d[0] ~ ((' ' ~ ('↑' if d[1] > 0 else '↓') ~ (d[1]|abs)) if d[1] else '') ~ '</span>'|safe) if d and (d[0] or d[1]) else '') %}
     {% call card(e.poster_path, e.title, href='/titulo/' ~ e.tmdb_id ~ '/' ~ e.type, rb=e|show_status_ribbon, right=true,
-                 corner='<span class="rank-tag' ~ (' top' if loop.index <= 3 else '') ~ '">#' ~ loop.index ~ '</span>',
-                 l1=(e.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if e.type == 'show' else 'Película'),
-                 l2='Elo <b>' ~ (e.elo|round|int) ~ '</b> · ' ~ (e.rd|elo_confidence) ~ dl,
+                 corner='<span class="rank-tag'|safe ~ (' top' if loop.index <= 3 else '') ~ '">#'|safe ~ loop.index ~ '</span>'|safe,
+                 l1=(e.year or '—')|string ~ '<span class="sep">·</span>'|safe ~ ('Serie' if e.type == 'show' else 'Película'),
+                 l2='Elo <b>'|safe ~ (e.elo|round|int) ~ '</b> · '|safe ~ (e.rd|elo_confidence) ~ dl,
                  x=(e.comment if e.comment and e.comment != '-' else '')) %}
       {% if e.rating is not none %}<span class="score">{{ e.rating|fmt_rating }}<small>/10</small></span>{% endif %}
-      {% if l.order_mode == 'manual' %}<span style="margin-left:auto" class="btn-row">
+      <span style="margin-left:auto" class="btn-row">
+        {% if l.order_mode == 'manual' %}
         <form method="post" action="/lista/{{ l.id }}/mover/{{ e.item_id }}/subir"><button class="btn sm quiet icon" title="Subir"{{ ' disabled' if loop.first }}>{{ ic('up', 'sm') }}</button></form>
-        <form method="post" action="/lista/{{ l.id }}/mover/{{ e.item_id }}/bajar"><button class="btn sm quiet icon" title="Bajar"{{ ' disabled' if loop.last }}>{{ ic('down', 'sm') }}</button></form></span>{% endif %}
+        <form method="post" action="/lista/{{ l.id }}/mover/{{ e.item_id }}/bajar"><button class="btn sm quiet icon" title="Bajar"{{ ' disabled' if loop.last }}>{{ ic('down', 'sm') }}</button></form>{% endif %}
+        <details class="del-confirm"><summary class="btn sm quiet icon" title="Quitar">{{ ic('x', 'sm') }}</summary>
+          <form method="post" action="/lista/{{ l.id }}/quitar/{{ e.item_id }}" class="btn-row" style="margin-top:8px"><button class="btn sm danger-solid">Quitar</button></form></details></span>
     {% endcall %}
     {% endfor %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}

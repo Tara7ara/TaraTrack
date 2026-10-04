@@ -1,9 +1,10 @@
 """app.routers.buscar - búsqueda en TMDB y alta manual."""
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import anime, repo, tmdb
+from app.config import MAX_TEXT_LEN, MediaType
 from app.db import get_connection
 from app.matching import (
     _strip_season_suffix,
@@ -40,7 +41,7 @@ def _with_status(conn, results):
 
 
 @router.get("/buscar", response_class=HTMLResponse)
-def buscar(request: Request, q: str = ""):
+def buscar(request: Request, q: str = Query("", max_length=MAX_TEXT_LEN)):
     """Un puñado de recomendados de entrada, para que /buscar no arranque en blanco
     antes de teclear nada - lectura de la cache, instantanea (ver repo.list_recommendations).
     Con ?q= (enlaces "Buscar y añadir" del calendario de temporada) el input arranca
@@ -55,7 +56,7 @@ def buscar(request: Request, q: str = ""):
 
 
 @router.get("/buscar/resultados", response_class=HTMLResponse)
-def buscar_resultados(request: Request, q: str = ""):
+def buscar_resultados(request: Request, q: str = Query("", max_length=MAX_TEXT_LEN)):
     """Busqueda permisiva: TMDB en español y, si no hay nada (romaji, typos, motes,
     o TMDB dio un timeout/error puntual), se le pide a AniList el titulo canonico y
     se reintenta con el. tmdb.search() sin proteger tumbaba la ruta entera (500, sin
@@ -102,10 +103,10 @@ def buscar_resultados(request: Request, q: str = ""):
 @router.post("/alta-manual", response_class=HTMLResponse)
 def alta_manual(
     request: Request,
-    title: str = Form(...),
-    type: str = Form("show"),
-    year: str = Form(""),
-    poster_url: str = Form(""),
+    title: str = Form(..., max_length=MAX_TEXT_LEN),
+    type: MediaType = Form("show"),
+    year: str = Form("", max_length=10),
+    poster_url: str = Form("", max_length=2048),
 ):
     year_value = int(year) if year.strip().isdigit() else None
     with get_connection() as conn:

@@ -19,18 +19,20 @@
   </div>
   {% if chars|length > 2 and coverage and not coverage.done %}<p class="hint">Faltan ~{{ coverage.remaining }} duelos para que todos tengan al menos {{ coverage.min_duels }} comparaciones ({{ coverage.covered }}/{{ coverage.total }}).</p>{% endif %}
   {% if not chars %}{{ empty('star', 'Ningún favorito todavía', 'Marca personajes con la estrella desde la ficha de cualquier serie y aparecen aquí solos.') }}{% endif %}
+  {% if chars %}
   <div class="pgrid">
     {% for w in chars %}
     {% set d = elo_deltas.get(w.fav_id) %}
-    {% set dl = ((' <span class="delta ' ~ ('up' if d[0] > 0 else 'down' if d[0] < 0 else '') ~ '">' ~ ('+' if d[0] > 0 else '') ~ d[0] ~ ((' ' ~ ('↑' if d[1] > 0 else '↓') ~ (d[1]|abs)) if d[1] else '') ~ '</span>') if d and (d[0] or d[1]) else '') %}
+    {% set dl = ((' <span class="delta '|safe ~ ('up' if d[0] > 0 else 'down' if d[0] < 0 else '') ~ '">'|safe ~ ('+' if d[0] > 0 else '') ~ d[0] ~ ((' ' ~ ('↑' if d[1] > 0 else '↓') ~ (d[1]|abs)) if d[1] else '') ~ '</span>'|safe) if d and (d[0] or d[1]) else '') %}
     {% call card(w.profile_path, w.character_name or w.name,
-                 corner='<span class="rank-tag' ~ (' top' if loop.index <= 3 else '') ~ '">#' ~ loop.index ~ '</span>',
-                 l1='<a href="/titulo/' ~ w.tmdb_id ~ '/' ~ w.type ~ '" style="color:var(--text-dim)">' ~ (w.show_title|replace('<', '&lt;')) ~ '</a>',
-                 l2='Elo <b>' ~ (w.elo|round|int) ~ '</b> · ' ~ (w.rd|elo_confidence) ~ dl, has_acts=(order_mode == 'manual')) %}
+                 corner='<span class="rank-tag'|safe ~ (' top' if loop.index <= 3 else '') ~ '">#'|safe ~ loop.index ~ '</span>'|safe,
+                 l1='<a href="/titulo/'|safe ~ w.tmdb_id ~ '/' ~ w.type ~ '" style="color:var(--text-dim)">'|safe ~ w.show_title ~ '</a>'|safe,
+                 l2='Elo <b>'|safe ~ (w.elo|round|int) ~ '</b> · '|safe ~ (w.rd|elo_confidence) ~ dl, has_acts=(order_mode == 'manual')) %}
       <form method="post" action="/waifu/{{ w.fav_id }}/mover/subir"><button class="btn sm quiet icon" title="Subir"{{ ' disabled' if loop.first }}>{{ ic('up', 'sm') }}</button></form>
       <form method="post" action="/waifu/{{ w.fav_id }}/mover/bajar"><button class="btn sm quiet icon" title="Bajar"{{ ' disabled' if loop.last }}>{{ ic('down', 'sm') }}</button></form>
     {% endcall %}
     {% endfor %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}

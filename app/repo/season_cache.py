@@ -75,7 +75,7 @@ def set_show_anime_calendar(conn, user_id: int, show: bool):
 
 
 
-def link_calendar_card(conn, anilist_id: int, tmdb_id: int, media_type: str):
+def link_calendar_card(conn, anilist_id: int, tmdb_id: int, media_type: str, user_id: int):
     """Recuerda a que titulo de TMDB se resolvio una tarjeta del calendario (ver
     calendar_links en db.py). Solo si el titulo ya esta cacheado - abrir la ficha o
     añadirlo lo cachea siempre."""
@@ -84,9 +84,9 @@ def link_calendar_card(conn, anilist_id: int, tmdb_id: int, media_type: str):
     ).fetchone()
     if row and anilist_id:
         conn.execute(
-            "INSERT INTO calendar_links (anilist_id, title_id) VALUES (?, ?) "
-            "ON CONFLICT(anilist_id) DO UPDATE SET title_id = excluded.title_id",
-            (anilist_id, row["id"]),
+            "INSERT INTO user_calendar_links (user_id, anilist_id, title_id) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, anilist_id) DO UPDATE SET title_id = excluded.title_id",
+            (user_id, anilist_id, row["id"]),
         )
 
 
@@ -115,7 +115,9 @@ def library_status_for_cards(conn, user_id: int, items: list[dict]) -> dict:
                 by_name.setdefault(_norm_title(t), r["status"])
     links = {
         r["anilist_id"]: r["title_id"]
-        for r in conn.execute("SELECT anilist_id, title_id FROM calendar_links")
+        for r in conn.execute(
+            "SELECT anilist_id, title_id FROM user_calendar_links WHERE user_id = ?", (user_id,)
+        )
     }
     out = {}
     for item in items:

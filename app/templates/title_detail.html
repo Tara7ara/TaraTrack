@@ -22,28 +22,7 @@
         {% if t.runtime_minutes %}<span class="mchip">{% if t.type == "show" and t.episode_count %}{{ t.episode_count }} ep × {{ t.runtime_minutes }} min{% else %}{{ t.runtime_minutes|fmt_duration }}{% endif %}</span>{% endif %}
         {% if t.next_episode_label %}<span class="mchip next">Próximo {{ t.next_episode_label }} · {{ t.next_episode_air_date|fmt_day }}</span>{% endif %}
       </div>
-      <div class="action-bar">
-        {% if entry and st == 'watched' and entry.rating is not none %}
-          <span class="big-rating">{{ entry.rating|fmt_rating }}<small>/10</small></span>
-          <a class="btn ghost" href="/marcar-vista/{{ t.tmdb_id }}/{{ t.type }}?volver=ficha">{{ ic('edit', 'sm') }} Reevaluar nota</a>
-        {% else %}
-          {% set tmdb_id = t.tmdb_id %}{% set type = t.type %}{% set state = "watched" if st == "watched" else ("pending" if entry else "new") %}{% set volver = "ficha" %}
-          {% include "partials/entry_actions.html" %}
-          {% if st == 'pending' %}<a class="btn ghost" href="/marcar-vista/{{ t.tmdb_id }}/{{ t.type }}">Vista con examen</a>{% endif %}
-        {% endif %}
-        {% if entry %}
-          {% set entry_id = entry.id %}{% include "partials/favorite_button.html" %}
-          <input type="checkbox" id="tracking-toggle" class="tracking-toggle-check" hidden>
-          <label for="tracking-toggle" class="btn quiet tracking-summary">{{ ic('sync', 'sm') }} Seguimiento{% if entry.is_habit or entry.auto_watch %} · {{ ['hábito' if entry.is_habit, 'autover' if entry.auto_watch]|select|join(', ') }}{% endif %}</label>
-          <span class="tracking-extras btn-row">
-            {% set is_habit = entry.is_habit %}{% include "partials/habit_button.html" %}
-            {% if t.type == "show" %}{% set auto_watch = entry.auto_watch %}{% include "partials/autowatch_button.html" %}{% endif %}
-            <label for="tracking-toggle" class="btn sm quiet icon" title="Cerrar seguimiento">{{ ic('x', 'sm') }}</label>
-          </span>
-        {% endif %}
-        {% if t.tmdb_id > 0 %}<span hx-get="/titulo/{{ t.tmdb_id }}/{{ t.type }}/trailer" hx-trigger="load" hx-swap="outerHTML"></span>{% endif %}
-        <label for="manage-toggle" class="btn quiet manage-btn" title="Editar y más opciones">{{ ic('more', 'sm') }} Editar</label>
-      </div>
+      {% include "partials/action_bar.html" %}
       {% if outcome_label %}<div class="outcome-wrap"><span class="outcome">{{ outcome_label }} · predicción {{ entry.predicted_score }}% · tu nota {{ entry.rating|fmt_rating }}</span></div>{% endif %}
     </div>
   </div>
@@ -59,6 +38,7 @@
           {% if t.release_date %}<button type="button" class="btn sm quiet" onclick="this.form.fecha.value='{{ t.release_date }}'">Usar estreno</button>{% endif %}
           <button class="btn sm">Guardar</button></div></form></details>
       {% endif %}
+      {% if request.state.is_admin %}
       <details class="acc-item"><summary>Cambiar portada</summary>
         <form class="acc-body" method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/portada" enctype="multipart/form-data">
           <label class="btn sm ghost" style="width:max-content">Elegir imagen<input type="file" name="imagen" accept="image/*" class="file-input-hidden" onchange="this.form.submit()"></label></form></details>
@@ -73,13 +53,16 @@
       {% set off = t.air_date_offset_days or 0 %}
       <details class="acc-item"><summary>Desfase de emisión{% if off %} <span class="sub">{{ off|abs }} día{{ 's' if off|abs > 1 }} {{ 'antes' if off < 0 else 'después' }}</span>{% endif %}</summary>
         <form class="acc-body" method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/desfase-emision"><div class="btn-row">
-          <select class="input" name="dias">{% for d in [0, -2, -1, 1, 2] %}<option value="{{ d }}"{% if off == d %} selected{% endif %}>{{ "Sin corregir (automático)" if d == 0 else (d|abs|string + " día" + ("s" if d|abs > 1 else "") + (" antes" if d < 0 else " después")) }}</option>{% endfor %}</select>
+          <select class="input" name="dias">{% for d in [0, -7, -6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7] %}<option value="{{ d }}"{% if off == d %} selected{% endif %}>{{ "Sin corregir (automático)" if d == 0 else (d|abs|string + " día" + ("s" if d|abs > 1 else "") + (" antes" if d < 0 else " después")) }}</option>{% endfor %}</select>
           <button class="btn sm">Guardar</button></div><p class="hint">Mueve la fecha de todos los episodios: cuándo salen en Continuar viendo y en el calendario.</p></form></details>
+      {% endif %}
       {% endif %}
     </div></div>
     {% if entry and st == 'watched' %}
     <div class="panel danger"><h3>{{ ic('warn', 'sm') }} Zona destructiva</h3>
-      {% if entry.rating is not none %}
+      {% if entry.rating is not none and season_ratings %}
+      <p class="hint">Nota por temporadas: se quita desde cada temporada.</p>
+      {% elif entry.rating is not none %}
       <details class="del-confirm"><summary class="btn danger">Quitar nota</summary>
         <form method="post" action="/entrada/{{ entry.id }}/quitar-nota" class="btn-row" style="margin-top:8px"><span class="hint">¿Seguro?</span><button class="btn sm danger-solid">Sí, quitar</button></form></details>
       {% else %}

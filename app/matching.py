@@ -39,15 +39,19 @@ _SEASON_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
-
+_SUFFIX_TAIL = 60
 
 
 def _strip_season_suffix(title: str) -> str:
     """Quita el sufijo de temporada ("2nd Season", "Season 2"...) que AniList mete en
     el título: TMDB agrupa todas las temporadas bajo un único show. Devuelve "" si no
     había sufijo."""
-    stripped = _SEASON_SUFFIX_RE.sub("", title or "").strip()
-    return stripped if stripped and stripped.lower() != (title or "").strip().lower() else ""
+    title = title or ""
+    # Solo la cola: sobre el título entero, una racha larga de espacios hacía retroceder
+    # la regex en O(n²). El sufijo siempre es corto.
+    head, tail = title[:-_SUFFIX_TAIL], title[-_SUFFIX_TAIL:]
+    stripped = (head + _SEASON_SUFFIX_RE.sub("", tail)).strip()
+    return stripped if stripped and stripped.lower() != title.strip().lower() else ""
 
 
 

@@ -15,8 +15,8 @@ def test_hash_password_uses_a_fresh_salt_each_time():
 
 
 def test_create_user_also_creates_default_favorites_list(conn):
-    user = repo.create_user(conn, "invitada", "unaclave123")
-    assert user["username"] == "invitada"
+    user = repo.create_user(conn, "hermana", "unaclave123")
+    assert user["username"] == "hermana"
     assert user["is_admin"] == 0
     default_list = repo.get_default_list(conn, user["id"])
     assert default_list is not None

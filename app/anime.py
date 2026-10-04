@@ -269,15 +269,22 @@ def get_seasonal_anime(season: str, year: int) -> list[dict]:
                     # nextAiringEpisode: se usa el día de la semana del estreno.
                     "weekday": (
                         datetime.fromtimestamp(airing_at, tz=timezone.utc).weekday() if airing_at
-                        else date(start["year"], start["month"], start["day"]).weekday()
-                        if start.get("year") and start.get("month") and start.get("day")
-                        else None
+                        else _start_weekday(start)
                     ),
                 }
             )
         if not data.get("pageInfo", {}).get("hasNextPage"):
             break
     return results
+
+
+def _start_weekday(start: dict):
+    """Día de la semana del estreno; AniList admite fechas imposibles (31 de junio...)
+    y una sola no debe tumbar la temporada entera."""
+    try:
+        return date(start["year"], start["month"], start["day"]).weekday()
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 ANILIST_QUERY = """

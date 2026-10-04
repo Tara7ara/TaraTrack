@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from app import repo, web
+from app.config import MediaType
 from app.db import get_connection
 from app.web import templates
 
@@ -256,7 +257,7 @@ def sorprendeme(request: Request, tipo: str = "", excluir: int = 0, ver: int = 0
 
 
 @router.post("/pendiente/{tmdb_id}/{type}", response_class=HTMLResponse)
-def anadir_pendiente(request: Request, tmdb_id: int, type: str):
+def anadir_pendiente(request: Request, tmdb_id: int, type: MediaType):
     """Toggle: si ya esta pendiente lo quita entero (p.ej. una prueba anadida sin
     querer desde una lista); si no, lo anade."""
     with get_connection() as conn:
@@ -282,7 +283,7 @@ def anadir_pendiente(request: Request, tmdb_id: int, type: str):
 
 
 @router.get("/pendiente/{tmdb_id}/{type}/estado", response_class=HTMLResponse)
-def pendiente_estado(request: Request, tmdb_id: int, type: str):
+def pendiente_estado(request: Request, tmdb_id: int, type: MediaType):
     """El 'No' de la confirmacion: vuelve al estado real (sin asumir que sigue pending)."""
     with get_connection() as conn:
         state = _entry_state(conn, tmdb_id, request.state.user_id)
@@ -292,7 +293,7 @@ def pendiente_estado(request: Request, tmdb_id: int, type: str):
 
 
 @router.get("/pendiente/{tmdb_id}/{type}/confirmar", response_class=HTMLResponse)
-def quitar_pendiente_confirmar(request: Request, tmdb_id: int, type: str):
+def quitar_pendiente_confirmar(request: Request, tmdb_id: int, type: MediaType):
     """Primer toque de 'quitar de pendientes': pasa a modo confirmar en vez de
     quitarlo directo (fácil de tocar sin querer al hacer scroll en /pendientes)."""
     return templates.TemplateResponse(

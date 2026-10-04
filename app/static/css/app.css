@@ -936,7 +936,7 @@ details > summary { list-style: none; cursor: pointer; }
 details > summary::-webkit-details-marker { display: none; }
 .htmx-indicator { opacity: 0; transition: opacity 150ms var(--ease); }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
-.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: -2px; margin-right: 8px; }
+.spinner { display: inline-block; width: 16px; height: 16px; background: var(--accent); -webkit-mask: url(/static/img/favicon.svg?v=erizo) center / contain no-repeat; mask: url(/static/img/favicon.svg?v=erizo) center / contain no-repeat; animation: pumpum 1.4s cubic-bezier(0.2, 0.8, 0.25, 1) infinite; vertical-align: -3px; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .error { color: var(--danger); font-size: 0.86rem; }
 .confirm-banner { background: var(--accent-soft); color: var(--accent-bright); border-radius: 10px; padding: 10px 14px; font-size: 0.9rem; margin: 0; }
@@ -1252,7 +1252,7 @@ body.auth { min-height: 100vh; min-height: 100dvh; display: grid; place-items: c
 @media (min-width: 1101px) {
   .hero.carousel.home-hero { grid-template-columns: minmax(0, 1fr) var(--qw); }
   .hero.carousel.home-hero .slide { padding-right: calc(var(--qw) + 48px); }
-  .home-hero .hero-arrow { display: none; }    .home-hero .hero-dots { right: calc(var(--qw) + 40px); }
+  .home-hero .hero-arrow { display: none; }  .home-hero .hero-dots { right: calc(var(--qw) + 40px); }
 }
 @media (max-width: 1100px) {
   .hero.carousel.home-hero { grid-template-columns: minmax(0, 1fr); }
@@ -1309,14 +1309,14 @@ body.auth { min-height: 100vh; min-height: 100dvh; display: grid; place-items: c
 .now-i b { font-size: 1.05rem; }
 .panel, .tile, .sblock, .wstats > div, .wcol, .hw-day, .hcard, .ccard, .exam-card, .invite-card, .row-menu-panel { border-radius: 16px; }
 @media (max-width: 760px) {
-    .home-hero .hero-dots { display: none; }
-    .detail-bg-ui { display: none; }
-    .dcard-bg, .dcard::after { display: none; }
-    .stats-index { width: 100%; max-width: 100%; justify-content: space-around; overflow: visible; }
+  .home-hero .hero-dots { display: none; }
+  .detail-bg-ui { display: none; }
+  .dcard-bg, .dcard::after { display: none; }
+  .stats-index { width: 100%; max-width: 100%; justify-content: space-around; overflow: visible; }
   .stats-index a { font-size: 0; gap: 0; padding: 10px 18px; }
   .stats-index a .ic { width: 20px; height: 20px; }
-    .settings-nav { display: none; }
-    .hero .hero-body, .detail-main { justify-items: center; text-align: center; margin-inline: auto; }
+  .settings-nav { display: none; }
+  .hero .hero-body, .detail-main { justify-items: center; text-align: center; margin-inline: auto; }
   .hero-logo, .detail-main .hero-logo { object-position: center bottom; margin-inline: auto; }
   .hero-ep, .hero-actions, .hero-progress, .hero .meta-row, .detail-main .meta-row, .detail-main .action-bar, .surprise-top { justify-content: center; }
   .detail-top > .poster { justify-self: center; }
@@ -1327,7 +1327,22 @@ body.auth { min-height: 100vh; min-height: 100dvh; display: grid; place-items: c
 .week.season-week { grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
 @media (min-width: 1101px) { .home-week { grid-template-columns: repeat(var(--days, 7), minmax(0, 1fr)); } }
 .nav-progress { position: fixed; top: 0; left: 0; z-index: 200; height: 3px; width: 0; background: var(--accent); box-shadow: 0 0 10px rgba(255,158,100,0.6); opacity: 0; pointer-events: none; }
-html.navigating .nav-progress { opacity: 1; animation: navp 6s cubic-bezier(0.1, 0.8, 0.2, 1) forwards; }
+html.loading-long .nav-progress { opacity: 1; animation: navp 6s cubic-bezier(0.1, 0.8, 0.2, 1) forwards; }
+@keyframes pumpum {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.12); }
+  22% { transform: scale(1.03); }
+  30% { transform: scale(1.18); }
+  42% { transform: scale(0.98); }
+  52% { transform: scale(1.01); }
+  62% { transform: scale(1); }
+}
+.brand svg { transform-origin: center; }
+html.loading-slow .brand svg { animation: pumpum 1.4s cubic-bezier(0.2, 0.8, 0.25, 1) infinite; will-change: transform; }
+@keyframes pumpum-fade { 0%, 100% { opacity: 1; } 40% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) {
+  html.loading-slow .brand svg, .spinner { animation: pumpum-fade 1.4s ease-in-out infinite; }
+}
 @keyframes navp { from { width: 0; } 15% { width: 45%; } to { width: 92%; } }
 .bottomnav, .bottomnav a, .bottomnav button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .bottomnav a:active, .bottomnav button:active { transform: scale(0.94); }

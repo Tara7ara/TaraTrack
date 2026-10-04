@@ -29,7 +29,7 @@ def test_calendar_cards_know_what_is_already_in_library(conn, user_id):
     _entry(conn, frieren, user_id)
     _entry(conn, grand_blue, user_id, status="watched")
     _entry(conn, kaiju, user_id)
-    repo.link_calendar_card(conn, 999, 3, "show")  # tarjeta "Kaiju No. 8 Season 2"
+    repo.link_calendar_card(conn, 999, 3, "show", user_id)
 
     items = [
         {"anilist_id": 154587, "title": "Frieren: Beyond Journey's End"},

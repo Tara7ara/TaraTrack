@@ -5,7 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
-from app import anime, tmdb
+from app import anime, config, tmdb
 from app.repo._shared import (
     _GENRE_ES,
     _IS_ANIME_SQL,
@@ -14,6 +14,7 @@ from app.repo._shared import (
     _pending_clause,
     _promote_if_first_watch,
     _unlog_episode_watch,
+    forget_duels,
 )
 from app.repo.duels import reseed_undueled_entries_elo
 from app.repo.lists import get_default_list
@@ -33,6 +34,8 @@ def set_poster(conn, tmdb_id: int, poster_path: str):
 
 def ensure_title(conn, tmdb_id: int, media_type: str):
     """Devuelve la fila de titles, creandola (con detalles+poster cacheado) si no existe."""
+    if media_type not in config.MEDIA_TYPES:
+        raise ValueError(f"tipo de titulo no valido: {media_type!r}")
     row = get_title(conn, tmdb_id)
     if row:
         return row
@@ -311,6 +314,25 @@ def set_season_rating(conn, entry_id: int, season_number: int, rating: float, co
         "SELECT AVG(rating) AS avg FROM season_ratings WHERE entry_id = ?", (entry_id,)
     ).fetchone()["avg"]
     conn.execute("UPDATE entries SET rating = ? WHERE id = ?", (round(avg, 2), entry_id))
+    owner = conn.execute("SELECT user_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    reseed_undueled_entries_elo(conn, owner["user_id"])
+
+
+def clear_season_rating(conn, entry_id: int, season_number: int):
+    """Quita la nota de una temporada y recalcula la general como la media de las que
+    quedan (sin ninguna, la serie vuelve a la cola de /puntuar)."""
+    _snapshot_rating_history(conn, entry_id)
+    conn.execute(
+        "DELETE FROM season_ratings WHERE entry_id = ? AND season_number = ?", (entry_id, season_number)
+    )
+    avg = conn.execute(
+        "SELECT AVG(rating) AS avg FROM season_ratings WHERE entry_id = ?", (entry_id,)
+    ).fetchone()["avg"]
+    conn.execute(
+        "UPDATE entries SET rating = ? WHERE id = ?", (round(avg, 2) if avg is not None else None, entry_id)
+    )
+    owner = conn.execute("SELECT user_id FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    reseed_undueled_entries_elo(conn, owner["user_id"])
 
 
 def mark_season_watched(conn, entry_id, season_number: int):
@@ -405,7 +427,7 @@ def list_history(conn, user_id, limit=300):
     ).fetchall()
 
 
-def get_similar(conn, title_row, limit=10):
+def get_similar(conn, title_row, user_id, limit=10):
     """Titulos afines a este segun TMDB, incluyendo los ya vistos/pendientes (con enlace
     interno si ya estan en la BBDD). Para la seccion 'Similares' del detalle."""
     if title_row["tmdb_id"] < 0:
@@ -420,12 +442,16 @@ def get_similar(conn, title_row, limit=10):
         known = {
             row["tmdb_id"]: row
             for row in conn.execute(
-                f"SELECT tmdb_id, poster_path FROM titles WHERE tmdb_id IN ({placeholders})", ids
+                f"""SELECT titles.tmdb_id, titles.poster_path,
+                           EXISTS(SELECT 1 FROM entries WHERE entries.title_id = titles.id
+                                  AND entries.user_id = ?) AS mine
+                    FROM titles WHERE titles.tmdb_id IN ({placeholders})""",
+                (user_id, *ids),
             )
         }
     for rec in recs:
         local = known.get(rec["tmdb_id"])
-        rec["known"] = local is not None
+        rec["known"] = bool(local and local["mine"])
         if local and local["poster_path"]:
             rec["poster_url"] = local["poster_path"]
     return recs
@@ -456,13 +482,12 @@ _HOME_SHOWS_SQL = """
            titles.backdrop_path, titles.logo_path, titles.show_status,
            titles.next_episode_air_date, titles.next_episode_label, titles.in_production,
            (SELECT count(*) FROM episodes
-              WHERE episodes.title_id = titles.id
+              WHERE episodes.title_id = titles.id AND episodes.season_number > 0
                 AND EXISTS(SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
                            AND ew.user_id = entries.user_id)) AS watched_eps,
            -- "Falta por ver AHORA": nunca visto POR ESTE USUARIO, o la unica vez que lo
-           -- vio fue ANTES de que empezara SU ronda de rewatch activa.
            (SELECT count(*) FROM episodes
-              WHERE episodes.title_id = titles.id
+              WHERE episodes.title_id = titles.id AND episodes.season_number > 0
                 AND NOT EXISTS(
                     SELECT 1 FROM episode_watches ew WHERE ew.episode_id = episodes.id
                       AND ew.user_id = entries.user_id
@@ -591,6 +616,8 @@ def list_trackable_titles(conn):
 def ensure_manual_title(conn, media_type: str, title: str, year: int | None, imdb_id: str | None = None):
     """Alta manual para titulos sin match en TMDB: id sintetico negativo, sin poster de TMDB.
     Dedupe por (title, type, year) para no duplicar si se llama dos veces (p.ej. re-ejecutar el seed)."""
+    if media_type not in config.MEDIA_TYPES:
+        raise ValueError(f"tipo de titulo no valido: {media_type!r}")
     existing = conn.execute(
         "SELECT * FROM titles WHERE title = ? AND type = ? AND year IS ?", (title, media_type, year)
     ).fetchone()
@@ -1243,6 +1270,9 @@ def remove_pending_entry(conn, entry_id: int):
     if not row:
         return
     title_id = row["title_id"]
+    forget_duels(conn, "favorite_characters", "SELECT id FROM favorite_characters WHERE entry_id = ?", (entry_id,))
+    forget_duels(conn, "list_items", "SELECT id FROM list_items WHERE entry_id = ?", (entry_id,))
+    forget_duels(conn, "entries", "?", (entry_id,))
     conn.execute("DELETE FROM favorite_characters WHERE entry_id = ?", (entry_id,))
     conn.execute("DELETE FROM list_items WHERE entry_id = ?", (entry_id,))
     conn.execute("DELETE FROM watch_sessions WHERE entry_id = ?", (entry_id,))
@@ -1273,6 +1303,8 @@ def remove_pending_entry(conn, entry_id: int):
         (title_id,),
     )
     conn.execute("DELETE FROM episodes WHERE title_id = ?", (title_id,))
+    conn.execute("DELETE FROM calendar_links WHERE title_id = ?", (title_id,))
+    conn.execute("DELETE FROM user_calendar_links WHERE title_id = ?", (title_id,))
     conn.execute("DELETE FROM titles WHERE id = ?", (title_id,))
 
 

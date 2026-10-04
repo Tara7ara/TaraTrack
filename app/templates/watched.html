@@ -28,7 +28,7 @@
     <a class="btn quiet icon" id="vis-dir" hx-target="#vistas-page" hx-select="#vistas-page" hx-select-oob="unset" title="{{ 'Descendente' if direccion == 'desc' else 'Ascendente' }}" href="/vistas?{{ qs|replace('direccion=' ~ direccion, 'direccion=' ~ ('asc' if direccion == 'desc' else 'desc')) }}">{{ ic('down' if direccion == 'desc' else 'up', 'sm') }}</a>
     </span>
     {% if generos %}<select class="input" name="genero" id="vis-genero" aria-label="Género"><option value="">Todos los géneros</option>{% for g in generos %}<option value="{{ g }}"{{ ' selected' if g == genero }}>{{ g }}</option>{% endfor %}</select>{% endif %}
-    <select class="input" name="estado" id="vis-estado" aria-label="Estado"><option value="">Todos los estados</option>{% for v, l in estados %}<option value="{{ v }}"{{ ' selected' if v == estado }}>{{ l }}</option>{% endfor %}</select>
+        <select class="input" name="estado" id="vis-estado" aria-label="Estado"><option value="">Todos los estados</option>{% for v, l in estados %}<option value="{{ v }}"{{ ' selected' if v == estado }}>{{ l }}</option>{% endfor %}</select>
   </form>
   <div id="vistas-section" style="display:grid;gap:22px">
     {% if entries|length > 2 %}
@@ -41,9 +41,11 @@
     {% endif %}
     {% if not entries and q %}{{ empty('search', 'Nada con «' ~ q ~ '»', 'Prueba a cambiar el filtro o busca otro título.') }}
     {% elif not entries %}{{ empty('done', 'Todavía no has marcado nada como visto', 'Cuando marques algo como visto, aparecerá aquí.') }}{% endif %}
+    {% if entries %}
     <div class="pgrid vis-grid">
       {% include "partials/vis_cards.html" %}
     </div>
+    {% endif %}
   </div>
 </div>
 </div>

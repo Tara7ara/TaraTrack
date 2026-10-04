@@ -54,7 +54,7 @@ def backfill_anilist_profile(conn):
     y se guarda. Cada fallo suma 1 a `anilist_match_attempts` y, al llegar a
     MAX_ANILIST_MATCH_ATTEMPTS, el título deja de reintentarse."""
     rows = conn.execute(
-        f"""SELECT titles.id, titles.tmdb_id, titles.type, titles.title, titles.original_title
+        f"""SELECT DISTINCT titles.id, titles.tmdb_id, titles.type, titles.title, titles.original_title
            FROM titles JOIN entries ON entries.title_id = titles.id
            WHERE {_ANILIST_BACKFILL_FILTER_SQL} AND {_IS_ANIME_SQL}"""
     ).fetchall()
@@ -159,7 +159,7 @@ def count_anilist_backfill_pending(conn) -> int:
     que backfill_anilist_profile, incluido el tope de intentos, para que el contador
     no se quede pegado."""
     return conn.execute(
-        f"""SELECT count(*) FROM titles JOIN entries ON entries.title_id = titles.id
+        f"""SELECT count(DISTINCT titles.id) FROM titles JOIN entries ON entries.title_id = titles.id
            WHERE {_ANILIST_BACKFILL_FILTER_SQL} AND {_IS_ANIME_SQL}"""
     ).fetchone()[0]
 
@@ -712,6 +712,8 @@ def _aggregate_affinity(raw, cfg, exclude_entry_id=None):
             if not parts:
                 continue
             total_w = sum(w for _, w in parts)
+            if total_w <= 0:
+                continue
             out[key] = sum(v * w for v, w in parts) / total_w
         return out
 
@@ -1055,9 +1057,9 @@ def _raw_predict_score(item: dict, profile: dict):
     if genre_ratings:
         parts.append((sum(genre_ratings) / len(genre_ratings), w["genero"]))
 
-    if not parts:
-        return None, 0.0
     total_weight = sum(pw for _, pw in parts)
+    if not parts or total_weight <= 0:
+        return None, 0.0
     raw_score = sum(v * pw for v, pw in parts) / total_weight
     max_weight = sum(w.values())
     return raw_score, (total_weight / max_weight if max_weight else 0.0)

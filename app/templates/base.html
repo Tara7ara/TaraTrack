@@ -9,7 +9,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png?v={{ static_v }}">
     <link rel="apple-touch-icon" href="{{ touch_icon_data_uri }}">
     <meta name="theme-color" content="#0f0f0f">
-    <link rel="manifest" href="/static/manifest.webmanifest">
+    <link rel="manifest" href="/static/manifest.webmanifest?v={{ static_v }}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -126,6 +126,20 @@ if (window.visualViewport) {
     document.fonts && document.fonts.ready.then(fit);
     fit();
 })();
+const ttLoad = (() => {
+    const root = document.documentElement; let n = 0, t1, t2;
+    const stop = () => { clearTimeout(t1); clearTimeout(t2); root.classList.remove("loading-slow", "loading-long"); };
+    return {
+        start() { if (n++ === 0) { t1 = setTimeout(() => root.classList.add("loading-slow"), 400); t2 = setTimeout(() => root.classList.add("loading-long"), 1500); } },
+        end() { if (n > 0 && --n === 0) stop(); },
+        reset() { n = 0; stop(); },
+    };
+})();
+document.addEventListener("htmx:beforeRequest", (e) => {
+    const ev = e.detail.requestConfig && e.detail.requestConfig.triggeringEvent;
+    if (ev && ev.isTrusted) { e.detail.xhr.__ttLoad = true; ttLoad.start(); }
+});
+document.addEventListener("htmx:afterRequest", (e) => { if (e.detail.xhr && e.detail.xhr.__ttLoad) ttLoad.end(); });
 document.addEventListener("click", (e) => {
     const a = e.target.closest("a[href]");
     if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || a.target || a.hasAttribute("download")) return;
@@ -133,10 +147,10 @@ document.addEventListener("click", (e) => {
     if (u.origin !== location.origin || (u.pathname === location.pathname && u.search === location.search)) return;
     const boost = a.closest("[hx-boost]");
     if ((boost && boost.getAttribute("hx-boost") === "true") || a.matches("[hx-get],[hx-post]")) return;
-    document.documentElement.classList.add("navigating");
+    ttLoad.start();
     if (a.closest(".bottomnav")) document.querySelectorAll(".bottomnav > a, .bottomnav > button").forEach((x) => x.classList.toggle("active", x === a));
 });
-addEventListener("pageshow", () => document.documentElement.classList.remove("navigating"));
+addEventListener("pageshow", () => ttLoad.reset());
 document.addEventListener("click", (e) => { if (!e.target.closest(".nav-more")) document.querySelectorAll(".nav-more[open]").forEach((d) => d.removeAttribute("open")); });
 window.ttHero = (() => {
     let i = 0, t = null, hero = null, slides = [];

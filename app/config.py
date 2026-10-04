@@ -4,9 +4,19 @@ db.py y tmdb.py exponen DB_PATH/API_KEY como atributos de módulo para que los t
 puedan sustituirlos con monkeypatch. La clave de sesión y la contraseña se leen en
 vivo en cada petición, así un despliegue sin ellas falla en el acto."""
 import os
+from typing import Literal
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
 DB_PATH = os.environ.get("TARATRACK_DB_PATH", "/data/taratrack.db")
+
+# Únicos tipos de título: llega de la URL o de un formulario y acaba en titles.type,
+# que se pinta en las plantillas.
+MediaType = Literal["show", "movie"]
+MEDIA_TYPES = ("show", "movie")
+
+# Tope para títulos y búsquedas del navegador, para que no lleguen cadenas enormes
+# a las heurísticas de texto.
+MAX_TEXT_LEN = 300
 
 POSTERS_DIR = "app/static/posters"
 PROFILES_DIR = "app/static/profiles"
@@ -14,6 +24,9 @@ PROFILES_DIR = "app/static/profiles"
 # Subida de portada manual: tipos admitidos y tamaño máximo.
 MAX_POSTER_BYTES = 8 * 1024 * 1024  # 8 MB, de sobra para una portada
 POSTER_CONTENT_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
+# Tope de descarga de una imagen (download_poster); los fondos originales de TMDB
+# pesan varios MB.
+MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
 AUTH_COOKIE = "taratrack_auth"
 AUTH_MAX_AGE = 60 * 60 * 24 * 365  # 1 año

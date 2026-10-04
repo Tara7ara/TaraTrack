@@ -103,6 +103,20 @@ CREATE TABLE IF NOT EXISTS rejected_recommendations (
     rejected_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Fondo, logo y estado de emisión de títulos que no están en la biblioteca
+-- (recomendados), para pintar sus portadas sin llamar a TMDB al abrir la página.
+CREATE TABLE IF NOT EXISTS tmdb_extra (
+    tmdb_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    backdrop_path TEXT,
+    logo_path TEXT,
+    show_status TEXT,
+    next_episode_air_date TEXT,
+    next_episode_label TEXT,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (tmdb_id, type)
+);
+
 CREATE TABLE IF NOT EXISTS recommendations_cache (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tmdb_id INTEGER NOT NULL,
@@ -247,13 +261,20 @@ CREATE TABLE IF NOT EXISTS weekday_overrides (
     weekday INTEGER NOT NULL
 );
 
--- Tarjeta del calendario de temporada -> título de TMDB al que se resolvió.
 -- Una tarjeta de "Temporada 2" en AniList es el MISMO show en TMDB, asi que ni
 -- titles.anilist_id ni el titulo exacto la encuentran: se guarda al añadir/abrir
 -- desde el propio calendario para poder marcarla luego como "ya en tu lista".
 CREATE TABLE IF NOT EXISTS calendar_links (
     anilist_id INTEGER PRIMARY KEY,
     title_id INTEGER NOT NULL REFERENCES titles(id)
+);
+
+-- Enlaces del calendario por usuario, para que una cuenta no cambie los de otra.
+CREATE TABLE IF NOT EXISTS user_calendar_links (
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    anilist_id INTEGER NOT NULL,
+    title_id INTEGER NOT NULL REFERENCES titles(id),
+    PRIMARY KEY (user_id, anilist_id)
 );
 
 -- Debate por episodio: única tabla visible entre usuarios, un hilo cronológico por
@@ -264,20 +285,6 @@ CREATE TABLE IF NOT EXISTS episode_comments (
     user_id INTEGER NOT NULL REFERENCES users(id),
     body TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Fondo, logo y estado de emisión de títulos que no están en la biblioteca
--- (recomendados), para pintar sus portadas sin llamar a TMDB al abrir la página.
-CREATE TABLE IF NOT EXISTS tmdb_extra (
-    tmdb_id INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    backdrop_path TEXT,
-    logo_path TEXT,
-    show_status TEXT,
-    next_episode_air_date TEXT,
-    next_episode_label TEXT,
-    fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (tmdb_id, type)
 );
 """
 
@@ -356,6 +363,9 @@ MIGRATIONS = [
     # arrancan en AHORA para no ver todo el histórico como nuevo.
     "ALTER TABLE users ADD COLUMN comments_seen_at TEXT",
     "UPDATE users SET comments_seen_at = datetime('now') WHERE comments_seen_at IS NULL",
+    "ALTER TABLE users ADD COLUMN invite_code_hash TEXT",
+    "ALTER TABLE users ADD COLUMN invite_expires_at TEXT",
+    "ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0",
     # Desfase en días (con signo) para cuando TMDB fecha los episodios un día tarde o
     # pronto. Se aplica al guardar cada fecha (sync_episodes/refresh_metadata), nunca
     # al comparar, así que el resto del código no necesita saber que existe.
@@ -370,7 +380,6 @@ MIGRATIONS = [
     "ALTER TABLE titles ADD COLUMN logo_path TEXT",
     "ALTER TABLE titles ADD COLUMN backdrops TEXT",
     "ALTER TABLE titles ADD COLUMN hidden_backdrops TEXT",
-    "ALTER TABLE episodes ADD COLUMN still_path TEXT",
     # Renovada: con estado «Returning Series» y sin fecha del siguiente episodio,
     # separa «Renovada» (en producción) de «Pausa». También fuera de la biblioteca.
     "ALTER TABLE titles ADD COLUMN in_production INTEGER",
@@ -379,9 +388,7 @@ MIGRATIONS = [
     "ALTER TABLE recommendations_cache ADD COLUMN genres TEXT",
     # Cuentas por invitación: hash del código de un solo uso y su caducidad; y cuentas
     # bloqueadas (conservan los datos pero no pueden entrar).
-    "ALTER TABLE users ADD COLUMN invite_code_hash TEXT",
-    "ALTER TABLE users ADD COLUMN invite_expires_at TEXT",
-    "ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE episodes ADD COLUMN still_path TEXT",
 ]
 
 # Indices para que las subqueries de inicio/calendario no barran tablas enteras.
@@ -501,6 +508,9 @@ def _migrate_multiuser(conn):
         from app.repo.users import hash_password
 
         password = config.get_password()
+        # Mismo mínimo que el resto de altas (repo.users.create_user).
+        if password and len(password) < 8:
+            raise RuntimeError("TARATRACK_PASSWORD debe tener al menos 8 caracteres para crear la cuenta admin.")
         if password:
             password_hash, password_salt = hash_password(password)
             conn.execute(
@@ -710,6 +720,20 @@ def _migrate_affinity_multiuser(conn):
     )
 
 
+def _migrate_calendar_links(conn):
+    """Copia cada enlace común a las cuentas que tienen ese título en su biblioteca,
+    que es donde se usaba. Se ejecuta una vez y no borra nada."""
+    if conn.execute("SELECT 1 FROM app_settings WHERE key = 'calendar_links_per_user'").fetchone():
+        return
+    conn.execute(
+        """INSERT OR IGNORE INTO user_calendar_links (user_id, anilist_id, title_id)
+           SELECT DISTINCT entries.user_id, calendar_links.anilist_id, calendar_links.title_id
+           FROM calendar_links JOIN entries ON entries.title_id = calendar_links.title_id
+           WHERE entries.user_id IS NOT NULL"""
+    )
+    conn.execute("INSERT INTO app_settings (key, value) VALUES ('calendar_links_per_user', '1')")
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_connection() as conn:
@@ -723,6 +747,7 @@ def init_db():
         _migrate_rating_scale_0_10(conn)
         _migrate_multiuser(conn)
         _migrate_affinity_multiuser(conn)
+        _migrate_calendar_links(conn)
         conn.executescript(INDEXES)
 
 

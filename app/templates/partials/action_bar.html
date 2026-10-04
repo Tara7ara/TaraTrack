@@ -1,0 +1,24 @@
+{% from "partials/ui.html" import ic %}
+{% set st = entry.status if entry else 'new' %}
+<div class="action-bar" id="action-bar"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if entry and st == 'watched' and entry.rating is not none %}
+    <span class="big-rating">{{ entry.rating|fmt_rating }}<small>/10</small></span>
+    <a class="btn ghost" href="/marcar-vista/{{ t.tmdb_id }}/{{ t.type }}?volver=ficha">{{ ic('edit', 'sm') }} Reevaluar nota</a>
+  {% else %}
+    {% set tmdb_id = t.tmdb_id %}{% set type = t.type %}{% set state = "watched" if st == "watched" else ("pending" if entry else "new") %}{% set volver = "ficha" %}
+    {% include "partials/entry_actions.html" %}
+    {% if st == 'pending' %}<a class="btn ghost" href="/marcar-vista/{{ t.tmdb_id }}/{{ t.type }}">Vista con examen</a>{% endif %}
+  {% endif %}
+  {% if entry %}
+    {% set entry_id = entry.id %}{% include "partials/favorite_button.html" %}
+    <input type="checkbox" id="tracking-toggle" class="tracking-toggle-check" hidden>
+    <label for="tracking-toggle" class="btn quiet tracking-summary">{{ ic('sync', 'sm') }} Seguimiento{% if entry.is_habit or entry.auto_watch %} · {{ ['hábito' if entry.is_habit, 'autover' if entry.auto_watch]|select|join(', ') }}{% endif %}</label>
+    <span class="tracking-extras btn-row">
+      {% set is_habit = entry.is_habit %}{% include "partials/habit_button.html" %}
+      {% if t.type == "show" %}{% set auto_watch = entry.auto_watch %}{% include "partials/autowatch_button.html" %}{% endif %}
+      <label for="tracking-toggle" class="btn sm quiet icon" title="Cerrar seguimiento">{{ ic('x', 'sm') }}</label>
+    </span>
+  {% endif %}
+  {% if t.tmdb_id > 0 %}<span hx-get="/titulo/{{ t.tmdb_id }}/{{ t.type }}/trailer" hx-trigger="load" hx-swap="outerHTML"></span>{% endif %}
+  <label for="manage-toggle" class="btn quiet manage-btn" title="Editar y más opciones">{{ ic('more', 'sm') }} Editar</label>
+</div>

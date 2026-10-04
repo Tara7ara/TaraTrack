@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import repo, tmdb
+from app.config import MediaType
 from app.db import get_connection
 from app.web import templates
 
@@ -88,6 +89,14 @@ def lista_mover(request: Request, list_id: int, item_id: int, direction: str):
     return RedirectResponse(f"/lista/{list_id}", status_code=303)
 
 
+@router.post("/lista/{list_id}/quitar/{item_id}", response_class=HTMLResponse)
+def lista_quitar(request: Request, list_id: int, item_id: int):
+    with get_connection() as conn:
+        _owned_or_404(conn, list_id, request.state.user_id)
+        repo.remove_list_item(conn, list_id, item_id)
+    return RedirectResponse(f"/lista/{list_id}", status_code=303)
+
+
 @router.post("/lista/{list_id}/orden", response_class=HTMLResponse)
 def lista_orden(request: Request, list_id: int, modo: str = Form(...)):
     """Elegir que orden se enseña: manual (flechas) o por duelos (Elo) - los dos se
@@ -140,7 +149,11 @@ def lista_duelo_votar(
 ):
     with get_connection() as conn:
         _owned_or_404(conn, list_id, request.state.user_id)
-        repo.record_duel(conn, "list_items", a_id, b_id, request.state.user_id, resultado)
+        same_list = conn.execute(
+            "SELECT count(*) FROM list_items WHERE id IN (?, ?) AND list_id = ?", (a_id, b_id, list_id)
+        ).fetchone()[0] == 2
+        if same_list:
+            repo.record_duel(conn, "list_items", a_id, b_id, request.state.user_id, resultado)
     return RedirectResponse(f"/lista/{list_id}/duelo", status_code=303)
 
 
@@ -173,7 +186,7 @@ def lista_buscar(request: Request, list_id: int, q: str = ""):
 
 
 @router.post("/lista/{list_id}/anadir/{tmdb_id}/{type}", response_class=HTMLResponse)
-def lista_anadir(request: Request, list_id: int, tmdb_id: int, type: str):
+def lista_anadir(request: Request, list_id: int, tmdb_id: int, type: MediaType):
     with get_connection() as conn:
         _owned_or_404(conn, list_id, request.state.user_id)
         entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)

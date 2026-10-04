@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import anime, config, repo, thumbs, tmdb, web
+from app.config import MediaType
 from app.db import get_connection
 from app.web import templates
 
@@ -16,7 +17,7 @@ router = APIRouter()
 
 
 @router.post("/vista/{tmdb_id}/{type}", response_class=HTMLResponse)
-def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
+def marcar_vista_rapido(request: Request, tmdb_id: int, type: MediaType):
     """Marca como vista al momento, sin pedir nota/comentario - queda en /puntuar para puntuar despues.
     En series marca solo el primer episodio (no la serie entera) - si ya se ha visto
     todo, para eso esta el doble tick de la tarjeta de "Continuar viendo"."""
@@ -48,6 +49,7 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
                     {"request": request, "c": card, "confirm_all": False}
                 )
                 oob = f'<div hx-swap-oob="afterbegin:#continuar-carousel">{card_html}</div>'
+        oob += web.render_nav_cola_oob(conn, request.state.user_id)
     html = templates.env.get_template("partials/entry_actions.html").render(
         {"request": request, "tmdb_id": tmdb_id, "type": type, "state": "watched"}
     )
@@ -55,7 +57,7 @@ def marcar_vista_rapido(request: Request, tmdb_id: int, type: str):
 
 
 @router.get("/marcar-vista/{tmdb_id}/{type}", response_class=HTMLResponse)
-def marcar_vista_form(request: Request, tmdb_id: int, type: str, volver: str = ""):
+def marcar_vista_form(request: Request, tmdb_id: int, type: MediaType, volver: str = ""):
     with get_connection() as conn:
         entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         entry = repo.get_entry_with_title(conn, entry["id"])
@@ -174,7 +176,7 @@ def marcar_vista_submit(
 
 
 @router.get("/titulo/{tmdb_id}/{type}", response_class=HTMLResponse)
-def titulo_detalle(request: Request, tmdb_id: int, type: str, comentar: int = 0, apunte: int = 0):
+def titulo_detalle(request: Request, tmdb_id: int, type: MediaType, comentar: int = 0, apunte: int = 0):
     """Unica ruta que llamaba a TMDB sin ningun try/except: abrir por primera vez la
     ficha de algo (ensure_entry pide get_details) daba un 500 en la cara si TMDB iba
     lento o daba un hipo, mismo problema ya resuelto en /buscar y /vista pero que
@@ -310,9 +312,10 @@ POSTER_CONTENT_TYPES = config.POSTER_CONTENT_TYPES
 
 
 @router.post("/titulo/{tmdb_id}/{type}/portada", response_class=HTMLResponse)
-async def cambiar_portada(request: Request, tmdb_id: int, type: str, imagen: UploadFile = File(...)):
+async def cambiar_portada(request: Request, tmdb_id: int, type: MediaType, imagen: UploadFile = File(...)):
     """Portada propia subida a mano. Sobrescribe el fichero con el mismo convenio de
     nombre que ensure_title/create_manual_entry, así el resto del código no distingue."""
+    _require_admin(request)
     if imagen.content_type not in POSTER_CONTENT_TYPES:
         raise StarletteHTTPException(400, "Ese archivo no es una imagen JPEG/PNG/WebP.")
     # Leido en trozos con tope en vez de un unico .read() sin limite - un archivo
@@ -332,10 +335,11 @@ async def cambiar_portada(request: Request, tmdb_id: int, type: str, imagen: Upl
 
 
 @router.post("/titulo/{tmdb_id}/{type}/dia-emision", response_class=HTMLResponse)
-def corregir_dia_emision(request: Request, tmdb_id: int, type: str, weekday: str = Form("")):
+def corregir_dia_emision(request: Request, tmdb_id: int, type: MediaType, weekday: str = Form("")):
     """Corrige a mano el día de la semana de este título en /calendario/anual: el
     cálculo automático usa UTC y puede desplazar un día los animes de madrugada.
     weekday vacío = volver al cálculo automático."""
+    _require_admin(request)
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
         if title_row and title_row["anilist_id"]:
@@ -348,11 +352,12 @@ def corregir_dia_emision(request: Request, tmdb_id: int, type: str, weekday: str
 
 
 @router.post("/titulo/{tmdb_id}/{type}/desfase-emision", response_class=HTMLResponse)
-def corregir_desfase_emision(request: Request, tmdb_id: int, type: str, dias: str = Form("0")):
+def corregir_desfase_emision(request: Request, tmdb_id: int, type: MediaType, dias: str = Form("0")):
     """Corrige el desfase entre la fecha de emisión de TMDB y la real. A diferencia de
     la corrección de día de arriba (solo el calendario de temporada), esto cambia la
     fecha que usa toda la app para decidir si algo ya ha emitido. Resincroniza al
     guardar para no esperar a la sync de fondo."""
+    _require_admin(request)
     dias_str = dias.strip()
     if not dias_str.lstrip("-").isdigit():
         return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
@@ -367,6 +372,13 @@ def corregir_desfase_emision(request: Request, tmdb_id: int, type: str, dias: st
             except Exception:
                 pass
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
+
+
+def _require_admin(request: Request):
+    """Portada, día de emisión y desfase son del catálogo compartido: lo que cambie una
+    cuenta lo ve toda la instancia."""
+    if not request.state.is_admin:
+        raise StarletteHTTPException(status_code=403, detail="Solo para administradores")
 
 
 def _owned_entry_or_404(conn, entry_id: int, user_id: int):
@@ -402,7 +414,8 @@ def quitar_nota(request: Request, entry_id: int):
     aun no ha acabado) - sigue marcada como vista, vuelve a la cola de /puntuar."""
     with get_connection() as conn:
         entry = _owned_entry_or_404(conn, entry_id, request.state.user_id)
-        repo.clear_rating(conn, entry_id)
+        if not repo.list_season_ratings(conn, entry_id):
+            repo.clear_rating(conn, entry_id)
     return RedirectResponse(f"/titulo/{entry['tmdb_id']}/{entry['type']}", status_code=303)
 
 
@@ -503,8 +516,22 @@ def _episode_row_response(request: Request, conn, episode_id: int, oob: str = ""
 def episodio_toggle(request: Request, episode_id: int):
     with get_connection() as conn:
         # Al marcar visto (no al desmarcar) se abre el debate de ese episodio.
-        just_watched = repo.toggle_episode(conn, episode_id, request.state.user_id)
-        oob = web.render_nav_cola_oob(conn, request.state.user_id)
+        uid = request.state.user_id
+        title_id = conn.execute("SELECT title_id FROM episodes WHERE id = ?", (episode_id,)).fetchone()["title_id"]
+
+        def _status():
+            row = conn.execute("SELECT status FROM entries WHERE title_id = ? AND user_id = ?", (title_id, uid)).fetchone()
+            return row["status"] if row else None
+
+        before = _status()
+        just_watched = repo.toggle_episode(conn, episode_id, uid)
+        oob = web.render_nav_cola_oob(conn, uid)
+        if _status() != before:
+            t = conn.execute("SELECT * FROM titles WHERE id = ?", (title_id,)).fetchone()
+            entry = conn.execute("SELECT * FROM entries WHERE title_id = ? AND user_id = ?", (title_id, uid)).fetchone()
+            oob += templates.env.get_template("partials/action_bar.html").render(
+                {"request": request, "t": t, "entry": entry, "oob": True}
+            )
         return _episode_row_response(request, conn, episode_id, oob=oob, open_debate=just_watched)
 
 
@@ -572,19 +599,21 @@ def episodio_debate_borrar(request: Request, episode_id: int, comment_id: int):
 
 
 @router.get("/titulo/{tmdb_id}/{type}/similares", response_class=HTMLResponse)
-def titulo_similares(request: Request, tmdb_id: int, type: str):
+def titulo_similares(request: Request, tmdb_id: int, type: MediaType):
     """Se carga lazy via htmx para no frenar el render del detalle."""
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
         try:
-            similares = repo.get_similar(conn, title_row) if title_row else []
+            similares = repo.get_similar(conn, title_row, request.state.user_id) if title_row else []
         except Exception:
             similares = []
     return templates.TemplateResponse(request, "partials/similar_titles.html", {"similares": similares})
 
 
 @router.get("/titulo/{tmdb_id}/{type}/fondos")
-def titulo_fondos(request: Request, tmdb_id: int, type: str):
+def titulo_fondos(request: Request, tmdb_id: int, type: MediaType):
+    """Fondos para que la portada de la ficha vaya cambiando. Los pide la ficha después
+    de cargar; la primera vez se guardan en titles.backdrops."""
     with get_connection() as conn:
         row = conn.execute("SELECT id, backdrop_path, backdrops, hidden_backdrops FROM titles WHERE tmdb_id = ?", (tmdb_id,)).fetchone()
     if not row or tmdb_id <= 0:
@@ -608,7 +637,9 @@ def titulo_fondos(request: Request, tmdb_id: int, type: str):
 
 
 @router.post("/titulo/{tmdb_id}/{type}/fondos/quitar")
-def titulo_fondos_quitar(request: Request, tmdb_id: int, type: str, path: str = Form(...)):
+def titulo_fondos_quitar(request: Request, tmdb_id: int, type: MediaType, path: str = Form(...)):
+    """Quita un fondo: deja de rotar y, si era el principal, pasa a serlo el siguiente.
+    Solo admins, porque el catálogo es compartido."""
     if not request.state.is_admin:
         return JSONResponse({"ok": False}, status_code=403)
     with get_connection() as conn:
@@ -625,7 +656,7 @@ def titulo_fondos_quitar(request: Request, tmdb_id: int, type: str, path: str = 
 
 
 @router.get("/titulo/{tmdb_id}/{type}/trailer", response_class=HTMLResponse)
-def titulo_trailer(request: Request, tmdb_id: int, type: str):
+def titulo_trailer(request: Request, tmdb_id: int, type: MediaType):
     """Se carga lazy via htmx, igual que Similares - no frenar el render del detalle
     con la llamada a TMDB."""
     try:
@@ -636,7 +667,7 @@ def titulo_trailer(request: Request, tmdb_id: int, type: str):
 
 
 @router.post("/titulo/{tmdb_id}/{type}/temporada/{season_number}/marcar", response_class=HTMLResponse)
-def marcar_temporada(request: Request, tmdb_id: int, type: str, season_number: int):
+def marcar_temporada(request: Request, tmdb_id: int, type: MediaType, season_number: int):
     """Marca vista una temporada entera de golpe (los episodios ya emitidos) - para
     tragarse una temporada de una sentada sin ir episodio a episodio."""
     with get_connection() as conn:
@@ -648,11 +679,13 @@ def marcar_temporada(request: Request, tmdb_id: int, type: str, season_number: i
 
 
 @router.get("/titulo/{tmdb_id}/{type}/temporada/{season_number}/puntuar", response_class=HTMLResponse)
-def puntuar_temporada_form(request: Request, tmdb_id: int, type: str, season_number: int):
+def puntuar_temporada_form(request: Request, tmdb_id: int, type: MediaType, season_number: int):
     """Nota por temporada, aparte de la nota general de la serie - para series donde
     unas temporadas valen mas que otras (una sola nota por serie completa las mezclaba)."""
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
+        if not title_row:
+            raise StarletteHTTPException(status_code=404, detail="No encontrado")
         entry = conn.execute(
             "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",
             (title_row["id"], request.state.user_id),
@@ -683,7 +716,7 @@ def puntuar_temporada_form(request: Request, tmdb_id: int, type: str, season_num
 def puntuar_temporada_submit(
     request: Request,
     tmdb_id: int,
-    type: str,
+    type: MediaType,
     season_number: int,
     rating: str = Form(""),
     comment: str = Form(""),
@@ -710,18 +743,30 @@ def puntuar_temporada_submit(
     usa_categorias = any(v is not None for v in categories.values())
     rating_value = repo.compute_weighted_rating(categories) if usa_categorias else _parse_float(rating)
     with get_connection() as conn:
-        title_row = repo.get_title(conn, tmdb_id)
-        entry = conn.execute(
-            "SELECT * FROM entries WHERE title_id = ? AND user_id = ?",
-            (title_row["id"], request.state.user_id),
-        ).fetchone()
-        if entry and rating_value is not None:
+        if not repo.get_title(conn, tmdb_id):
+            raise StarletteHTTPException(status_code=404, detail="No encontrado")
+        entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id) if rating_value is not None else None
+        if entry:
             repo.set_season_rating(conn, entry["id"], season_number, rating_value, comment.strip(), categories)
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
 
 
+@router.post("/titulo/{tmdb_id}/{type}/temporada/{season_number}/quitar-nota", response_class=HTMLResponse)
+def quitar_nota_temporada(request: Request, tmdb_id: int, type: MediaType, season_number: int):
+    with get_connection() as conn:
+        title_row = repo.get_title(conn, tmdb_id)
+        if not title_row:
+            raise StarletteHTTPException(status_code=404, detail="No encontrado")
+        entry = conn.execute(
+            "SELECT id FROM entries WHERE title_id = ? AND user_id = ?", (title_row["id"], request.state.user_id)
+        ).fetchone()
+        if entry:
+            repo.clear_season_rating(conn, entry["id"], season_number)
+    return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
+
+
 @router.post("/titulo/{tmdb_id}/{type}/personajes", response_class=HTMLResponse)
-def titulo_recargar_personajes(request: Request, tmdb_id: int, type: str):
+def titulo_recargar_personajes(request: Request, tmdb_id: int, type: MediaType):
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
         if title_row:
@@ -730,7 +775,7 @@ def titulo_recargar_personajes(request: Request, tmdb_id: int, type: str):
 
 
 @router.get("/titulo/{tmdb_id}/{type}/personajes/buscar", response_class=HTMLResponse)
-def titulo_buscar_personaje(request: Request, tmdb_id: int, type: str, q: str = ""):
+def titulo_buscar_personaje(request: Request, tmdb_id: int, type: MediaType, q: str = ""):
     """Busqueda por nombre en AniList, para añadir personajes que el sync automatico
     no trae (solo cachea el top 25 del titulo)."""
     results, api_down = [], False
@@ -750,7 +795,7 @@ def titulo_buscar_personaje(request: Request, tmdb_id: int, type: str, q: str = 
 def titulo_anadir_personaje(
     request: Request,
     tmdb_id: int,
-    type: str,
+    type: MediaType,
     char_id: int = Form(...),
     name: str = Form(...),
     image_url: str = Form(""),

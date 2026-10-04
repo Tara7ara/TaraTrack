@@ -98,9 +98,9 @@
     <div class="pgrid">
       {% for e in entries %}
       {% set gold = e.predict is not none and e.predict >= 95 and e.predict_confidence is not none and e.predict_confidence > 10 %}
-      {% set l2 = ('Internet <b>' ~ (e.vote_average|fmt_rating(1)) ~ '</b>' if e.vote_average else '') ~ ('<span class="sep">·</span>' if e.vote_average and e.predict is not none else '') ~ ('<span class="pct' ~ (' gold' if gold else '') ~ '">' ~ e.predict ~ '%</span> te gustará' if e.predict is not none else '') %}
+      {% set l2 = ('Internet <b>'|safe ~ (e.vote_average|fmt_rating(1)) ~ '</b>'|safe if e.vote_average else '') ~ ('<span class="sep">·</span>'|safe if e.vote_average and e.predict is not none else '') ~ ('<span class="pct'|safe ~ (' gold' if gold else '') ~ '">'|safe ~ e.predict ~ '%</span> te gustará'|safe if e.predict is not none else '') %}
       {% call card(e.poster_path, e.title, href='/titulo/' ~ e.tmdb_id ~ '/' ~ e.type, rb=e|show_status_ribbon,
-                   l1=(e.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if e.type == 'show' else 'Película'), l2=l2,
+                   l1=(e.year or '—')|string ~ '<span class="sep">·</span>'|safe ~ ('Serie' if e.type == 'show' else 'Película'), l2=l2,
                    gold=gold) %}
         {% set tmdb_id = e.tmdb_id %}{% set type = e.type %}{% set state = "pending" %}{% include "partials/entry_actions.html" %}
       {% endcall %}

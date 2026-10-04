@@ -1,6 +1,12 @@
+import io
+import ipaddress
+import os
+import socket
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+from PIL import Image
 
 from app import config
 
@@ -70,7 +76,7 @@ def _normalize(item: dict, media_type: str) -> dict:
         "poster_path": item.get("poster_path"),
         "poster_url": f"{IMAGE_BASE}{item['poster_path']}" if item.get("poster_path") else None,
         "overview": item.get("overview", ""),
-        "popularity": item.get("popularity", 0),
+        "popularity": item.get("popularity") or 0,
         "vote_average": item.get("vote_average"),
         # TMDB solo marca contenido pornografico explicito, no "maduro" en general -
         # es la unica señal automatica disponible sin mantener una lista a mano.
@@ -250,14 +256,108 @@ def get_credits(tmdb_id: int, media_type: str, limit: int = 15) -> list[dict]:
     ]
 
 
-def download_poster(poster_url: str, dest_path: str) -> bool:
-    """Descarga la portada a disco. Devuelve True si se guardo, False si no habia portada."""
+class UnsafeImageURL(ValueError):
+    """URL de imagen rechazada: esquema, host o IP no permitidos, demasiado grande o
+    no es una imagen."""
+
+
+# CDN de las imágenes de personajes (AniList, MyAnimeList y TMDB). La URL llega del
+# navegador, así que se limita a estos hosts.
+CHARACTER_IMAGE_HOSTS = frozenset({"s4.anilist.co", "cdn.myanimelist.net", "image.tmdb.org"})
+
+_IMAGE_FORMATS = frozenset({"JPEG", "PNG", "WEBP", "GIF"})
+
+# Sin keep-alive: conecta a una IP fija y no debe reutilizar la conexión TLS de otro
+# host con la misma IP.
+_download_client = httpx.Client(timeout=10, limits=httpx.Limits(max_keepalive_connections=0))
+
+
+def _resolve_public_ips(host: str) -> list[str]:
+    """IPs del host (IPv4 primero) si todas son públicas; si alguna es privada,
+    loopback o link-local, se rechaza (SSRF)."""
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise UnsafeImageURL(f"no resuelve: {host}") from e
+    ips = list(dict.fromkeys(info[4][0] for info in infos))
+    if not ips:
+        raise UnsafeImageURL(f"no resuelve: {host}")
+    for ip in ips:
+        addr = ipaddress.ip_address(ip.split("%")[0])
+        if getattr(addr, "ipv4_mapped", None):
+            addr = addr.ipv4_mapped
+        if not addr.is_global or addr.is_multicast:
+            raise UnsafeImageURL(f"IP no publica: {host} -> {addr}")
+    # Con la IP fijada httpx no prueba otras; sin IPv6 en la red, una AAAA primero fallaría.
+    return sorted(ips, key=lambda ip: ":" in ip)
+
+
+def _fetch_capped(url: str, headers: dict, extensions: dict) -> bytearray:
+    data = bytearray()
+    with _download_client.stream("GET", url, headers=headers, extensions=extensions) as resp:
+        resp.raise_for_status()
+        declared = resp.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > config.MAX_DOWNLOAD_BYTES:
+            raise UnsafeImageURL("imagen demasiado grande")
+        for chunk in resp.iter_bytes():
+            data += chunk
+            if len(data) > config.MAX_DOWNLOAD_BYTES:
+                raise UnsafeImageURL("imagen demasiado grande")
+    return data
+
+
+def download_poster(poster_url: str, dest_path: str, allowed_hosts=None) -> bool:
+    """Descarga una imagen a disco. Devuelve True si se guardó, False si no había URL.
+
+    La URL puede venir del usuario, así que solo acepta http/https, comprueba que la IP
+    resuelta es pública y conecta a esa misma IP (Host y SNI con el nombre original),
+    para que un cambio de DNS entre la comprobación y la petición no cuele una IP
+    interna. Sin redirecciones, con tope de tamaño y validada como imagen con Pillow."""
     if not poster_url:
         return False
-    resp = _client.get(poster_url)
-    resp.raise_for_status()
-    with open(dest_path, "wb") as f:
-        f.write(resp.content)
+    parts = urlsplit(poster_url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme not in ("http", "https") or not host or parts.username or parts.password:
+        raise UnsafeImageURL(f"URL no valida: {poster_url!r}")
+    if allowed_hosts is not None and host not in allowed_hosts:
+        raise UnsafeImageURL(f"host no permitido: {host}")
+    try:
+        port = parts.port
+    except ValueError as e:
+        raise UnsafeImageURL(f"puerto no valido: {poster_url!r}") from e
+
+    headers = {"Host": f"{host}:{port}" if port else host}
+    extensions = {"sni_hostname": host} if parts.scheme == "https" else {}
+    ips = _resolve_public_ips(host)
+    for i, ip in enumerate(ips):
+        ip_netloc = f"[{ip}]" if ":" in ip else ip
+        if port:
+            ip_netloc += f":{port}"
+        pinned_url = urlunsplit(parts._replace(netloc=ip_netloc))
+        try:
+            data = _fetch_capped(pinned_url, headers, extensions)
+            break
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            if i == len(ips) - 1:
+                raise
+
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            fmt = img.format
+            img.verify()
+    except Exception as e:
+        raise UnsafeImageURL("lo descargado no es una imagen") from e
+    if fmt not in _IMAGE_FORMATS:
+        raise UnsafeImageURL(f"formato no permitido: {fmt}")
+
+    tmp = f"{dest_path}.{os.getpid()}.{os.urandom(4).hex()}.part"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, dest_path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
     return True
 
 

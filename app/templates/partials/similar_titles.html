@@ -3,8 +3,8 @@
 <div class="pgrid">
   {% for r in similares %}
   {% call card(r.poster_url, r.title, href='/titulo/' ~ r.tmdb_id ~ '/' ~ r.type, rb=('Película', 'ribbon-movie') if r.type == 'movie' else none,
-               l1=(r.year or '—')|string ~ '<span class="sep">·</span>' ~ ('Serie' if r.type == 'show' else 'Película'),
-               l2=('Ya en tu lista' if r.known else ('Internet <b>' ~ (r.vote_average|fmt_rating(1)) ~ '</b>' if r.vote_average else '')),
+               l1=(r.year or '—')|string ~ '<span class="sep">·</span>'|safe ~ ('Serie' if r.type == 'show' else 'Película'),
+               l2=('Ya en tu lista' if r.known else ('Internet <b>'|safe ~ (r.vote_average|fmt_rating(1)) ~ '</b>'|safe if r.vote_average else '')),
                adult=r.adult and not r.known, uid='sim-' ~ r.tmdb_id) %}
     {% if not r.known %}{% set tmdb_id = r.tmdb_id %}{% set type = r.type %}{% set state = "new" %}{% include "partials/entry_actions.html" %}{% endif %}
   {% endcall %}

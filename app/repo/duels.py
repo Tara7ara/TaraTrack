@@ -143,8 +143,7 @@ def reset_elo(conn, table: str, ids: list[int], user_id: int | None = None):
     if not ids:
         return
     placeholders = ",".join("?" * len(ids))
-    if table != "entries":
-        conn.execute(f"UPDATE {table} SET elo = 1500, rd = ? WHERE id IN ({placeholders})", [GLICKO_RD_INIT, *ids])
+    conn.execute(f"UPDATE {table} SET elo = 1500, rd = ? WHERE id IN ({placeholders})", [GLICKO_RD_INIT, *ids])
     conn.execute(
         f"DELETE FROM duels WHERE table_name = ? AND (winner_id IN ({placeholders}) OR loser_id IN ({placeholders}))",
         [table, *ids, *ids],

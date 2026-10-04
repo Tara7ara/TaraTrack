@@ -70,3 +70,25 @@ def test_rejecting_a_recommendation_does_not_hide_it_for_other_users(conn, user_
 
     assert repo.list_recommendations(conn, user_id) == []
     assert [r["tmdb_id"] for r in repo.list_recommendations(conn, other["id"])] == [444]
+
+
+def test_similar_known_is_per_user_not_the_whole_catalog(conn, user_id, monkeypatch):
+    """"Similares" solo marca "Ya en tu lista" lo que tiene el propio usuario, no
+    cualquier título del catálogo compartido."""
+    from app.repo import titles as titles_mod
+
+    other = repo.create_user(conn, "amigo", "unaclave123")
+    conn.execute("INSERT INTO titles (tmdb_id, type, title) VALUES (900001, 'show', 'Semilla')")
+    conn.execute("INSERT INTO titles (tmdb_id, type, title) VALUES (900002, 'show', 'Gurren Lagann')")
+    gurren = conn.execute("SELECT id FROM titles WHERE tmdb_id = 900002").fetchone()
+    conn.execute(
+        "INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')", (gurren["id"], user_id)
+    )
+    monkeypatch.setattr(
+        titles_mod.tmdb, "get_recommendations",
+        lambda tmdb_id, media_type: [{"tmdb_id": 900002, "title": "Gurren Lagann", "type": "show"}],
+    )
+    seed = conn.execute("SELECT * FROM titles WHERE tmdb_id = 900001").fetchone()
+
+    assert repo.get_similar(conn, seed, user_id)[0]["known"] is True
+    assert repo.get_similar(conn, seed, other["id"])[0]["known"] is False

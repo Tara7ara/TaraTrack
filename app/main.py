@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 import time
 import traceback
 from datetime import date
@@ -7,9 +8,8 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import anime, config, repo
@@ -30,7 +30,8 @@ from app.routers import (
     vistas,
     waifus,
 )
-from app.routers.calendario import _SEASON_ORDER
+from app.routers.calendario import _SEASON_ORDER, _current_season
+from app.sesion import _auth_serializer, read_session, session_matches, set_session_cookie  # noqa: F401
 from app.web import templates
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -70,8 +71,15 @@ async def unhandled_error(request: Request, exc: Exception):
     )
 
 
+# Lo único de /static sin sesión: lo que necesitan el login, la activación y la PWA.
+# Pósters, retratos, subidas y avatares piden sesión.
+_PUBLIC_STATIC = ("/static/css/", "/static/js/", "/static/img/", "/static/manifest.webmanifest")
+
+
 @app.middleware("http")
 async def static_cache_headers(request: Request, call_next):
+    """Pósters, fotos y JS no cambian: caché larga en el navegador. Las páginas y los
+    parciales de htmx van con no-store, porque Safari enseñaba versiones viejas al volver atrás."""
     response = await call_next(request)
     # /thumbs/ lleva ?v= con la fecha de la portada original, así que también se puede
     # cachear a largo plazo.
@@ -79,9 +87,12 @@ async def static_cache_headers(request: Request, call_next):
         # Los nombres de TMDB son únicos por imagen: nunca cambian, se pueden cachear un año.
         # La redirección a TMDB (fondo aún no guardado) no se cachea: cuando se guarde, que
         # el navegador lo pida al servidor.
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.url.path.startswith(("/static/", "/thumbs/")):
+        response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+    elif request.url.path.startswith(_PUBLIC_STATIC):
         response.headers["Cache-Control"] = "public, max-age=604800"
+    elif request.url.path.startswith(("/static/", "/thumbs/")) and response.status_code == 200:
+        # "private": que ningún proxy guarde una copia y la sirva sin sesión.
+        response.headers["Cache-Control"] = "private, max-age=604800"
     else:
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -136,11 +147,29 @@ def _record_ip_failure(ip: str) -> None:
     _failures_by_ip.setdefault(ip, []).append(time.time())
 
 
-def _auth_serializer() -> URLSafeTimedSerializer:
-    secret = config.get_secret_key()
-    if not secret:
-        raise RuntimeError("Falta TARATRACK_SECRET_KEY en el entorno - obligatoria, sin valor por defecto.")
-    return URLSafeTimedSerializer(secret, salt="taratrack-auth")
+# Comprobar el límite y apuntar el intento en un solo paso: con peticiones simultáneas
+# en el threadpool, todas pasaban la comprobación antes de anotar ningún fallo. El
+# intento se reserva antes de verificar y se devuelve si no era un fallo.
+_attempts_lock = threading.Lock()
+
+
+def _reserve_attempt(key: str, ip: str) -> bool:
+    with _attempts_lock:
+        if _login_locked_out(key) or _ip_locked_out(ip):
+            return False
+        _record_login_failure(key)
+        _record_ip_failure(ip)
+        return True
+
+
+def _release_attempt(key: str, ip: str, clear_key: bool = False) -> None:
+    with _attempts_lock:
+        if clear_key:
+            _clear_login_failures(key)
+        elif _login_failures_by_user.get(key):
+            _login_failures_by_user[key].pop()
+        if _failures_by_ip.get(ip):
+            _failures_by_ip[ip].pop()
 
 
 def _safe_next(next_url: str) -> str:
@@ -150,19 +179,6 @@ def _safe_next(next_url: str) -> str:
     if next_url and next_url.startswith("/") and not next_url.startswith("//"):
         return next_url
     return "/"
-
-
-def _current_user_id(request: Request) -> int | None:
-    """La cookie firma solo el user_id; username/is_admin se leen de la BBDD en cada
-    petición vía request.state."""
-    token = request.cookies.get(AUTH_COOKIE)
-    if not token:
-        return None
-    try:
-        payload = _auth_serializer().loads(token, max_age=AUTH_MAX_AGE)
-        return int(payload)
-    except (BadSignature, SignatureExpired, TypeError, ValueError):
-        return None
 
 
 # iOS pide el icono de la pantalla de inicio tambien en la raiz, sin sesion.
@@ -175,20 +191,32 @@ def apple_touch_icon():
     return FileResponse("app/static/img/apple-touch-icon.png", media_type="image/png")
 
 
+def _to_login(request: Request):
+    """htmx sigue un 303 por AJAX y pintaba el login dentro del botón pulsado: a una
+    petición htmx se le pide que recargue la página completa (HX-Redirect)."""
+    target = "/login"
+    if request.method == "GET" and not request.headers.get("HX-Request"):
+        path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        target = f"/login?next={quote(path)}"
+    # no-store: la redirección de un fichero privado no debe quedarse en ninguna caché.
+    if request.headers.get("HX-Request"):
+        return Response(status_code=200, headers={"HX-Redirect": "/login", "Cache-Control": "no-store"})
+    return RedirectResponse(target, status_code=303, headers={"Cache-Control": "no-store"})
+
+
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    if path in ("/login", "/registro", "/activar", *_TOUCH_ICON_PATHS) or path.startswith("/static/"):
+    if path in ("/login", "/registro", "/activar", *_TOUCH_ICON_PATHS) or (path.startswith(_PUBLIC_STATIC) and ".." not in path):
         return await call_next(request)
-    user_id = _current_user_id(request)
-    if user_id is None:
-        if request.method == "GET":
-            return RedirectResponse(f"/login?next={quote(path)}", status_code=303)
-        return RedirectResponse("/login", status_code=303)
+    session = read_session(request.cookies.get(AUTH_COOKIE))
+    if session is None:
+        return _to_login(request)
+    user_id, stamp = session
     with get_connection() as conn:
         user = repo.get_user(conn, user_id)
-    if not user or user["is_blocked"]:
-        resp = RedirectResponse("/login", status_code=303)
+    if not user or user["is_blocked"] or not session_matches(user, stamp):
+        resp = _to_login(request)
         resp.delete_cookie(AUTH_COOKIE)
         return resp
     request.state.user_id = user["id"]
@@ -207,7 +235,7 @@ def login_form(request: Request, next: str = "/"):
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/")):
     username_norm = username.strip().lower()
     ip = _client_ip(request)
-    if _login_locked_out(username_norm) or _ip_locked_out(ip):
+    if not _reserve_attempt(username_norm, ip):
         return templates.TemplateResponse(
             request, "login.html",
             {"next": _safe_next(next), "error": "Demasiados intentos. Espera unos minutos e inténtalo de nuevo."},
@@ -215,22 +243,20 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
         )
     with get_connection() as conn:
         user = repo.get_user_by_username(conn, username_norm)
-    if user and repo.verify_password(password, user["password_hash"], user["password_salt"]):
+    if user:
+        ok = repo.verify_password(password, user["password_hash"], user["password_salt"])
+    else:
+        repo.burn_password_check(password)
+        ok = False
+    if ok:
+        _release_attempt(username_norm, ip, clear_key=True)
         if user["is_blocked"]:
             return templates.TemplateResponse(
                 request, "login.html",
                 {"next": _safe_next(next), "error": "Esta cuenta está bloqueada. Habla con quien te invitó."},
                 status_code=403,
             )
-        _clear_login_failures(username_norm)
-        resp = RedirectResponse(_safe_next(next), status_code=303)
-        resp.set_cookie(
-            AUTH_COOKIE, _auth_serializer().dumps(str(user["id"])),
-            max_age=AUTH_MAX_AGE, httponly=True, secure=True, samesite="lax",
-        )
-        return resp
-    _record_login_failure(username_norm)
-    _record_ip_failure(ip)
+        return set_session_cookie(RedirectResponse(_safe_next(next), status_code=303), user)
     return templates.TemplateResponse(
         request, "login.html", {"next": _safe_next(next), "error": "Usuario o contraseña incorrectos"}, status_code=401
     )
@@ -266,23 +292,17 @@ def activar_submit(
             request, "activar.html", {"usuario": username_norm, "error": error}, status_code=status
         )
 
-    if _login_locked_out(key) or _ip_locked_out(ip):
+    if not _reserve_attempt(key, ip):
         return fail("Demasiados intentos. Espera unos minutos e inténtalo de nuevo.", 429)
     with get_connection() as conn:
         try:
             user = repo.activate_invite(conn, username_norm, code, password, password2)
         except ValueError as e:
-            if str(e) == "Usuario o código no válidos":
-                _record_login_failure(key)
-                _record_ip_failure(ip)
+            if str(e) != "Usuario o código no válidos":
+                _release_attempt(key, ip)
             return fail(str(e), 400)
-    _clear_login_failures(key)
-    resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie(
-        AUTH_COOKIE, _auth_serializer().dumps(str(user["id"])),
-        max_age=AUTH_MAX_AGE, httponly=True, secure=True, samesite="lax",
-    )
-    return resp
+    _release_attempt(key, ip, clear_key=True)
+    return set_session_cookie(RedirectResponse("/", status_code=303), user)
 
 
 SYNC_INTERVAL_HOURS = config.SYNC_INTERVAL_HOURS
@@ -312,9 +332,11 @@ async def season_cache_loop():
     peticiones a AniList). Las temporadas de otros años se refrescan al visitarlas si
     tienen más de 24 h."""
     while True:
-        for season in _SEASON_ORDER:
+        targets = [(season, date.today().year) for season in _SEASON_ORDER]
+        if _current_season() not in targets:
+            targets.append(_current_season())
+        for season, year in targets:
             try:
-                year = date.today().year
                 items = await asyncio.to_thread(anime.get_seasonal_anime, season, year)
                 with get_connection() as conn:
                     repo.save_season_cache(conn, season, year, items)

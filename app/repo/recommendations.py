@@ -1,13 +1,18 @@
 """app.repo.recommendations - recomendados (TMDB + comunidad de AniList) y BAN. El
 resto del proyecto usa `from app import repo; repo.funcion(...)`."""
+import json
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from app import anime, tmdb
 from app.db import get_connection
 from app.matching import _best_plausible_match, _tmdb_search_flexible
+from app.repo._shared import get_setting, set_setting
 from app.repo.titles import TIPOS
 from app.repo.users import list_users
+
+RECS_EMPTY_RETRY_SECONDS = 30 * 60
 
 SEED_COUNT = 25
 
@@ -107,6 +112,9 @@ def _match_anilist_to_tmdb(names: dict):
 
 
 def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_COUNT):
+    """Recalcula los recomendados y los guarda en recommendations_cache, para que
+    /recomendados sea una lectura local. Sin user_id, los de todos los usuarios (sync
+    de fondo); con user_id, solo los de ese usuario."""
     if user_id is None:
         with get_connection() as conn:
             user_ids = [row["id"] for row in list_users(conn)]
@@ -177,7 +185,7 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
         item["seeds"] = seed_titles + [t for t in item["seeds"] if t not in seed_titles]
         item["score"] += score
 
-    ranked = sorted(scored.values(), key=lambda r: (r["score"], r["popularity"]), reverse=True)
+    ranked = sorted(scored.values(), key=lambda r: (r["score"], r.get("popularity") or 0), reverse=True)
 
     # Tope por semilla PRINCIPAL (la primera que la recomendo): sin esto, una franquicia
     # entera con nota alta como semilla podia ocupar media lista de recomendados.
@@ -202,7 +210,7 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
                     user_id, item["tmdb_id"], item["type"], item["title"], item.get("year"),
                     item.get("poster_url"), item.get("overview"), item.get("vote_average"),
                     item.get("popularity"), int(bool(item.get("adult"))),
-                    ",".join(item["seeds"]), item["score"], ",".join(item.get("genres") or []),
+                    json.dumps(item["seeds"], ensure_ascii=False), item["score"], ",".join(item.get("genres") or []),
                 ),
             )
     logging.info(
@@ -214,6 +222,16 @@ def refresh_recommendations_cache(user_id: int | None = None, seed_count=SEED_CO
             refresh_tmdb_extra(conn, [(item["tmdb_id"], item["type"]) for item in capped])
     except Exception:
         logging.exception("recomendados: fallo al traer fondos/estado de TMDB")
+
+
+def _load_seeds(raw):
+    """Semillas guardadas como JSON (un título con coma se partía en dos); las filas
+    antiguas separadas por comas se siguen leyendo hasta el siguiente refresco."""
+    if not raw:
+        return []
+    if raw.startswith("["):
+        return json.loads(raw)
+    return raw.split(",")
 
 
 def list_recommendations(conn, user_id: int, tipo="", limit=40, tanda=0, with_pages=False):
@@ -231,7 +249,13 @@ def list_recommendations(conn, user_id: int, tipo="", limit=40, tanda=0, with_pa
     if conn.execute(
         "SELECT count(*) AS c FROM recommendations_cache WHERE user_id = ?", (user_id,)
     ).fetchone()["c"] == 0:
-        refresh_recommendations_cache(user_id=user_id)
+        key = f"recs_intento:{user_id}"
+        last = get_setting(conn, key)
+        now = time.time()
+        if not last or now - float(last) > RECS_EMPTY_RETRY_SECONDS:
+            set_setting(conn, key, str(now))
+            conn.commit()
+            refresh_recommendations_cache(user_id=user_id)
 
     media_type = TIPOS.get(tipo)
     banned = {
@@ -254,7 +278,7 @@ def list_recommendations(conn, user_id: int, tipo="", limit=40, tanda=0, with_pa
         params,
     ).fetchall()
     pool = [
-        {**dict(r), "seeds": r["seeds"].split(","), "adult": bool(r["is_adult"]),
+        {**dict(r), "seeds": _load_seeds(r["seeds"]), "adult": bool(r["is_adult"]),
          "genres": [g for g in (r["genres"] or "").split(",") if g]}
         for r in rows
         if r["tmdb_id"] not in banned and r["tmdb_id"] not in known

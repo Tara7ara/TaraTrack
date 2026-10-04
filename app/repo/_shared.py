@@ -10,6 +10,14 @@ def get_setting(conn, key: str, default=None):
     return row["value"] if row else default
 
 
+def forget_duels(conn, table: str, ids_sql: str, params: tuple):
+    """Borra duelos y fotos de Elo de los ids que devuelve `ids_sql`: duels no tiene
+    FK (table_name + id), así que nada los limpia al quitar el item."""
+    conn.execute(
+        f"DELETE FROM duels WHERE table_name = ? AND (winner_id IN ({ids_sql}) OR loser_id IN ({ids_sql}))",
+        (table, *params, *params),
+    )
+    conn.execute(f"DELETE FROM elo_snapshots WHERE table_name = ? AND item_id IN ({ids_sql})", (table, *params))
 
 
 def set_setting(conn, key: str, value: str):
@@ -125,6 +133,11 @@ def _promote_if_first_watch(conn, title_id, user_id):
     ).fetchone()[0]
     if has_watched:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn.execute(
+            """INSERT INTO entries (title_id, user_id, status, watched_at) VALUES (?, ?, 'watched', ?)
+               ON CONFLICT(title_id, user_id) DO NOTHING""",
+            (title_id, user_id, now),
+        )
         conn.execute(
             """UPDATE entries SET status = 'watched', watched_at = COALESCE(watched_at, ?)
                WHERE title_id = ? AND user_id = ? AND status = 'pending'""",

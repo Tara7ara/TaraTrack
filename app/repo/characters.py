@@ -9,6 +9,7 @@ from app import anime, tmdb
 from app.repo._shared import (
     PROFILES_DIR,
     _is_anime,
+    forget_duels,
     get_setting,
     set_setting,
 )
@@ -47,12 +48,21 @@ def _title_variants(*titles):
         yield t
         clean = unicodedata.normalize("NFKC", t)
         clean = re.sub(r"^(劇場版|映画)\s*", "", clean)
-        inner = re.search(r"\(([^)]+)\)\s*$", clean)
-        clean = re.sub(r"\s*\([^)]*\)\s*$", "", clean).strip()
+        # Paréntesis final con operaciones de texto: una regex retrocede en O(n²) con
+        # muchos "(" sin cerrar.
+        inner = None
+        rest = clean.rstrip()
+        if rest.endswith(")"):
+            body = rest[:-1]
+            start = body.find("(", body.rfind(")") + 1)
+            if start != -1:
+                inner = body[start + 1:] or None
+                clean = body[:start]
+        clean = clean.strip()
         if clean:
             yield clean
         if inner:
-            yield inner.group(1).strip()
+            yield inner.strip()
 
 
 def _anilist_characters(title_row) -> list[dict]:
@@ -159,11 +169,17 @@ def add_character_manual(conn, title_row, char_id: int, name: str, image_url: st
         os.makedirs(PROFILES_DIR, exist_ok=True)
         prefix = "al_" if char_id > 0 else "mal_"
         filename = f"{prefix}{abs(char_id)}.jpg"
-        try:
-            if tmdb.download_poster(image_url, os.path.join(PROFILES_DIR, filename)):
-                profile_path = f"/static/profiles/{filename}"
-        except Exception:
-            pass
+        dest = os.path.join(PROFILES_DIR, filename)
+        # char_id e image_url vienen del navegador: un retrato existente se reutiliza y
+        # nunca se pisa, y la URL solo puede ser de los CDN de AniList, MAL o TMDB.
+        if os.path.exists(dest):
+            profile_path = f"/static/profiles/{filename}"
+        else:
+            try:
+                if tmdb.download_poster(image_url, dest, allowed_hosts=tmdb.CHARACTER_IMAGE_HOSTS):
+                    profile_path = f"/static/profiles/{filename}"
+            except Exception:
+                pass
     conn.execute(
         """INSERT OR IGNORE INTO characters (title_id, tmdb_person_id, name, character_name, profile_path)
            VALUES (?, ?, ?, ?, ?)""",
@@ -181,7 +197,9 @@ def match_library_title(conn, names: list[str], user_id: int):
         row = conn.execute(
             """SELECT titles.id AS title_id, titles.title, entries.id AS entry_id
                FROM titles JOIN entries ON entries.title_id = titles.id
-               WHERE lower(titles.title) = lower(?) AND entries.user_id = ?""",
+               WHERE lower(?) IN (lower(titles.title), lower(titles.original_title),
+                                  lower(titles.anilist_title_romaji), lower(titles.anilist_title_english))
+                 AND entries.user_id = ?""",
             (name, user_id),
         ).fetchone()
         if row:
@@ -190,9 +208,13 @@ def match_library_title(conn, names: list[str], user_id: int):
         row = conn.execute(
             """SELECT titles.id AS title_id, titles.title, entries.id AS entry_id
                FROM titles JOIN entries ON entries.title_id = titles.id
-               WHERE (lower(?) LIKE lower(titles.title) || '%'
-                  OR lower(titles.title) LIKE lower(?) || '%') AND entries.user_id = ?
-               ORDER BY length(titles.title) DESC LIMIT 1""",
+               JOIN (SELECT id, title AS n FROM titles UNION ALL SELECT id, original_title FROM titles
+                     UNION ALL SELECT id, anilist_title_romaji FROM titles
+                     UNION ALL SELECT id, anilist_title_english FROM titles) AS names
+                 ON names.id = titles.id AND names.n IS NOT NULL AND names.n != ''
+               WHERE (lower(?) LIKE lower(names.n) || '%'
+                  OR lower(names.n) LIKE lower(?) || '%') AND entries.user_id = ?
+               ORDER BY length(names.n) DESC LIMIT 1""",
             (name, name, user_id),
         ).fetchone()
         if row:
@@ -252,6 +274,7 @@ def toggle_favorite_character(conn, entry_id: int, character_id: int) -> bool:
         (entry_id, character_id),
     ).fetchone()
     if existing:
+        forget_duels(conn, "favorite_characters", "?", (existing["id"],))
         conn.execute("DELETE FROM favorite_characters WHERE id = ?", (existing["id"],))
         return False
     conn.execute(

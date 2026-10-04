@@ -1,7 +1,9 @@
 """app.routers.ajustes - ajustes, cuentas, pesos de afinidad y exportación."""
 import asyncio
 import json
+import math
 import os
+import time
 from datetime import date, datetime, timezone
 from urllib.parse import quote_plus
 
@@ -11,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import config, repo
 from app.db import get_connection
+from app.sesion import set_session_cookie
 from app.web import _recompute_with_status, templates
 
 router = APIRouter()
@@ -106,7 +109,8 @@ def ajustes_cambiar_password(
             repo.change_password(conn, request.state.user_id, password_actual, password_nueva)
         except ValueError as e:
             return RedirectResponse(f"/ajustes?perfil_error={quote_plus(str(e))}", status_code=303)
-    return RedirectResponse("/ajustes?perfil_ok=Contraseña+actualizada", status_code=303)
+        user = repo.get_user(conn, request.state.user_id)
+    return set_session_cookie(RedirectResponse("/ajustes?perfil_ok=Contraseña+actualizada", status_code=303), user)
 
 
 @router.post("/ajustes/perfil/foto", response_class=HTMLResponse)
@@ -126,7 +130,7 @@ async def ajustes_cambiar_foto(request: Request, imagen: UploadFile = File(...))
         f.write(data)
     with get_connection() as conn:
         repo.set_avatar_path(
-            conn, request.state.user_id, f"/static/avatars/{filename}?v={int(date.today().strftime('%Y%m%d'))}"
+            conn, request.state.user_id, f"/static/avatars/{filename}?v={int(time.time())}"
         )
     return RedirectResponse("/ajustes", status_code=303)
 
@@ -161,6 +165,8 @@ def ajustes_bloquear(request: Request, user_id: int, valor: str = Form(...)):
 
 @router.post("/ajustes/usuarios/{user_id}/borrar", response_class=HTMLResponse)
 def ajustes_borrar(request: Request, user_id: int, confirmar: str = Form("")):
+    """Borra una cuenta y todo lo suyo. Hay que escribir el nombre de la cuenta para
+    confirmar: no se puede deshacer."""
     if not request.state.is_admin:
         raise StarletteHTTPException(status_code=403, detail="Solo un administrador puede borrar cuentas.")
     if user_id == request.state.user_id:
@@ -169,7 +175,7 @@ def ajustes_borrar(request: Request, user_id: int, confirmar: str = Form("")):
         user = repo.get_user(conn, user_id)
         if not user:
             return RedirectResponse("/ajustes#s-users", status_code=303)
-        if confirmar.strip().lower() != user["username"]:
+        if confirmar.strip().lower() != user["username"].lower():
             return RedirectResponse(f"/ajustes?usuario_error={quote_plus('Para borrar, escribe el nombre exacto de la cuenta')}#s-users", status_code=303)
         try:
             repo.delete_user(conn, user_id)
@@ -221,8 +227,20 @@ def afinidad_estado(request: Request):
     return templates.TemplateResponse(request, "partials/recompute_status.html", {"status": status})
 
 
+def _peso(raw, actual: float) -> float:
+    """Peso del formulario de afinidad: número finito y >= 0 (un negativo o "nan"
+    rompería las medias ponderadas del motor); si no, se queda el que había."""
+    try:
+        valor = float(raw)
+    except ValueError:
+        return actual
+    return valor if math.isfinite(valor) and valor >= 0 else actual
+
+
 @router.post("/ajustes/afinidad", response_class=HTMLResponse)
 async def ajustes_afinidad(request: Request):
+    """Guarda los pesos del índice de afinidad y relanza el recálculo en segundo plano:
+    tarda del orden de un minuto, no se espera desde la petición."""
     form = await request.form()
     with get_connection() as conn:
         cfg = repo.get_affinity_config(conn, request.state.user_id)
@@ -230,10 +248,7 @@ async def ajustes_afinidad(request: Request):
             for key in cfg[group]:
                 field = f"{group}__{key}"
                 if field in form:
-                    try:
-                        cfg[group][key] = float(form[field])
-                    except ValueError:
-                        pass
+                    cfg[group][key] = _peso(form[field], cfg[group][key])
         for key in ("appetite_exp", "quality_exp", "gap_threshold", "gap_factor"):
             if key in form:
                 try:
@@ -243,10 +258,7 @@ async def ajustes_afinidad(request: Request):
         for key in cfg["predict_weights"]:
             field = f"predict_weights__{key}"
             if field in form:
-                try:
-                    cfg["predict_weights"][key] = float(form[field])
-                except ValueError:
-                    pass
+                cfg["predict_weights"][key] = _peso(form[field], cfg["predict_weights"][key])
         repo.set_affinity_config(conn, request.state.user_id, cfg)
 
     asyncio.create_task(asyncio.to_thread(_recompute_with_status, request.state.user_id))
