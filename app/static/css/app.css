@@ -1082,6 +1082,16 @@ body.auth { min-height: 100vh; min-height: 100dvh; display: grid; place-items: c
 .exam-side > div, .surprise > div, .detail-main, .about-main { min-width: 0; }
 .exam-side .logo, .surprise .hero-logo, .detail-main .hero-logo { max-width: 100%; height: auto; }
 .surprise .overview { overflow-wrap: anywhere; }
+.diary-row { grid-template-columns: 70px minmax(0, 1fr); }
+/* una palabra larga sin espacios no puede ensanchar la página */
+.diary-row span, .ep-main .cm, .debate p, .overview { overflow-wrap: anywhere; }
+/* en móvil los botones del episodio van a la izquierda: el desplegable ocupa el ancho de la fila */
+@media (max-width: 640px) {
+  .ep { position: relative; }
+  .ep-more { position: static; }
+  .ep-pop { left: 8px; right: 8px; width: auto; }
+}
+.season-panel:has(.ep-more[open]) { overflow: visible; }
 @media (max-width: 1000px) { .exam-side { grid-template-columns: 110px minmax(0, 1fr); } .exam-card { min-width: 0; } }
 @media (max-width: 760px) {
   .acc-tiles .tile { grid-column: 1 / -1 !important; }
