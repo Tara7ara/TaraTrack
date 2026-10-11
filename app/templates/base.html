@@ -152,6 +152,13 @@ document.addEventListener("click", (e) => {
 });
 addEventListener("pageshow", () => ttLoad.reset());
 document.addEventListener("click", (e) => { if (!e.target.closest(".nav-more")) document.querySelectorAll(".nav-more[open]").forEach((d) => d.removeAttribute("open")); });
+// Comentar/debatir episodio: solo un desplegable abierto a la vez (marcando uno por uno
+// se apilaban y se solapaban). El evento `toggle` no burbujea: se escucha en captura.
+document.addEventListener("toggle", (e) => {
+    const d = e.target;
+    if (d.open && d.matches && d.matches("details.ep-more"))
+        document.querySelectorAll("details.ep-more[open]").forEach((o) => { if (o !== d) o.removeAttribute("open"); });
+}, true);
 window.ttHero = (() => {
     let i = 0, t = null, hero = null, slides = [];
     const busy = () => hero && hero.querySelector(".slide.on .hero-confirm");

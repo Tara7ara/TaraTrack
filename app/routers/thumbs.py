@@ -17,12 +17,18 @@ def _es_safari(request: Request) -> bool:
 
 
 def _puede_guardar(request: Request, tmdb_id: int) -> bool:
+    """Solo se guardan fondos nuevos para la cuenta admin y de títulos en Favoritos (la
+    lista por defecto). Los fondos pesan (hasta 8 de ~600 KB por ficha), así que acotarlos
+    a favoritos evita que la caché crezca. El resto tira de TMDB sin guardar."""
     if not tmdb_id or not getattr(request.state, "is_admin", False) or _es_safari(request):
         return False
     with get_connection() as conn:
         row = conn.execute(
-            """SELECT 1 FROM entries JOIN titles ON titles.id = entries.title_id
-               WHERE titles.tmdb_id = ? AND entries.user_id = ? AND entries.status = 'watched'""",
+            """SELECT 1 FROM entries
+               JOIN titles ON titles.id = entries.title_id
+               JOIN lists ON lists.user_id = entries.user_id AND lists.is_default = 1
+               JOIN list_items ON list_items.list_id = lists.id AND list_items.entry_id = entries.id
+               WHERE titles.tmdb_id = ? AND entries.user_id = ?""",
             (tmdb_id, request.state.user_id),
         ).fetchone()
     return row is not None

@@ -113,6 +113,39 @@ def hide_backdrop(conn, title_id: int, path: str):
     )
 
 
+def get_hidden_seasons(conn, title_id: int) -> list[int]:
+    row = conn.execute("SELECT hidden_seasons FROM titles WHERE id = ?", (title_id,)).fetchone()
+    return json.loads(row["hidden_seasons"] or "[]") if row else []
+
+
+def hide_season(conn, title_id: int, season_number: int):
+    """Oculta una temporada que TMDB duplica (a veces parte una serie en una temporada
+    entera y otra que repite su segundo tramo con nombres de relleno). Borra sus episodios
+    y lo que cuelga de ellos (visionados, estado, debate) y la apunta en hidden_seasons
+    para que el sync no la vuelva a traer. Es del catálogo compartido. No se pierde
+    progreso real: los episodios buenos siguen en la otra temporada."""
+    hidden = get_hidden_seasons(conn, title_id)
+    if season_number not in hidden:
+        hidden.append(season_number)
+    ids = [r["id"] for r in conn.execute(
+        "SELECT id FROM episodes WHERE title_id = ? AND season_number = ?", (title_id, season_number)
+    ).fetchall()]
+    if ids:
+        ph = ",".join("?" * len(ids))
+        conn.execute(f"DELETE FROM episode_watches WHERE episode_id IN ({ph})", ids)
+        conn.execute(f"DELETE FROM episode_user_state WHERE episode_id IN ({ph})", ids)
+        conn.execute(f"DELETE FROM episode_comments WHERE episode_id IN ({ph})", ids)
+        conn.execute(f"DELETE FROM episodes WHERE id IN ({ph})", ids)
+    conn.execute("UPDATE titles SET hidden_seasons = ? WHERE id = ?", (json.dumps(hidden), title_id))
+
+
+def unhide_season(conn, title_id: int, season_number: int):
+    """Vuelve a mostrar una temporada oculta; sus episodios los recupera el próximo
+    sync_episodes (la ruta fuerza uno para no esperar)."""
+    hidden = [s for s in get_hidden_seasons(conn, title_id) if s != season_number]
+    conn.execute("UPDATE titles SET hidden_seasons = ? WHERE id = ?", (json.dumps(hidden), title_id))
+
+
 def set_air_date_offset(conn, title_id: int, days: int):
     """Desfase en días (con signo) entre la fecha de emisión de TMDB y la real; 0 lo
     quita. Se aplica al guardar (sync_episodes/refresh_metadata), nunca al comparar."""
@@ -171,8 +204,12 @@ def sync_episodes(conn, title_row):
             lambda s: tmdb.get_season_episodes(title_row["tmdb_id"], s), seasons
         )
     offset = title_row["air_date_offset_days"] or 0
+    # Temporadas ocultadas a mano (duplicados de TMDB): no se vuelven a traer nunca.
+    hidden = set(get_hidden_seasons(conn, title_row["id"]))
     for episodes in episodes_by_season:
         for ep in episodes:
+            if ep["season_number"] in hidden:
+                continue
             conn.execute(
                 """INSERT INTO episodes (title_id, season_number, episode_number, name, air_date, still_path)
                    VALUES (?, ?, ?, ?, ?, ?)
@@ -386,44 +423,54 @@ def set_episode_comment(conn, episode_id, user_id, comment: str):
     )
 
 
-def list_history(conn, user_id, limit=300):
+HISTORY_DAYS = 60
+
+
+def list_history(conn, user_id, days=HISTORY_DAYS, limit=8000):
+    """Cronológico unificado de este usuario, lo más reciente primero: episodios vistos,
+    títulos marcados vistos y rewatches.
+
+    Se acota a los `days` días más recientes con actividad (de episode_watches), no a un
+    número fijo de filas: un marcado masivo (el doble tick de una serie larga, cientos de
+    episodios en un instante) llenaba el tope y enterraba el resto, así que una serie vista
+    entera podía no salir. Con una ventana por días, dentro de cada día aparece todo, y la
+    página ya agrupa cada (día, título) en una sola tarjeta. `limit` es solo un tope."""
+    cutoff = conn.execute(
+        """SELECT MIN(d) FROM (
+             SELECT DISTINCT date(watched_at) AS d FROM episode_watches
+             WHERE user_id = ? ORDER BY d DESC LIMIT ?)""",
+        (user_id, days),
+    ).fetchone()[0] or "0000-00-00"
     return conn.execute(
         """SELECT * FROM (
-             SELECT * FROM (
-               SELECT episode_watches.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
-                      titles.poster_path,
-                      'T' || episodes.season_number || 'E' || episodes.episode_number AS detail,
-                      titles.backdrop_path, episodes.still_path, episodes.name AS ep_name,
-                      episodes.season_number, episodes.episode_number, titles.runtime_minutes
-               FROM episode_watches
-               JOIN episodes ON episodes.id = episode_watches.episode_id
-               JOIN titles ON titles.id = episodes.title_id
-               WHERE episode_watches.user_id = ?
-               ORDER BY episode_watches.watched_at DESC LIMIT ?
-             )
+             SELECT episode_watches.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
+                    titles.poster_path,
+                    'T' || episodes.season_number || 'E' || episodes.episode_number AS detail,
+                    titles.backdrop_path, episodes.still_path, episodes.name AS ep_name,
+                    episodes.season_number, episodes.episode_number, titles.runtime_minutes
+             FROM episode_watches
+             JOIN episodes ON episodes.id = episode_watches.episode_id
+             JOIN titles ON titles.id = episodes.title_id
+             WHERE episode_watches.user_id = ? AND date(episode_watches.watched_at) >= ?
              UNION ALL
-             SELECT * FROM (
-               SELECT entries.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
-                      titles.poster_path, 'Vista entera' AS detail,
-                      titles.backdrop_path, NULL, NULL, NULL, NULL, titles.runtime_minutes
-               FROM entries JOIN titles ON titles.id = entries.title_id
-               WHERE entries.watched_at IS NOT NULL AND entries.user_id = ?
-               ORDER BY entries.watched_at DESC LIMIT ?
-             )
+             SELECT entries.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
+                    titles.poster_path, 'Vista entera' AS detail,
+                    titles.backdrop_path, NULL, NULL, NULL, NULL, titles.runtime_minutes
+             FROM entries JOIN titles ON titles.id = entries.title_id
+             WHERE entries.watched_at IS NOT NULL AND entries.user_id = ?
+                   AND date(entries.watched_at) >= ?
              UNION ALL
-             SELECT * FROM (
-               SELECT watch_sessions.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
-                      titles.poster_path, 'Volver a ver' AS detail,
-                      titles.backdrop_path, NULL, NULL, NULL, NULL, titles.runtime_minutes
-               FROM watch_sessions
-               JOIN entries ON entries.id = watch_sessions.entry_id
-               JOIN titles ON titles.id = entries.title_id
-               WHERE entries.user_id = ? AND watch_sessions.watched_at IS NOT NULL
-               ORDER BY watch_sessions.watched_at DESC LIMIT ?
-             )
+             SELECT watch_sessions.watched_at AS at, titles.title, titles.tmdb_id, titles.type,
+                    titles.poster_path, 'Volver a ver' AS detail,
+                    titles.backdrop_path, NULL, NULL, NULL, NULL, titles.runtime_minutes
+             FROM watch_sessions
+             JOIN entries ON entries.id = watch_sessions.entry_id
+             JOIN titles ON titles.id = entries.title_id
+             WHERE entries.user_id = ? AND watch_sessions.watched_at IS NOT NULL
+                   AND date(watch_sessions.watched_at) >= ?
            )
            ORDER BY at DESC LIMIT ?""",
-        (user_id, limit, user_id, limit, user_id, limit, limit),
+        (user_id, cutoff, user_id, cutoff, user_id, cutoff, limit),
     ).fetchall()
 
 

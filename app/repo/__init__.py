@@ -186,6 +186,7 @@ from app.repo.titles import (  # noqa: F401
     get_entry_states,
     get_entry_with_title,
     get_episode_user_state,
+    get_hidden_seasons,
     get_home_card,
     get_owned_entry_with_title,
     get_prediction_calibration,
@@ -193,6 +194,7 @@ from app.repo.titles import (  # noqa: F401
     get_similar,
     get_title,
     hide_backdrop,
+    hide_season,
     library_version,
     list_all_posters,
     list_calendar,
@@ -233,6 +235,7 @@ from app.repo.titles import (  # noqa: F401
     toggle_episode_favorite,
     toggle_habit,
     undo_mark_watched,
+    unhide_season,
 )
 from app.repo.users import (  # noqa: F401
     INVITE_DAYS,

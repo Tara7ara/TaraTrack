@@ -85,7 +85,7 @@ def test_quitar_fondo_no_vuelve_y_el_principal_pasa_al_siguiente(client, monkeyp
         assert conn.execute("SELECT backdrop_path FROM titles WHERE id = ?", (tid,)).fetchone()[0] == "/b.jpg"
 
 
-def test_fondo_solo_se_guarda_para_admin_con_el_titulo_visto(client, tmp_path, monkeypatch):
+def test_fondo_solo_se_guarda_para_admin_con_el_titulo_en_favoritos(client, tmp_path, monkeypatch):
     from app import config, repo, tmdb
     monkeypatch.setattr(config, "POSTERS_DIR", str(tmp_path / "posters"))
     calls = []
@@ -101,14 +101,16 @@ def test_fondo_solo_se_guarda_para_admin_con_el_titulo_visto(client, tmp_path, m
         uid = conn.execute("SELECT id FROM users WHERE username = 'principal'").fetchone()["id"]
         vista = conn.execute("INSERT INTO titles (tmdb_id, type, title) VALUES (8001, 'show', 'Vista')").lastrowid
         pend = conn.execute("INSERT INTO titles (tmdb_id, type, title) VALUES (8002, 'show', 'Pendiente')").lastrowid
-        conn.execute("INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')", (vista, uid))
+        ve = conn.execute("INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')", (vista, uid)).lastrowid
         conn.execute("INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'pending')", (pend, uid))
+        # vista va a Favoritos (la lista por defecto); pend no -> solo vista cachea fondo.
+        repo.add_entry_to_list(conn, repo.get_or_create_default_list(conn, uid)["id"], ve)
         repo.create_user(conn, "amigo", "unaclave123")
-    # No visto: a TMDB, sin guardar ni cachear la redirección.
+    # No favorito: a TMDB, sin guardar ni cachear la redirección.
     r = client.get("/fondo/pend.jpg?t=8002", follow_redirects=False)
     assert r.status_code == 302 and "image.tmdb.org" in r.headers["location"] and not calls
     assert "immutable" not in r.headers.get("cache-control", "")
-    # Visto por la admin: se guarda una vez y luego sale del disco.
+    # Favorito de la admin: se guarda una vez y luego sale del disco.
     assert client.get("/fondo/abc123.jpg?t=8001").status_code == 200
     assert client.get("/fondo/abc123.jpg?t=8001").status_code == 200
     assert len(calls) == 1
@@ -138,14 +140,15 @@ def test_quitar_fondo_solo_admin(client):
 
 
 def test_desde_safari_no_se_guarda_ningun_fondo(client, tmp_path, monkeypatch):
-    from app import config, tmdb
+    from app import config, repo, tmdb
     monkeypatch.setattr(config, "POSTERS_DIR", str(tmp_path / "posters"))
     calls = []
     monkeypatch.setattr(tmdb, "download_poster", lambda url, dest: calls.append(url) or open(dest, "wb").write(b"x"))
     with db.get_connection() as conn:
         uid = conn.execute("SELECT id FROM users WHERE username = 'principal'").fetchone()["id"]
         t = conn.execute("INSERT INTO titles (tmdb_id, type, title) VALUES (8101, 'show', 'V')").lastrowid
-        conn.execute("INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')", (t, uid))
+        e = conn.execute("INSERT INTO entries (title_id, user_id, status) VALUES (?, ?, 'watched')", (t, uid)).lastrowid
+        repo.add_entry_to_list(conn, repo.get_or_create_default_list(conn, uid)["id"], e)
     for ua in ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
                "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"):
         r = client.get("/fondo/safari.jpg?t=8101", headers={"User-Agent": ua}, follow_redirects=False)

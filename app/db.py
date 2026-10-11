@@ -389,6 +389,9 @@ MIGRATIONS = [
     # Cuentas por invitación: hash del código de un solo uso y su caducidad; y cuentas
     # bloqueadas (conservan los datos pero no pueden entrar).
     "ALTER TABLE episodes ADD COLUMN still_path TEXT",
+    # Temporadas ocultadas a mano: TMDB a veces parte una serie en una temporada entera y
+    # otra que duplica su segundo tramo. La oculta se borra y el sync no la vuelve a traer.
+    "ALTER TABLE titles ADD COLUMN hidden_seasons TEXT",
 ]
 
 # Indices para que las subqueries de inicio/calendario no barran tablas enteras.

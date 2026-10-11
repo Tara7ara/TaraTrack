@@ -55,6 +55,20 @@
         <form class="acc-body" method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/desfase-emision"><div class="btn-row">
           <select class="input" name="dias">{% for d in [0, -7, -6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7] %}<option value="{{ d }}"{% if off == d %} selected{% endif %}>{{ "Sin corregir (automático)" if d == 0 else (d|abs|string + " día" + ("s" if d|abs > 1 else "") + (" antes" if d < 0 else " después")) }}</option>{% endfor %}</select>
           <button class="btn sm">Guardar</button></div><p class="hint">Mueve la fecha de todos los episodios: cuándo salen en Continuar viendo y en el calendario.</p></form></details>
+      {% if seasons|length > 1 or hidden_seasons %}
+      <details class="acc-item"><summary>Ocultar temporada duplicada{% if hidden_seasons %} <span class="sub">{{ hidden_seasons|length }} oculta{{ 's' if hidden_seasons|length > 1 }}</span>{% endif %}</summary>
+        <div class="acc-body">
+          <p class="hint">Si TMDB parte la serie en una temporada que duplica a otra, ocúltala: sus episodios se borran y el sync no los vuelve a traer.</p>
+          {% for k in seasons.keys()|list %}{% if k != 0 %}
+          <form method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/temporada/{{ k }}/ocultar" class="btn-row" style="margin-top:6px">
+            <span style="flex:1">Temporada {{ k }}</span><button class="btn sm quiet">Ocultar</button></form>
+          {% endif %}{% endfor %}
+          {% for k in hidden_seasons %}
+          <form method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/temporada/{{ k }}/mostrar" class="btn-row" style="margin-top:6px">
+            <span style="flex:1">Temporada {{ k }} <span class="sub">oculta</span></span><button class="btn sm ghost">Mostrar</button></form>
+          {% endfor %}
+        </div></details>
+      {% endif %}
       {% endif %}
       {% endif %}
     </div></div>

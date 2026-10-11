@@ -272,6 +272,7 @@ def titulo_detalle(request: Request, tmdb_id: int, type: MediaType, comentar: in
             repo.get_weekday_override(conn, title_row["anilist_id"])
             if title_row["anilist_id"] else None
         )
+        hidden_seasons = repo.get_hidden_seasons(conn, title_row["id"]) if title_row["type"] == "show" else []
 
     outcome_label = None
     if entry and entry["predicted_score"] is not None and entry["rating"] is not None:
@@ -291,6 +292,7 @@ def titulo_detalle(request: Request, tmdb_id: int, type: MediaType, comentar: in
             "entry": entry,
             "is_favorite": is_favorite,
             "seasons": seasons,
+            "hidden_seasons": hidden_seasons,
             "characters": characters,
             "sessions": sessions,
             **plays_ctx,
@@ -705,6 +707,36 @@ def marcar_temporada(request: Request, tmdb_id: int, type: MediaType, season_num
         # igual que marcar_vista_rapido.
         entry = repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
         repo.mark_season_watched(conn, entry["id"], season_number)
+    return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
+
+
+@router.post("/titulo/{tmdb_id}/{type}/temporada/{season_number}/ocultar", response_class=HTMLResponse)
+def ocultar_temporada(request: Request, tmdb_id: int, type: MediaType, season_number: int):
+    """Oculta una temporada que TMDB duplica. Borra sus episodios y el sync no los vuelve
+    a traer. Solo admins: el catálogo es compartido, desaparece para cualquier cuenta."""
+    if not request.state.is_admin:
+        return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
+    with get_connection() as conn:
+        row = conn.execute("SELECT id FROM titles WHERE tmdb_id = ?", (tmdb_id,)).fetchone()
+        if row:
+            repo.hide_season(conn, row["id"], season_number)
+    return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
+
+
+@router.post("/titulo/{tmdb_id}/{type}/temporada/{season_number}/mostrar", response_class=HTMLResponse)
+def mostrar_temporada(request: Request, tmdb_id: int, type: MediaType, season_number: int):
+    """Vuelve a mostrar una temporada oculta y fuerza un resync para recuperar sus
+    episodios sin esperar al ciclo de fondo. Solo admins."""
+    if not request.state.is_admin:
+        return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
+    with get_connection() as conn:
+        title_row = conn.execute("SELECT * FROM titles WHERE tmdb_id = ?", (tmdb_id,)).fetchone()
+        if title_row:
+            repo.unhide_season(conn, title_row["id"], season_number)
+            try:
+                repo.sync_episodes(conn, title_row)
+            except Exception:
+                logging.exception("resync tras mostrar temporada %s de %s", season_number, tmdb_id)
     return RedirectResponse(f"/titulo/{tmdb_id}/{type}", status_code=303)
 
 
