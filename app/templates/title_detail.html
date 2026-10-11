@@ -130,6 +130,9 @@
     <section class="section"><div class="section-head"><h2>Tus notas de episodios</h2><span class="meta">{{ ep_comments|length }} comentario{{ 's' if ep_comments|length != 1 }}</span></div>
       <div class="panel diary">{% for ep in ep_comments %}<div class="diary-row"><b>T{{ ep.season_number }}E{{ ep.episode_number }}</b><span>{{ ep.comment }}</span></div>{% endfor %}</div></section>
     {% endif %}
+    {# Película (sin episodios): los personajes van dentro de la columna para rellenar
+       el lado del panel de datos y que no quede un hueco vacío. #}
+    {% if not seasons and (characters or entry) %}{% include "partials/characters_section.html" %}{% endif %}
     </div>
     <aside class="about-side">
       <dl class="kv big">
@@ -158,20 +161,7 @@
     </aside>
   </section>
 
-  {% if characters or entry %}
-  <section class="section">
-    <div class="section-head"><h2>Personajes</h2><span class="meta">{{ characters|length }}</span>
-      <span style="margin-left:auto" class="btn-row">
-        <details class="char-search"><summary class="btn sm quiet">{{ ic('search', 'sm') }} Buscar personaje</summary>
-          <div class="panel" style="margin-top:8px">
-            <input class="input" type="text" name="q" placeholder="Nombre…" hx-get="/titulo/{{ t.tmdb_id }}/{{ t.type }}/personajes/buscar" hx-trigger="input changed delay:400ms, search" hx-target="#char-search-results" hx-indicator="#char-buscando">
-            <span id="char-buscando" class="htmx-indicator hint"><span class="spinner"></span>Buscando en AniList…</span>
-            <div id="char-search-results" class="chars"></div></div></details>
-        <form method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/personajes"><button class="btn sm quiet">{{ ic('sync', 'sm') }} Recargar</button></form>
-      </span></div>
-    {% if characters %}<div class="chars">{% for c in characters %}{% set entry_id = entry.id if entry else none %}{% set is_favorite = c.is_favorite %}{% include "partials/character_card.html" %}{% endfor %}</div>{% endif %}
-  </section>
-  {% endif %}
+  {% if seasons and (characters or entry) %}{% include "partials/characters_section.html" %}{% endif %}
 
   {% if t.tmdb_id > 0 %}
   <section class="section"><div class="section-head"><h2>Similares</h2></div>

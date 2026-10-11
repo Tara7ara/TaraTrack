@@ -1,0 +1,16 @@
+{% from "partials/ui.html" import ic %}
+{# Sección de Personajes de la ficha. En series va a ancho completo tras «Acerca de»;
+   en películas (sin lista de episodios) se incrusta dentro de la columna principal
+   para rellenar el lado que ocuparía el panel de datos. #}
+<section class="section">
+  <div class="section-head"><h2>Personajes</h2><span class="meta">{{ characters|length }}</span>
+    <span style="margin-left:auto" class="btn-row">
+      <details class="char-search"><summary class="btn sm quiet">{{ ic('search', 'sm') }} Buscar personaje</summary>
+        <div class="panel" style="margin-top:8px">
+          <input class="input" type="text" name="q" placeholder="Nombre…" hx-get="/titulo/{{ t.tmdb_id }}/{{ t.type }}/personajes/buscar" hx-trigger="input changed delay:400ms, search" hx-target="#char-search-results" hx-indicator="#char-buscando">
+          <span id="char-buscando" class="htmx-indicator hint"><span class="spinner"></span>Buscando en AniList…</span>
+          <div id="char-search-results" class="chars"></div></div></details>
+      <form method="post" action="/titulo/{{ t.tmdb_id }}/{{ t.type }}/personajes"><button class="btn sm quiet">{{ ic('sync', 'sm') }} Recargar</button></form>
+    </span></div>
+  {% if characters %}<div class="chars">{% for c in characters %}{% set entry_id = entry.id if entry else none %}{% set is_favorite = c.is_favorite %}{% include "partials/character_card.html" %}{% endfor %}</div>{% endif %}
+</section>

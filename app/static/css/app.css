@@ -369,6 +369,7 @@ a.poster:hover img, .pcard:hover .poster img { transform: scale(1.035); }
 .ep-drawer form .input { flex: 1; min-width: 0; }
 .debate { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .debate li { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: start; }
+.debate li.hint { display: block; }
 .debate .avatar { width: 28px; height: 28px; font-size: 0.75rem; }
 .debate strong { color: var(--text-bright); font-size: 0.85rem; }
 .debate .when { color: var(--text-dim); font-size: 0.75rem; margin-left: 8px; }
