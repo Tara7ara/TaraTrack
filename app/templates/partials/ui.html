@@ -96,9 +96,11 @@
 <div class="seg cal-tabs"><a class="{{ 'active' if active == 'semana' }}" href="/calendario">{{ ic('cal', 'sm') }} Mi semana</a><a class="{{ 'active' if active == 'temporada' }}" href="/calendario/anual">{{ ic('grid', 'sm') }} Temporada de anime</a></div>
 {%- endmacro %}
 
-{% macro hero_img(path, eager=true, local=none) -%}
+{% macro hero_img(path, eager=true, local=none, poster=none) -%}
 {% set big = local or path|tmdb_img('original') %}
 {% set set_ = path|tmdb_img('w780') ~ ' 780w, ' ~ path|tmdb_img('w1280') ~ ' 1280w, ' ~ big ~ ' 2560w' %}
+{%- if poster %}{% set pset = poster|poster_size('w342') ~ ' 342w, ' ~ poster|poster_size('w500') ~ ' 500w' %}<picture><source media="(max-width: 700px)" {{ 'srcset' if eager else 'data-srcset' }}="{{ pset }}" sizes="100vw">{% endif -%}
 <img {{ 'src' if eager else 'data-src' }}="{{ big }}" {{ 'srcset' if eager else 'data-srcset' }}="{{ set_ }}" sizes="100vw" alt="" decoding="async"{% if local %} class="on"{% endif %}>
+{%- if poster %}</picture>{% endif %}
 {%- endmacro %}
 

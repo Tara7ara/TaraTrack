@@ -166,14 +166,16 @@ window.ttHero = (() => {
         if (!slides.length) return;
         i = (k + slides.length) % slides.length;
         slides.forEach((s, n) => s.classList.toggle("on", n === i));
-        [i, (i + 1) % slides.length].forEach((n) => slides[n].querySelectorAll("img[data-src]").forEach((im) => {
+        [i, (i + 1) % slides.length].forEach((n) => slides[n].querySelectorAll("img[data-src], source[data-srcset]").forEach((im) => {
             if (im.dataset.srcset) im.srcset = im.dataset.srcset;
-            im.src = im.dataset.src; im.removeAttribute("data-src"); im.removeAttribute("data-srcset");
+            if (im.dataset.src) { im.src = im.dataset.src; im.removeAttribute("data-src"); }
+            im.removeAttribute("data-srcset");
         }));
         hero.querySelectorAll(".hero-dots button").forEach((b, n) => { b.classList.toggle("on", n === i); });
         document.querySelectorAll("[data-hero-card]").forEach((c) => c.classList.toggle("current", +c.dataset.heroCard === i));
         clearTimeout(t);
-        if (!hero.querySelector(".hero-dots button")) t = setTimeout(tick, 15000);
+        const dot = hero.querySelector(".hero-dots button");
+        if (!dot || !dot.offsetParent) t = setTimeout(tick, 15000);
     }
     function tick() {
         if (busy()) { clearTimeout(t); t = setTimeout(tick, 1000); return; }

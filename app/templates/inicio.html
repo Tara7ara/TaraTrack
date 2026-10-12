@@ -11,7 +11,7 @@
   {% set ep = c.next_ep %}
   {% set total_visible = (c.watched_eps or 0) + (c.missing_eps or 0) %}
   <div class="slide{{ ' on' if loop.first }}" data-i="{{ loop.index0 }}">
-    {% if c.backdrop_path %}<div class="hero-bg">{{ hero_img(c.backdrop_path, loop.first) }}</div>{% endif %}
+    {% if c.backdrop_path %}<div class="hero-bg">{{ hero_img(c.backdrop_path, loop.first, poster=c.poster_path) }}</div>{% endif %}
     <div class="hero-body">
       <div class="ask">¿Qué me toca ver?{% if c.last_watched_at %} · lo dejaste {{ c.last_watched_at|fmt_ago }}{% elif c in nuevas %} · sin empezar{% endif %}</div>
       {% if c.logo_path %}<img class="hero-logo" src="{{ c.logo_path|tmdb_img('w500') }}" alt="{{ c.title }}">{% else %}<h1 class="hero-title">{{ c.title }}</h1>{% endif %}
