@@ -1203,10 +1203,16 @@ def list_all_posters(conn):
 # 'Returning Series' de TMDB no significa "en emisión": mucho anime se queda así años
 # entre temporadas. Solo se excluye si hay un próximo episodio con fecha futura (una
 # fecha ya pasada en ese caché no es un próximo episodio real); si el de hoy aún no está
-# visto, _SIN_PENDIENTES_SQL ya se encarga.
-_NO_EN_EMISION_SQL = (
-    "(titles.next_episode_air_date IS NULL OR date(titles.next_episode_air_date) <= date('now'))"
-)
+# visto, _SIN_PENDIENTES_SQL ya se encarga. Como ese caché puede ir desfasado, también
+# se excluye si quedan episodios cacheados con fecha futura (temporada a medio emitir).
+_NO_EN_EMISION_SQL = """(
+    (titles.next_episode_air_date IS NULL OR date(titles.next_episode_air_date) <= date('now'))
+    AND NOT EXISTS (
+        SELECT 1 FROM episodes fut
+        WHERE fut.title_id = titles.id AND fut.season_number > 0
+          AND fut.air_date IS NOT NULL AND date(fut.air_date) > date('now')
+    )
+)"""
 
 # Una serie pasa a 'watched' con su primer episodio, así que una serie a medias no
 # puede entrar en /puntuar: si le queda algún episodio emitido sin ver (mismo criterio
