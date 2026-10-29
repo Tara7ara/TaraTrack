@@ -392,6 +392,9 @@ MIGRATIONS = [
     # Temporadas ocultadas a mano: TMDB a veces parte una serie en una temporada entera y
     # otra que duplica su segundo tramo. La oculta se borra y el sync no la vuelve a traer.
     "ALTER TABLE titles ADD COLUMN hidden_seasons TEXT",
+    # Ficha que TMDB ha borrado (404) y que la sync no ha podido fusionar con otra
+    # (ver repo.merge): la ficha enseña un aviso en vez de fallar en silencio.
+    "ALTER TABLE titles ADD COLUMN tmdb_gone INTEGER NOT NULL DEFAULT 0",
 ]
 
 # Indices para que las subqueries de inicio/calendario no barran tablas enteras.

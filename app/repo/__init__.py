@@ -123,6 +123,7 @@ from app.repo.lists import (  # noqa: F401
     set_list_order_mode,
     toggle_list_item,
 )
+from app.repo.merge import handle_gone_title, is_tmdb_gone_error, merge_gone_title  # noqa: F401
 from app.repo.recommendations import (  # noqa: F401
     MAX_PER_SEED,
     MAX_RECS_WORKERS,

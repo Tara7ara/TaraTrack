@@ -169,7 +169,8 @@ def refresh_metadata(conn, title_row):
            next_episode_air_date = ?, next_episode_label = ?,
            vote_average = ?, runtime_minutes = ?, episode_count = ?, release_date = ?,
            original_language = ?, original_title = ?, in_production = ?,
-           backdrop_path = COALESCE(?, backdrop_path), logo_path = COALESCE(?, logo_path) WHERE id = ?""",
+           backdrop_path = COALESCE(?, backdrop_path), logo_path = COALESCE(?, logo_path),
+           tmdb_gone = 0 WHERE id = ?""",
         (
             details["title"],
             details["overview"],
@@ -1354,6 +1355,12 @@ def remove_pending_entry(conn, entry_id: int):
     ).fetchone()[0]
     if still_tracked:
         return
+    _purge_title(conn, title_id)
+
+
+def _purge_title(conn, title_id: int):
+    """Borra un título del catálogo con todo lo que cuelga de él. Solo para títulos
+    que ya no tienen ninguna entry (remove_pending_entry, merge_gone_title)."""
     conn.execute(
         "DELETE FROM favorite_characters WHERE character_id IN (SELECT id FROM characters WHERE title_id = ?)",
         (title_id,),

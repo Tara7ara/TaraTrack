@@ -11,6 +11,7 @@ from app.repo._shared import (
     set_setting,
 )
 from app.repo.affinity import recompute_taste_profile
+from app.repo.merge import handle_gone_title, is_tmdb_gone_error
 from app.repo.titles import get_title, list_trackable_titles, mark_all_aired_watched, refresh_metadata, sync_episodes
 from app.repo.users import list_users
 
@@ -96,8 +97,17 @@ def _sync_library_body(titles) -> int:
             # compartieran una, el lock de escritura del primer UPDATE se mantendría
             # durante las llamadas de red y el resto de la app vería "database is
             # locked".
-            with get_connection() as conn:
-                refresh_metadata(conn, title_row)
+            try:
+                with get_connection() as conn:
+                    refresh_metadata(conn, title_row)
+            except Exception as e:
+                # TMDB borra fichas (p.ej. al convertir una serie en temporada de otra):
+                # se fusiona con la que la sustituye en vez de fallar en cada sync.
+                if not is_tmdb_gone_error(e):
+                    raise
+                with get_connection() as conn:
+                    handle_gone_title(conn, title_row)
+                continue
             if title_row["type"] == "show":
                 with get_connection() as conn:
                     fresh = get_title(conn, title_row["tmdb_id"])

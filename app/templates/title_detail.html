@@ -15,6 +15,7 @@
       {% if t.logo_path %}<img class="hero-logo" style="max-height:130px" src="{{ t.logo_path|tmdb_img('w500') }}" alt="{{ t.title }}"><h1 class="sr-only">{{ t.title }}</h1>
       {% else %}<h1>{{ t.title }}</h1>{% endif %}
       {% if alts or t.logo_path %}<div class="alt-title">{% if t.logo_path %}{{ t.title }}{% if alts %} · {% endif %}{% endif %}{{ alts|join(" // ") }}</div>{% endif %}
+      {% if t.tmdb_gone %}<p class="confirm-banner gone-banner">TMDB ha borrado esta ficha: ya no se actualiza. Si la serie sigue en TMDB con otro nombre, búscala y quita esta.</p>{% endif %}
       <div class="meta-row">
         <span class="mchip">{{ t.year or "—" }} · {{ 'Serie' if t.type == 'show' else 'Película' }}</span>
         {% if t.vote_average %}<span class="mchip">Internet <b>{{ t.vote_average|fmt_rating(1) }}</b></span>{% endif %}
