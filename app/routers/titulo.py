@@ -179,17 +179,23 @@ def marcar_vista_submit(
 @router.get("/titulo/{tmdb_id}/{type}", response_class=HTMLResponse)
 def titulo_detalle(request: Request, tmdb_id: int, type: MediaType, comentar: int = 0, apunte: int = 0):
     """Unica ruta que llamaba a TMDB sin ningun try/except: abrir por primera vez la
-    ficha de algo (ensure_entry pide get_details) daba un 500 en la cara si TMDB iba
+    ficha de algo (ensure_title pide get_details) daba un 500 en la cara si TMDB iba
     lento o daba un hipo, mismo problema ya resuelto en /buscar y /vista pero que
-    aqui seguia sin protegerse. Si el primer ensure_entry falla no hay title_row con
+    aqui seguia sin protegerse. Si el primer ensure_title falla no hay title_row con
     el que renderizar nada, asi que se convierte en un 404/503 con la pagina de error
     propia (no en un traceback crudo); episodios/personajes son best-effort, un fallo
-    ahi no debe tumbar la ficha entera."""
+    ahi no debe tumbar la ficha entera.
+
+    Solo cachea el titulo (ensure_title), no crea ninguna entry: abrir una ficha es
+    mirarla, no seguirla, asi que no debe meter nada en pendientes. La entry se crea
+    solo al pulsar "+ Pendientes" o "Marcar vista". La ficha ya sabe renderizarse sin
+    entry (estado "new" en la botonera); un titulo cacheado sin entry ya era un caso
+    soportado, esto solo lo extiende a los titulos que aun no estaban cacheados."""
     with get_connection() as conn:
         title_row = repo.get_title(conn, tmdb_id)
         if title_row is None:
             try:
-                repo.ensure_entry(conn, tmdb_id, type, request.state.user_id)
+                repo.ensure_title(conn, tmdb_id, type)
             except Exception:
                 raise StarletteHTTPException(
                     status_code=503, detail="TMDB no responde ahora mismo, prueba en un rato."
