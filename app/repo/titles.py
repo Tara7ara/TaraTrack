@@ -884,10 +884,16 @@ def set_watched_at(conn, entry_id: int, date_str: str):
 def undo_mark_watched(conn, entry_id: int):
     """Deshace un "Marcar vista" por error: la entry vuelve a pending y se desmarcan
     solo los episodios marcados en ese mismo instante (mismo watched_at que puso
-    mark_watched_quick), así no se pierde historial previo. Solo para lo recién
-    marcado sin puntuar; si ya tiene nota, lo que aplica es "Quitar nota"."""
-    row = conn.execute("SELECT title_id, user_id, watched_at FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    mark_watched_quick), así no se pierde historial previo. Lo usan tanto lo recién
+    marcado sin puntuar como las películas vistas: una película siempre tiene nota y
+    no tiene episodios que desmarcar, así que esta es su única vía para salir de
+    vistas, y por eso se limpia la nota al volver a pending si la tenía."""
+    row = conn.execute("SELECT title_id, user_id, watched_at, rating FROM entries WHERE id = ?", (entry_id,)).fetchone()
     conn.execute("UPDATE entries SET status = 'pending', watched_at = NULL WHERE id = ?", (entry_id,))
+    # Si tenía nota, se quita al volver a pending para no dejar un pendiente puntuado;
+    # clear_rating hace snapshot a rating_history antes, así el número no se pierde.
+    if row["rating"] is not None:
+        clear_rating(conn, entry_id)
     if row["watched_at"]:
         eps = conn.execute(
             """SELECT episodes.id FROM episodes
