@@ -80,13 +80,17 @@
       {% elif entry.rating is not none %}
       <details class="del-confirm"><summary class="btn danger">Quitar nota</summary>
         <form method="post" action="/entrada/{{ entry.id }}/quitar-nota" class="btn-row" style="margin-top:8px"><span class="hint">¿Seguro?</span><button class="btn sm danger-solid">Sí, quitar</button></form></details>
-      {% if t.type == 'movie' %}
-      <details class="del-confirm"><summary class="btn danger">Quitar de vistas</summary>
-        <form method="post" action="/entrada/{{ entry.id }}/deshacer-vista" class="btn-row" style="margin-top:8px"><span class="hint">¿Volver a pendiente? (se quita la nota)</span><button class="btn sm danger-solid">Sí, a pendiente</button></form></details>
       {% endif %}
-      {% else %}
+      {# Salir de vistas (volver a pendiente), tanto pelis como series. Para lo visto
+         sin nota se conserva el texto clásico "Deshacer Marcar vista"; con nota (toda
+         peli, y series puntuadas) es "Quitar de vistas" y se limpia la nota al revertir.
+         En series también se puede sacar desmarcando los episodios; esto es el atajo. #}
+      {% if entry.rating is none and t.type == 'show' %}
       <details class="del-confirm"><summary class="btn danger">Deshacer «Marcar vista»</summary>
         <form method="post" action="/entrada/{{ entry.id }}/deshacer-vista" class="btn-row" style="margin-top:8px"><span class="hint">¿No la has visto?</span><button class="btn sm danger-solid">Sí, volver a pendiente</button></form></details>
+      {% else %}
+      <details class="del-confirm"><summary class="btn danger">Quitar de vistas</summary>
+        <form method="post" action="/entrada/{{ entry.id }}/deshacer-vista" class="btn-row" style="margin-top:8px"><span class="hint">¿Volver a pendiente? (se quita la nota)</span><button class="btn sm danger-solid">Sí, a pendiente</button></form></details>
       {% endif %}
     </div>
     {% endif %}
